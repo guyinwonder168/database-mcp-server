@@ -1,6 +1,0 @@
-max_pool_size: 10
-
-# AES key for password encryption (must be exactly 32 characters, securely generated)
-aes_key: "b7e2f8c9d1a4e6f3c5b8a2d4e9f1c3b7"
-
-profiles: []

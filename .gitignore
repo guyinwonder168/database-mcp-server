@@ -1,0 +1,34 @@
+# Go build and dependency files
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# IDE/editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.bak
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Configs and secrets
+config.yaml
+pkg/config.yaml
+.env
+
+# Dependency directories
+vendor/
+
+# MCP server build output
+pkg/mcp-server
