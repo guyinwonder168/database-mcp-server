@@ -74,6 +74,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ListTablesResult'
+  /list-tools:
+    post:
+      summary: List all available MCP tools
+      description: Returns a list of all available MCP tools/actions with their names and descriptions for programmatic discovery
+      operationId: list-tools
+      tags:
+        - Tools
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListToolsParams'
+      responses:
+        '200':
+          description: List of available tools
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListToolsResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
   /describe-table:
     get:
       summary: Describe the columns and types of a table
@@ -199,6 +223,34 @@ components:
           type: array
           items:
             type: string
+    ListToolsParams:
+      type: object
+      description: Parameters for listing available tools (no parameters required)
+      properties: {}
+    ListToolsResult:
+      type: object
+      required:
+        - tools
+      properties:
+        tools:
+          type: array
+          description: Array of available tools
+          items:
+            $ref: '#/components/schemas/ToolInfo'
+    ToolInfo:
+      type: object
+      required:
+        - name
+        - description
+      properties:
+        name:
+          type: string
+          description: Name of the tool/action
+          example: "list-profiles"
+        description:
+          type: string
+          description: Description of what the tool does
+          example: "List all configured database profiles"
     DescribeTableResult:
       type: object
       properties:
@@ -222,27 +274,27 @@ components:
           type: array
           items:
             type: string
-   SmartQueryBuilderParams:
-     type: object
-     required:
-       - profile_name
-       - intent
-     properties:
-       profile_name:
-         type: string
-         description: Name of the database profile to use
-       intent:
-         type: string
-         description: High-level intent or description in natural language
-         example: "attendance dashboard"
-       database_name:
-         type: string
-         description: Optional database name override
-       table_names:
-         type: array
-         items:
-           type: string
-         description: Optional specific table names to consider
+    SmartQueryBuilderParams:
+      type: object
+      required:
+        - profile_name
+        - intent
+      properties:
+        profile_name:
+          type: string
+          description: Name of the database profile to use
+        intent:
+          type: string
+          description: High-level intent or description in natural language
+          example: "attendance dashboard"
+        database_name:
+          type: string
+          description: Optional database name override
+        table_names:
+          type: array
+          items:
+            type: string
+          description: Optional specific table names to consider
    SmartQueryBuilderResult:
      type: object
      properties:

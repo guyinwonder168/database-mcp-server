@@ -4,6 +4,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -1055,6 +1056,120 @@ func TestSampleDataSpecialTableNames(t *testing.T) {
 		// Should not crash on unusual table names, though may fail on connection
 		if err != nil {
 			t.Logf("Expected behavior for table name '%s': %v", tableName, err)
+		}
+	}
+}
+
+// --- ListTools MCP Action Tests ---
+
+func TestHandleListTools_Success(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+	session := &mcp.ServerSession{}
+	params := &mcp.CallToolParamsFor[ListToolsParams]{}
+
+	res, err := server.handleListTools(ctx, session, params)
+	if err != nil {
+		t.Fatalf("handleListTools error: %v", err)
+	}
+	if res == nil || res.Content == nil {
+		t.Fatalf("handleListTools returned nil content")
+	}
+	if len(res.Content) == 0 {
+		t.Fatalf("handleListTools returned empty content")
+	}
+	textContent, ok := res.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("Expected TextContent, got %T", res.Content[0])
+	}
+	var result ListToolsResult
+	if err := json.Unmarshal([]byte(textContent.Text), &result); err != nil {
+		t.Fatalf("Failed to unmarshal ListToolsResult: %v", err)
+	}
+	if len(result.Tools) == 0 {
+		t.Fatalf("Expected at least one tool in result")
+	}
+	for _, tool := range result.Tools {
+		if tool.Name == "" || tool.Description == "" {
+			t.Errorf("Tool missing name or description: %+v", tool)
+		}
+	}
+}
+
+func TestHandleListTools_EmptyParams(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+	session := &mcp.ServerSession{}
+
+	// Pass nil params (should still work)
+	res, err := server.handleListTools(ctx, session, nil)
+	if err != nil {
+		t.Fatalf("handleListTools error with nil params: %v", err)
+	}
+	if res == nil || res.Content == nil {
+		t.Fatalf("handleListTools returned nil content with nil params")
+	}
+	if len(res.Content) == 0 {
+		t.Fatalf("handleListTools returned empty content with nil params")
+	}
+	textContent, ok := res.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("Expected TextContent, got %T", res.Content[0])
+	}
+	var result ListToolsResult
+	if err := json.Unmarshal([]byte(textContent.Text), &result); err != nil {
+		t.Fatalf("Failed to unmarshal ListToolsResult: %v", err)
+	}
+	if len(result.Tools) == 0 {
+		t.Fatalf("Expected at least one tool in result")
+	}
+}
+
+func TestHandleListTools_VerifyAllTools(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+	session := &mcp.ServerSession{}
+	params := &mcp.CallToolParamsFor[ListToolsParams]{}
+
+	res, err := server.handleListTools(ctx, session, params)
+	if err != nil {
+		t.Fatalf("handleListTools error: %v", err)
+	}
+	if res == nil || res.Content == nil || len(res.Content) == 0 {
+		t.Fatalf("handleListTools returned nil or empty content")
+	}
+	textContent, ok := res.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("Expected TextContent, got %T", res.Content[0])
+	}
+	var result ListToolsResult
+	if err := json.Unmarshal([]byte(textContent.Text), &result); err != nil {
+		t.Fatalf("Failed to unmarshal ListToolsResult: %v", err)
+	}
+	// Compare with server.toolsRegistry
+	if len(result.Tools) != len(server.toolsRegistry) {
+		t.Fatalf("Expected %d tools, got %d", len(server.toolsRegistry), len(result.Tools))
+	}
+	// Check all tool names and descriptions match
+	for i, tool := range server.toolsRegistry {
+		found := false
+		for _, rtool := range result.Tools {
+			if rtool.Name == tool.Name && rtool.Description == tool.Description {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Tool %d (%s) missing or mismatched in result", i, tool.Name)
 		}
 	}
 }

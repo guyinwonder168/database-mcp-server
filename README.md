@@ -24,6 +24,8 @@ A production-ready Model Context Protocol (MCP) provider for SQL databases, writ
 - **Structured Logging:** All actions and errors are logged as structured JSON to stdout and a rotating log file.
 - **Stateless:** Each MCP action opens and closes its own DB connection (with pooling).
 - **Extensible:** Easy to add new MCP actions/tools.
+- **Tool Discovery:** `list-tools` MCP action returns a machine-readable list of all available tools/actions.
+- **Official MCP Protocol:** Communication is via the official MCP protocol over stdio (not HTTP, not JSON-RPC).
 
 ---
 
@@ -51,6 +53,7 @@ A production-ready Model Context Protocol (MCP) provider for SQL databases, writ
    - `discover-joins`
    - `smart-query-builder`
    - `mcp-info`
+   - `list-tools`
 
 ---
 
@@ -92,22 +95,27 @@ A production-ready Model Context Protocol (MCP) provider for SQL databases, writ
 
 This provider is fully compatible with Kilocode AI's MCP integration.
 
+### MCP Transport
+
+- **Transport:** The Database MCP Provider communicates via the official MCP protocol over stdio.
+- **No HTTP server or JSON-RPC is provided or required.**
+- All actions are invoked by MCP-compatible clients (such as Kilocode AI) via process stdio.
+
 ### Automatic MCP Provider Launch
 
-Kilocode AI can be configured to automatically launch the MCP provider when needed.  
+Kilocode AI can be configured to automatically launch the MCP provider when needed.
 **Example Kilocode AI config snippet:**
 ```yaml
 mcp_providers:
   - name: database-mcp
-   "command": "/[path to ]/mcp-server",
-   "workingDirectory": "/[path to ]",
-   "args": [],
-   "disabled": false,
-   "alwaysAllow": [
-      "list-profiles"
-   ]
+    command: "/[path to ]/mcp-server"
+    workingDirectory: "/[path to ]"
+    args: []
+    disabled: false
+    alwaysAllow:
+      - "list-profiles"
 ```
-- `command` is the fullpath to your built mcp-server binary.
+- `command` is the full path to your built mcp-server binary.
 - `workingDirectory` is the path where the binary is located.
 
 ### Usage Steps
@@ -115,11 +123,11 @@ mcp_providers:
 1. **Install and build this provider** as described above.
 2. **Configure Kilocode AI** with the above snippet in your Kilocode AI configuration file.
 3. **Start Kilocode AI**—it will automatically launch and manage the MCP provider as needed.
-4. **Use MCP actions** (`configure-profile`, `execute-sql`, etc.) as tools in your Kilocode AI workflows.
-5. **Profiles and credentials** are managed via the provider's CLI or MCP actions.
+4. **Use MCP actions** (`configure-profile`, `execute-sql`, `list-tools`, etc.) as tools in your Kilocode AI workflows.
+5. **Profiles and credentials** are managed via the provider's MCP actions.
 6. **Logs and errors** are available in `mcp-provider.log` for troubleshooting.
 
-**Note:**  
+**Note:**
 - Ensure `mcp-server` is executable and accessible to Kilocode AI.
 - For advanced integration, refer to Kilocode AI's documentation on MCP provider setup.
 
@@ -137,21 +145,25 @@ To add a new MCP action:
 ## License
 
 MIT
-## Documentation Endpoint
+## Documentation
 
-When the MCP server is running, documentation and usage examples are available at [http://localhost:8080/docs/](http://localhost:8080/docs/). This allows LLMs and clients to automatically discover tool metadata and example workflows.
+- All MCP actions and usage examples are documented in [`docs/mcp-openapi.yaml`](docs/mcp-openapi.yaml).
+- The `list-tools` MCP action provides a machine-readable list of all available tools/actions.
+- No HTTP endpoints or web server are provided; all communication is via stdio/JSON-RPC MCP protocol.
+
 ## Automated Usage for AI/Agents
 
 - All configuration and database actions are accessible via MCP tools—no manual or interactive setup is required.
 - If `config.yaml` is missing, the server auto-creates a minimal config file and logs the event.
 - All MCP actions are documented in [`docs/mcp-openapi.yaml`](docs/mcp-openapi.yaml).
-- AI/agents can discover and invoke all actions programmatically via the MCP protocol.
+- AI/agents can discover and invoke all actions programmatically via the MCP protocol (stdio/JSON-RPC).
 - No CLI prompts or blocking user input will ever occur at runtime.
 ## OpenAPI and MCP Tool Documentation
 
 - All MCP actions are fully documented in [`docs/mcp-openapi.yaml`](docs/mcp-openapi.yaml).
 - The OpenAPI spec enables AI/agents to discover available tools and their parameters automatically.
 - Example usage and schemas are provided for each action.
+- The `list-tools` MCP action provides a programmatic tool discovery endpoint for clients.
 ## Security Features
 
 - Passwords are encrypted at rest using AES-GCM (256-bit).
@@ -193,21 +205,17 @@ When the MCP server is running, documentation and usage examples are available a
 - Go 1.23+ installed (`go version`)
 - Supported databases: MySQL, MariaDB, PostgreSQL, SQLite
 
-## Build
+## Build & Run
 
 ```sh
 git clone <repo-url>
 cd database-mcp-provider
 go mod download
 go build -o mcp-server ./cmd/server/main.go
-```
-
-## Run
-
-```sh
 ./mcp-server
 ```
 
+- The server runs as a stdio-based MCP provider (no HTTP server or port).
 - On first run, if `config.yaml` is missing, a minimal config with a secure random AES key is auto-created.
 - All configuration is managed via MCP actions (no interactive CLI prompts).
 - To add database profiles, use the `configure-profile` MCP action (see OpenAPI docs).

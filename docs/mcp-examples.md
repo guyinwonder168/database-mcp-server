@@ -110,3 +110,63 @@ When a query fails (e.g., referencing a missing table), the MCP server returns a
 ---
 
 These structured error responses enable AI agents and clients to self-correct, retry, and automate database interactions safely and efficiently.
+---
+
+## List Tools
+
+Lists all available MCP tools/actions for programmatic discovery.
+
+### Request
+```json
+{
+  "method": "list-tools",
+  "params": {}
+}
+```
+
+### Response
+```json
+{
+  "tools": [
+    {
+      "name": "list-tools",
+      "description": "List all available MCP tools/actions for programmatic discovery"
+    },
+    {
+      "name": "list-profiles",
+      "description": "List all configured database profiles"
+    },
+    {
+      "name": "configure-profile",
+      "description": "Create or update a database profile configuration"
+    },
+    {
+      "name": "execute-sql",
+      "description": "Execute SQL queries against a configured database profile"
+    },
+    {
+      "name": "list-tables",
+      "description": "List all tables and views in the specified database"
+    },
+    {
+      "name": "describe-table",
+      "description": "Get detailed schema information for a specific table"
+    },
+    {
+      "name": "list-databases",
+      "description": "List all databases available on the database server"
+    },
+    {
+      "name": "sample-data",
+      "description": "Fetch sample rows from a table to understand data formats and value ranges"
+    },
+    {
+      "name": "mcp-info",
+      "description": "Get information about this MCP server including version and capabilities"
+    }
+  ]
+}
+```
+
+### Use Case
+This action enables AI agents and MCP clients to programmatically discover all available tools without needing prior knowledge of the server's capabilities.

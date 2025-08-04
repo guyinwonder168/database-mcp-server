@@ -26,6 +26,7 @@ type MCPServer struct {
 	server        *mcp.Server
 	ConfigPath    string // <--- Add this field for testability
 	errorAnalyzer *ErrorAnalyzer
+	toolsRegistry []ToolInfo
 }
 
 const MCPVersion = "v1.0.0"
@@ -39,22 +40,166 @@ func NewMCPServer() *MCPServer {
 // NewMCPServerWithConfig allows specifying a config path (for testing).
 func NewMCPServerWithConfig(configPath string) *MCPServer {
 	srv := mcp.NewServer(&mcp.Implementation{Name: "database-mcp-provider", Version: MCPVersion}, nil)
-	return &MCPServer{
+	mcpServer := &MCPServer{
 		server:        srv,
 		ConfigPath:    configPath,
 		errorAnalyzer: NewErrorAnalyzer(configPath),
 	}
+	mcpServer.registerAllTools()
+	return mcpServer
 }
 
-// Start launches the MCP server, registers all tools, and starts listening for MCP requests.
-func (s *MCPServer) Start() error {
-	// Register all MCP tools/actions
+// registerAllTools registers all MCP tools and populates toolsRegistry.
+// This is called in Start() and in tests.
+func (s *MCPServer) registerAllTools() {
+	// Prevent duplicate registration
+	if len(s.toolsRegistry) > 0 {
+		return
+	}
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name: "configure-profile",
 		Description: `Create or update a database connection profile. Required for all database actions.
 Example:
 {"profile_name":"some-profile-name","db_type":"mariadb","host":"localhost","port":3306,"username":"app","password":"secret","database_name":"mysql","readonly":false}`,
 	}, s.handleConfigureProfile)
+	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "configure-profile", Description: `Create or update a database connection profile. Required for all database actions.
+Example:
+{"profile_name":"some-profile-name","db_type":"mariadb","host":"localhost","port":3306,"username":"app","password":"secret","database_name":"mysql","readonly":false}`})
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name: "list-profiles",
+		Description: `List all configured database profiles.
+Example:
+{}`,
+	}, s.handleListProfiles)
+	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "list-profiles", Description: `List all configured database profiles.
+Example:
+{}`})
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name: "execute-sql",
+		Description: `Execute an arbitrary SQL query or statement. Use the 'database_name' parameter to select a database if needed.
+Note: For cross-database queries or describing tables in another database, use fully qualified table names (e.g., db.table).
+Example:
+{"profile_name":"some-profile-name","database_name":"some-database-name","sql":"SELECT * FROM some-table-name WHERE some-field-name=34;"}
+{"profile_name":"some-profile-name","sql":"DESCRIBE some-database-name.some-table-name"}`,
+	}, s.handleExecuteSQL)
+	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "execute-sql", Description: `Execute an arbitrary SQL query or statement. Use the 'database_name' parameter to select a database if needed.
+Note: For cross-database queries or describing tables in another database, use fully qualified table names (e.g., db.table).
+Example:
+{"profile_name":"some-profile-name","database_name":"some-database-name","sql":"SELECT * FROM some-table-name WHERE some-field-name=34;"}
+{"profile_name":"some-profile-name","sql":"DESCRIBE some-database-name.some-table-name"}`})
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name: "list-tables",
+		Description: `List all tables in the selected database. Use 'database_name' to override the profile's default database.
+Example:
+{"profile_name":"some-profile-name","database_name":"some-database-name"}`,
+	}, s.handleListTables)
+	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "list-tables", Description: `List all tables in the selected database. Use 'database_name' to override the profile's default database.
+Example:
+{"profile_name":"some-profile-name","database_name":"some-database-name"}`})
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name: "describe-table",
+		Description: `Describe the comprehensive schema of a table including columns, types, constraints, comments, and metadata. Returns detailed information to enable AI/agents to understand table structure and build intelligent queries.
+Returns: column names, data types, nullable status, key constraints, default values, column comments, character sets, collation, auto-increment status, max length, precision, and scale.
+Example:
+{"profile_name":"some-profile-name","database_name":"some-database-name","table_name":"some-table-name"}`,
+	}, s.handleDescribeTable)
+	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "describe-table", Description: `Describe the comprehensive schema of a table including columns, types, constraints, comments, and metadata. Returns detailed information to enable AI/agents to understand table structure and build intelligent queries.
+Returns: column names, data types, nullable status, key constraints, default values, column comments, character sets, collation, auto-increment status, max length, precision, and scale.
+Example:
+{"profile_name":"some-profile-name","database_name":"some-database-name","table_name":"some-table-name"}`})
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name: "list-databases",
+		Description: `List all databases/schemas available to the profile.
+Example:
+{"profile_name":"some-profile-name"}`,
+	}, s.handleListDatabases)
+	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "list-databases", Description: `List all databases/schemas available to the profile.
+Example:
+{"profile_name":"some-profile-name"}`})
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name: "mcp-info",
+		Description: `Show MCP provider version and author.
+Example:
+{}`,
+	}, s.handleMCPInfo)
+	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "mcp-info", Description: `Show MCP provider version and author.
+Example:
+{}`})
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name: "smart-query-builder",
+		Description: `Generate optimized SQL from high-level intent and schema analysis.
+Input: profile_name, intent (natural language), optional database_name/table_name(s).
+Returns: generated SQL, explanation, and any errors.
+Example:
+{"profile_name":"some-profile-name","intent":"attendance dashboard"}`,
+	}, s.handleSmartQueryBuilder)
+	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "smart-query-builder", Description: `Generate optimized SQL from high-level intent and schema analysis.
+Input: profile_name, intent (natural language), optional database_name/table_name(s).
+Returns: generated SQL, explanation, and any errors.
+Example:
+{"profile_name":"some-profile-name","intent":"attendance dashboard"}`})
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name: "discover-joins",
+		Description: `Discover joinable relationships (foreign keys) between tables and suggest JOIN SQL.
+Input: profile_name (required), tables (optional).
+Returns: list of join suggestions and summary.
+Example:
+{"profile_name":"analytics_db","tables":["orders","customers"]}`,
+	}, s.handleDiscoverJoins)
+	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "discover-joins", Description: `Discover joinable relationships (foreign keys) between tables and suggest JOIN SQL.
+Input: profile_name (required), tables (optional).
+Returns: list of join suggestions and summary.
+Example:
+{"profile_name":"analytics_db","tables":["orders","customers"]}`})
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name: "sample-data",
+		Description: `Fetch sample rows from a table to help AI/agents infer data types, formats, and value ranges.
+Input: profile_name (required), table_name (required), database_name (optional), sample_size (optional, default: 3).
+Returns: sample rows with column names and values.
+Example:
+{"profile_name":"analytics_db","table_name":"users","sample_size":5}`,
+	}, s.handleSampleData)
+	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "sample-data", Description: `Fetch sample rows from a table to help AI/agents infer data types, formats, and value ranges.
+Input: profile_name (required), table_name (required), database_name (optional), sample_size (optional, default: 3).
+Returns: sample rows with column names and values.
+Example:
+{"profile_name":"analytics_db","table_name":"users","sample_size":5}`})
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name: "list-tools",
+		Description: `List all available MCP tools and their descriptions.
+Example:
+{}`,
+	}, s.handleListTools)
+	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "list-tools", Description: `List all available MCP tools and their descriptions.
+Example:
+{}`})
+}
+
+// Start launches the MCP server, registers all tools, and starts listening for MCP requests.
+func (s *MCPServer) Start() error {
+	// Register all MCP tools/actions
+
+	// Register all MCP tools/actions
+
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name: "configure-profile",
+		Description: `Create or update a database connection profile. Required for all database actions.
+Example:
+{"profile_name":"some-profile-name","db_type":"mariadb","host":"localhost","port":3306,"username":"app","password":"secret","database_name":"mysql","readonly":false}`,
+	}, s.handleConfigureProfile)
+	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "configure-profile", Description: `Create or update a database connection profile. Required for all database actions.
+Example:
+{"profile_name":"some-profile-name","db_type":"mariadb","host":"localhost","port":3306,"username":"app","password":"secret","database_name":"mysql","readonly":false}`})
 	log.JSONLog("debug", "Registered MCP tool", map[string]interface{}{"name": "configure-profile", "description": "Configure a DB profile"})
 
 	mcp.AddTool(s.server, &mcp.Tool{
@@ -63,6 +208,9 @@ Example:
 Example:
 {}`,
 	}, s.handleListProfiles)
+	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "list-profiles", Description: `List all configured database profiles.
+Example:
+{}`})
 	log.JSONLog("debug", "Registered MCP tool", map[string]interface{}{"name": "list-profiles", "description": "List DB profiles"})
 
 	mcp.AddTool(s.server, &mcp.Tool{
@@ -73,6 +221,11 @@ Example:
 {"profile_name":"some-profile-name","database_name":"some-database-name","sql":"SELECT * FROM some-table-name WHERE some-field-name=34;"}
 {"profile_name":"some-profile-name","sql":"DESCRIBE some-database-name.some-table-name"}`,
 	}, s.handleExecuteSQL)
+	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "execute-sql", Description: `Execute an arbitrary SQL query or statement. Use the 'database_name' parameter to select a database if needed.
+Note: For cross-database queries or describing tables in another database, use fully qualified table names (e.g., db.table).
+Example:
+{"profile_name":"some-profile-name","database_name":"some-database-name","sql":"SELECT * FROM some-table-name WHERE some-field-name=34;"}
+{"profile_name":"some-profile-name","sql":"DESCRIBE some-database-name.some-table-name"}`})
 	log.JSONLog("debug", "Registered MCP tool", map[string]interface{}{"name": "execute-sql", "description": "Execute SQL"})
 
 	mcp.AddTool(s.server, &mcp.Tool{
@@ -81,6 +234,9 @@ Example:
 Example:
 {"profile_name":"some-profile-name","database_name":"some-database-name"}`,
 	}, s.handleListTables)
+	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "list-tables", Description: `List all tables in the selected database. Use 'database_name' to override the profile's default database.
+Example:
+{"profile_name":"some-profile-name","database_name":"some-database-name"}`})
 	log.JSONLog("debug", "Registered MCP tool", map[string]interface{}{"name": "list-tables", "description": "List tables"})
 
 	mcp.AddTool(s.server, &mcp.Tool{
@@ -90,6 +246,10 @@ Returns: column names, data types, nullable status, key constraints, default val
 Example:
 {"profile_name":"some-profile-name","database_name":"some-database-name","table_name":"some-table-name"}`,
 	}, s.handleDescribeTable)
+	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "describe-table", Description: `Describe the comprehensive schema of a table including columns, types, constraints, comments, and metadata. Returns detailed information to enable AI/agents to understand table structure and build intelligent queries.
+Returns: column names, data types, nullable status, key constraints, default values, column comments, character sets, collation, auto-increment status, max length, precision, and scale.
+Example:
+{"profile_name":"some-profile-name","database_name":"some-database-name","table_name":"some-table-name"}`})
 	log.JSONLog("debug", "Registered MCP tool", map[string]interface{}{"name": "describe-table", "description": "Describe table"})
 
 	mcp.AddTool(s.server, &mcp.Tool{
@@ -98,6 +258,9 @@ Example:
 Example:
 {"profile_name":"some-profile-name"}`,
 	}, s.handleListDatabases)
+	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "list-databases", Description: `List all databases/schemas available to the profile.
+Example:
+{"profile_name":"some-profile-name"}`})
 	log.JSONLog("debug", "Registered MCP tool", map[string]interface{}{"name": "list-databases", "description": "List databases/schemas"})
 
 	// Add version/author info tool
@@ -107,6 +270,9 @@ Example:
 Example:
 {}`,
 	}, s.handleMCPInfo)
+	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "mcp-info", Description: `Show MCP provider version and author.
+Example:
+{}`})
 	log.JSONLog("debug", "Registered MCP tool", map[string]interface{}{"name": "mcp-info", "description": "Show MCP provider version and author"})
 
 	// Register Smart Query Builder Tool
@@ -118,12 +284,19 @@ Returns: generated SQL, explanation, and any errors.
 Example:
 {"profile_name":"some-profile-name","intent":"attendance dashboard"}`,
 	}, s.handleSmartQueryBuilder)
+	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "smart-query-builder", Description: `Generate optimized SQL from high-level intent and schema analysis.
+Input: profile_name, intent (natural language), optional database_name/table_name(s).
+Returns: generated SQL, explanation, and any errors.
+Example:
+{"profile_name":"some-profile-name","intent":"attendance dashboard"}`})
 	log.JSONLog("debug", "Registered MCP tool", map[string]interface{}{"name": "smart-query-builder", "description": "Generate SQL from intent"})
+
 	// --- Serve docs/ folder at /docs endpoint for LLM auto-discovery ---
 	go func() {
 		// Documentation HTTP handler moved to main.go for embedded docs support
 	}()
 	log.JSONLog("info", "MCP server (SDK) running on stdio", nil)
+
 	// Register the discover-joins MCP tool
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name: "discover-joins",
@@ -133,6 +306,11 @@ Returns: list of join suggestions and summary.
 Example:
 {"profile_name":"analytics_db","tables":["orders","customers"]}`,
 	}, s.handleDiscoverJoins)
+	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "discover-joins", Description: `Discover joinable relationships (foreign keys) between tables and suggest JOIN SQL.
+Input: profile_name (required), tables (optional).
+Returns: list of join suggestions and summary.
+Example:
+{"profile_name":"analytics_db","tables":["orders","customers"]}`})
 	log.JSONLog("debug", "Registered MCP tool", map[string]interface{}{"name": "discover-joins", "description": "Discover joinable relationships"})
 
 	// Register the sample-data MCP tool
@@ -144,7 +322,24 @@ Returns: sample rows with column names and values.
 Example:
 {"profile_name":"analytics_db","table_name":"users","sample_size":5}`,
 	}, s.handleSampleData)
+	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "sample-data", Description: `Fetch sample rows from a table to help AI/agents infer data types, formats, and value ranges.
+Input: profile_name (required), table_name (required), database_name (optional), sample_size (optional, default: 3).
+Returns: sample rows with column names and values.
+Example:
+{"profile_name":"analytics_db","table_name":"users","sample_size":5}`})
 	log.JSONLog("debug", "Registered MCP tool", map[string]interface{}{"name": "sample-data", "description": "Fetch sample rows from table"})
+
+	// Register the list-tools MCP tool
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name: "list-tools",
+		Description: `List all available MCP tools and their descriptions.
+Example:
+{}`,
+	}, s.handleListTools)
+	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "list-tools", Description: `List all available MCP tools and their descriptions.
+Example:
+{}`})
+	log.JSONLog("debug", "Registered MCP tool", map[string]interface{}{"name": "list-tools", "description": "List all tools"})
 
 	return s.server.Run(context.Background(), mcp.NewStdioTransport())
 }
@@ -484,6 +679,45 @@ type SampleDataResult struct {
 	Columns    []string        `json:"columns"`
 	SampleRows [][]interface{} `json:"sample_rows"`
 	Summary    string          `json:"summary"`
+}
+
+// --- List Tools Types ---
+
+// ListToolsParams represents the parameters for the list-tools action
+type ListToolsParams struct {
+	// No parameters required
+}
+
+// ToolInfo represents information about a single tool
+type ToolInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// ListToolsResult represents the response from the list-tools action
+type ListToolsResult struct {
+	Tools []ToolInfo `json:"tools"`
+}
+
+func (s *MCPServer) handleListTools(
+	ctx context.Context,
+	session *mcp.ServerSession,
+	params *mcp.CallToolParamsFor[ListToolsParams],
+) (*mcp.CallToolResultFor[any], error) {
+	result := ListToolsResult{
+		Tools: s.toolsRegistry,
+	}
+	b, err := json.Marshal(result)
+	if err != nil {
+		return nil, err
+	}
+	return &mcp.CallToolResultFor[any]{
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: string(b),
+			},
+		},
+	}, nil
 }
 
 // --- MCP Handler Implementations ---

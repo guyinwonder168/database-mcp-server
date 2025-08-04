@@ -8,7 +8,7 @@ The Database MCP Server follows a layered architecture pattern with clear separa
 ┌─────────────────────────────────────┐
 │         MCP Client (AI Agent)       │
 └─────────────────┬───────────────────┘
-                  │ stdio/JSON-RPC
+                  │ stdio
 ┌─────────────────┴───────────────────┐
 │          MCP Server Layer           │
 │    (internal/mcp/server.go)         │
@@ -20,9 +20,9 @@ The Database MCP Server follows a layered architecture pattern with clear separa
 │  └─────────────┴─────────────────┘  │
 ├─────────────────────────────────────┤
 │         Infrastructure              │
-│  ┌──────┬──────┬────────────────┐  │
-│  │ Log  │ AES  │ DB Drivers     │  │
-│  └──────┴──────┴────────────────┘  │
+│  ┌──────┬──────┬────────────────┐   │
+│  │ Log  │ AES  │ DB Drivers     │   │
+│  └──────┴──────┴────────────────┘   │
 └─────────────────────────────────────┘
 ```
 
@@ -41,15 +41,16 @@ The Database MCP Server follows a layered architecture pattern with clear separa
   - Registers all MCP tools/actions
   - Routes requests to appropriate handlers
   - Uses official Go MCP SDK
-  - Handler methods (not found in current codebase):
+  - Handler methods:
     - handleConfigureProfile
     - handleListProfiles
     - handleExecuteSQL
     - handleListTables
     - handleDescribeTable
     - handleListDatabases
-    - handleMCPInfo (implemented)
+    - handleMCPInfo
     - handleSampleData
+    - handleListTools
 
 #### Configuration Management (internal/config/)
 - **config.go**: Profile and configuration management
@@ -141,3 +142,4 @@ database-mcp-provider/
 3. **SQL Execution**: MCP request → handleExecuteSQL → OpenConnection → Execute → Return results
 4. **Schema Discovery**: MCP request → handleListTables → Query information_schema → Return metadata
 5. **Sample Data Fetching**: MCP request → handleSampleData → OpenConnection → Execute LIMIT query → Return results
+6. **Tool Enumeration**: MCP request → handleListTools → Dynamic tool registry → Return tool list

@@ -34,7 +34,7 @@ The following features and requirements constitute the Minimum Viable Product (M
 - **Statelessness:** Connections opened per action and closed/pool returned immediately. **[PARTIAL / NEEDS REVIEW]**
 - **Error Handling:** All errors returned as structured JSON via MCP. **[DONE]**
 - **Logging:** Structured JSON logs to stdout/stderr and a log file (rotation/size limit not required for MVP). **[DONE]**
-- **Tool Discovery:** Implement a standard-compliant `list-tools` MCP action that outputs a complete, machine-readable schema of all available tools, parameters, and responses—matching the detail and structure of `mcp-openapi.yaml` and OpenAPI standards. **[NOT DONE]**
+- **Tool Discovery:** Implement a standard-compliant `list-tools` MCP action that outputs a complete, machine-readable schema of all available tools, parameters, and responses—matching the detail and structure of `mcp-openapi.yaml` and OpenAPI standards. **[DONE]**
 
 Features not listed above are not required for the MVP and may be implemented in future releases.
 
@@ -70,8 +70,11 @@ Features not listed above are not required for the MVP and may be implemented in
 
 ### 3.4 MCP Behavior
 
-- **Local and Remote Use:** Provider must function both locally and as a remote server. **[DONE]**
-  - **Status:** Implemented
+- **Local Use Only:** Provider runs as a local process and communicates via stdio using the official MCP protocol. Remote operation is not supported (no HTTP or network transport). **[DONE]**
+  - **Status:** Implemented (local stdio MCP protocol only)
+
+- **Communication Protocol:** All actions are invoked via the official MCP protocol over stdio. No HTTP server or JSON-RPC is provided or required. **[DONE]**
+  - **Status:** Implemented (official MCP protocol over stdio)
 
 - **Connection Pooling & Efficiency:** Database connections must be efficiently reused using Go's connection pool, with automatic tuning and a configurable maximum pool size set in `config.yaml`. **[DONE]**
   - **Status:** Implemented (uses SetMaxOpenConns/SetMaxIdleConns, value from config)
@@ -84,10 +87,11 @@ Features not listed above are not required for the MVP and may be implemented in
 - **list-tables:** List tables/views for a profile. Params: `profile_name`. Output: array of table/view names.
 - **describe-table:** Describe table schema. Params: `profile_name`, `table_name`. Output: columns with name, type, nullability, key info.
 - **Error Handling:** All actions return structured errors on failure, e.g., `{ "status": "error", "error_code": "...", "message": "..." }`.
-- **list-tools:** List all available MCP actions/tools.  
-  Params: _none_.  
-  Output: array of `{tool_name, description}`.  
+- **list-tools:** List all available MCP actions/tools.
+  Params: _none_.
+  Output: array of `{tool_name, description}`.
   Description: Returns a list of all MCP actions supported by the server, including their names and brief descriptions. Useful for clients and agents to discover available capabilities programmatically.
+  Communication: Invoked via the official MCP protocol over stdio (not HTTP, not JSON-RPC).
 
 ## 5. Non-Functional Requirements
 
@@ -131,6 +135,7 @@ Features not listed above are not required for the MVP and may be implemented in
 - Comprehensive unit tests are implemented for all features including automated join discovery.
 - Documentation has been updated for production readiness including comprehensive usage examples.
 - **Status: PRODUCTION READY** - All core features implemented, tested, and documented.
+- **All communication is via the official MCP protocol over stdio. No HTTP endpoints, port 8080, or JSON-RPC are provided.**
 
 ## 9. Remaining Actionable Tasks
 

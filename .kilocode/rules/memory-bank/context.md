@@ -19,14 +19,20 @@
 - ✅ AES-GCM password encryption
 - ✅ Connection pooling with configurable limits
 - ✅ Structured JSON logging with rotation
-- ✅ All MCP action handlers implemented and tested
+- ✅ All 9 MCP action handlers implemented and tested (including `list-tools`)
 - ✅ Comprehensive unit tests for all features
-- ✅ Production documentation updates
+- ✅ Production documentation updated for stdio/JSON-RPC implementation
 
 ### Known Issues
-- Documentation states production-ready but testing and docs marked as incomplete
+- None
 
 ## Recent Changes
+- Implemented `list-tools` MCP tool for dynamic tool enumeration, including:
+  - Data structures: `ListToolsParams`, `ToolInfo`, `ListToolsResult`
+  - Handler: `handleListTools`
+  - Dynamic tool registry for enumeration
+  - Comprehensive unit tests
+  - Updated OpenAPI and examples documentation
 - Implemented `sample-data` MCP tool for fetching sample rows from tables.
 - Added comprehensive unit and integration tests for the new tool.
 - Updated all relevant documentation, including `mcp-examples.md` and `prd.md`.
@@ -35,7 +41,7 @@
 ## Next Steps
 
 ### Immediate Priorities
-1. Update documentation for production readiness
+- Monitor for bug reports and user feedback
 
 ### Future Enhancements
 - Support for additional databases (SQL Server, Oracle, Redshift)
