@@ -11,7 +11,7 @@ Developers and AI agents face significant challenges when working with multiple 
 - Difficulty in providing database access to AI assistants safely
 
 ### Solution
-The Database MCP Server provides a unified conversational API that allows AI agents and developers to interact with any supported SQL database through standardized MCP actions, abstracting away database-specific complexities.
+The Database MCP Server provides a unified conversational API that allows AI agents and developers to interact with any supported SQL database through standardized MCP actions, abstracting away database-specific complexities. All 11 MCP tools and configuration scenarios are comprehensively documented, with usage examples for MySQL, MariaDB, PostgreSQL, and SQLite.
 
 ## How It Works
 
@@ -30,6 +30,7 @@ The Database MCP Server provides a unified conversational API that allows AI age
 - **Simple Integration**: Works with any MCP-compatible system
 - **Clear Error Messages**: Structured JSON errors for easy debugging
 - **Flexible Security**: Read-only mode for safe exploration
+- **Comprehensive Documentation**: All MCP tools and configuration scenarios are fully documented for easy onboarding
 
 #### For AI Agents
 - **Consistent Interface**: Same actions work across all database types
@@ -58,3 +59,4 @@ The Database MCP Server provides a unified conversational API that allows AI age
 - All database operations complete in < 5 seconds
 - 100% compatibility with MCP specification
 - Clear error messages for all failure scenarios
+- Comprehensive, up-to-date documentation for all features

@@ -67,6 +67,8 @@ go test ./...
        database_name: "database"
        readonly: false
    ```
+   - Configuration cleanup: obsolete user_key/user_secret fields have been removed for security and clarity.
+   - All database profile examples (MySQL, MariaDB, PostgreSQL, SQLite) are included in the documentation.
 
 ### Environment Variables
 - **DB_MCP_AES_KEY**: Optional, overrides config file AES key
@@ -172,3 +174,7 @@ go list -m -json all | nancy sleuth
 - No GUI interface (CLI and MCP only)
 - Single transaction per action (no multi-statement transactions)
 - Connection pool per process (not shared across instances)
+
+## Documentation
+
+- README.md provides comprehensive documentation for all 11 MCP tools, configuration scenarios, and usage examples for all supported databases.

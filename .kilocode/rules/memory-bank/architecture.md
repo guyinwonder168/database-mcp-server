@@ -38,7 +38,7 @@ The Database MCP Server follows a layered architecture pattern with clear separa
 
 #### MCP Server (internal/mcp/)
 - **server.go**: MCP server implementation
-  - Registers all MCP tools/actions
+  - Registers all MCP tools/actions (11 total, fully documented in README)
   - Routes requests to appropriate handlers
   - Uses official Go MCP SDK
   - Handler methods:
@@ -51,6 +51,8 @@ The Database MCP Server follows a layered architecture pattern with clear separa
     - handleMCPInfo
     - handleSampleData
     - handleListTools
+    - handleDeleteProfile
+    - handleUpdateProfile
 
 #### Configuration Management (internal/config/)
 - **config.go**: Profile and configuration management
@@ -59,6 +61,7 @@ The Database MCP Server follows a layered architecture pattern with clear separa
   - LoadConfig/SaveConfig: YAML file operations
   - PromptForProfiles: Interactive CLI setup
   - AES-GCM encryption/decryption helpers
+  - Configuration cleanup: user_key/user_secret fields removed for security and clarity
 
 #### Database Abstraction (internal/db/)
 - **driver.go**: Database connection management
@@ -143,3 +146,9 @@ database-mcp-provider/
 4. **Schema Discovery**: MCP request → handleListTables → Query information_schema → Return metadata
 5. **Sample Data Fetching**: MCP request → handleSampleData → OpenConnection → Execute LIMIT query → Return results
 6. **Tool Enumeration**: MCP request → handleListTools → Dynamic tool registry → Return tool list
+
+## Documentation and Error Handling
+
+- All 11 MCP tools are fully documented in README.md, including configuration and usage for all supported databases.
+- Enhanced schema introspection and structured error handling are implemented and documented.
+- Configuration cleanup ensures only relevant fields are present, improving security and maintainability.
