@@ -33,7 +33,8 @@ The following features and requirements constitute the Minimum Viable Product (M
 - **Configuration:** Profiles persisted in `config.yaml`. **[DONE]**
 - **Statelessness:** Connections opened per action and closed/pool returned immediately. **[PARTIAL / NEEDS REVIEW]**
 - **Error Handling:** All errors returned as structured JSON via MCP. **[DONE]**
-- **Logging:** Structured JSON logs to stdout/stderr and a log file (rotation/size limit not required for MVP). **[PARTIAL / NOT DONE]**
+- **Logging:** Structured JSON logs to stdout/stderr and a log file (rotation/size limit not required for MVP). **[DONE]**
+- **Tool Discovery:** Implement a standard-compliant `list-tools` MCP action that outputs a complete, machine-readable schema of all available tools, parameters, and responses—matching the detail and structure of `mcp-openapi.yaml` and OpenAPI standards. **[NOT DONE]**
 
 Features not listed above are not required for the MVP and may be implemented in future releases.
 
@@ -83,6 +84,10 @@ Features not listed above are not required for the MVP and may be implemented in
 - **list-tables:** List tables/views for a profile. Params: `profile_name`. Output: array of table/view names.
 - **describe-table:** Describe table schema. Params: `profile_name`, `table_name`. Output: columns with name, type, nullability, key info.
 - **Error Handling:** All actions return structured errors on failure, e.g., `{ "status": "error", "error_code": "...", "message": "..." }`.
+- **list-tools:** List all available MCP actions/tools.  
+  Params: _none_.  
+  Output: array of `{tool_name, description}`.  
+  Description: Returns a list of all MCP actions supported by the server, including their names and brief descriptions. Useful for clients and agents to discover available capabilities programmatically.
 
 ## 5. Non-Functional Requirements
 
@@ -167,7 +172,7 @@ Features not listed above are not required for the MVP and may be implemented in
    - ✅ Supports all databases with configurable sample size
    - ✅ Includes comprehensive unit tests, integration tests, and documentation
 
-6. **Error Feedback Loop**
+6. **Error Feedback Loop** ✅ **COMPLETED**
    - When a query fails (e.g., missing column/table), return a structured error with suggestions or schema hints.
    - Enables AI/agents to self-correct and retry without human intervention.
 

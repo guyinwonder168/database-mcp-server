@@ -857,7 +857,6 @@ func TestSampleDataResultStructure(t *testing.T) {
 			{1, "Alice", "alice@example.com"},
 			{2, "Bob", "bob@example.com"},
 		},
-		Summary: "Retrieved 2 sample row(s) from table 'users' with 3 column(s).",
 	}
 
 	if result.TableName != "users" {

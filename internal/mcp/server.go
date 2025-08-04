@@ -1014,6 +1014,22 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, session *mcp.ServerSes
 		}
 		defer stmt.Close()
 		rows, err = stmt.Query(p.Params...)
+		if err != nil {
+			log.JSONLog("error", "Failed to execute prepared query", map[string]interface{}{"sql": p.SQL, "params": p.Params, "error": err})
+			structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
+				"profile_name": p.ProfileName,
+				"sql":          p.SQL,
+				"operation":    "prepared_query",
+				"db_type":      prof.DBType,
+			})
+			return &mcp.CallToolResultFor[any]{
+				Content: []mcp.Content{
+					&mcp.TextContent{
+						Text: structErr.ToJSON(),
+					},
+				},
+			}, nil
+		}
 	} else {
 		rows, err = conn.Query(p.SQL)
 	}
@@ -1111,6 +1127,22 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, session *mcp.ServerSes
 		}
 		defer stmt.Close()
 		res, err = stmt.Exec(p.Params...)
+		if err != nil {
+			log.JSONLog("error", "Failed to execute prepared statement", map[string]interface{}{"sql": p.SQL, "params": p.Params, "error": err})
+			structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
+				"profile_name": p.ProfileName,
+				"sql":          p.SQL,
+				"operation":    "prepared_exec",
+				"db_type":      prof.DBType,
+			})
+			return &mcp.CallToolResultFor[any]{
+				Content: []mcp.Content{
+					&mcp.TextContent{
+						Text: structErr.ToJSON(),
+					},
+				},
+			}, nil
+		}
 	} else {
 		res, err = conn.Exec(p.SQL)
 	}

@@ -129,45 +129,45 @@ func (a *ErrorAnalyzer) AnalyzeError(err error, context map[string]interface{}) 
 	// Check for specific error patterns
 	switch {
 	case strings.Contains(errMsg, "profile not found"):
-		return a.handleProfileNotFound(errMsg, context)
+		return a.handleProfileNotFound(context)
 
 	case strings.Contains(errMsg, "no such table") || strings.Contains(errMsg, "table") && strings.Contains(errMsg, "does not exist"):
-		return a.handleTableNotFound(errMsg, context)
+		return a.handleTableNotFound(context)
 
 	case strings.Contains(errMsg, "no such column") || strings.Contains(errMsg, "column") && strings.Contains(errMsg, "does not exist"):
-		return a.handleColumnNotFound(errMsg, context)
+		return a.handleColumnNotFound(context)
 
 	case strings.Contains(errMsg, "syntax error") || strings.Contains(errMsg, "SQL syntax"):
-		return a.handleSQLSyntaxError(errMsg, context)
+		return a.handleSQLSyntaxError(context)
 
 	case strings.Contains(errMsg, "denied") || strings.Contains(errMsg, "permission"):
-		return a.handlePermissionDenied(errMsg, context)
+		return a.handlePermissionDenied(context)
 
 	case strings.Contains(errMsg, "read-only") || strings.Contains(errMsg, "readonly"):
-		return a.handleReadOnlyViolation(errMsg, context)
+		return a.handleReadOnlyViolation(context)
 
 	case strings.Contains(errMsg, "constraint") || strings.Contains(errMsg, "foreign key"):
-		return a.handleConstraintViolation(errMsg, context)
+		return a.handleConstraintViolation(context)
 
 	case strings.Contains(errMsg, "connection") || strings.Contains(errMsg, "connect"):
-		return a.handleConnectionError(errMsg, context)
+		return a.handleConnectionError(context)
 
 	case strings.Contains(errMsg, "database") && (strings.Contains(errMsg, "does not exist") || strings.Contains(errMsg, "not found")):
-		return a.handleDatabaseNotFound(errMsg, context)
+		return a.handleDatabaseNotFound(context)
 
 	case strings.Contains(errMsg, "data type") || strings.Contains(errMsg, "type mismatch"):
-		return a.handleDataTypeMismatch(errMsg, context)
+		return a.handleDataTypeMismatch(context)
 
 	case strings.Contains(errMsg, "unsupported db_type"):
-		return a.handleUnsupportedDatabase(errMsg, context)
+		return a.handleUnsupportedDatabase(context)
 
 	default:
-		return a.handleUnknownError(errMsg, context)
+		return a.handleUnknownError(context)
 	}
 }
 
 // handleProfileNotFound handles profile not found errors
-func (a *ErrorAnalyzer) handleProfileNotFound(errMsg string, context map[string]interface{}) *StructuredError {
+func (a *ErrorAnalyzer) handleProfileNotFound(context map[string]interface{}) *StructuredError {
 	profileName := ""
 	if name, ok := context["profile_name"].(string); ok {
 		profileName = name
@@ -196,9 +196,9 @@ func (a *ErrorAnalyzer) handleProfileNotFound(errMsg string, context map[string]
 }
 
 // handleTableNotFound handles table not found errors
-func (a *ErrorAnalyzer) handleTableNotFound(errMsg string, context map[string]interface{}) *StructuredError {
+func (a *ErrorAnalyzer) handleTableNotFound(context map[string]interface{}) *StructuredError {
 	// Extract table name from error message
-	tableName := extractTableName(errMsg)
+	tableName := extractTableName(fmt.Sprint(context["error"]))
 	if tn, ok := context["table_name"].(string); ok && tableName == "" {
 		tableName = tn
 	}
@@ -241,10 +241,10 @@ func (a *ErrorAnalyzer) handleTableNotFound(errMsg string, context map[string]in
 }
 
 // handleColumnNotFound handles column not found errors
-func (a *ErrorAnalyzer) handleColumnNotFound(errMsg string, context map[string]interface{}) *StructuredError {
+func (a *ErrorAnalyzer) handleColumnNotFound(context map[string]interface{}) *StructuredError {
 	// Extract column and table names from error message
-	columnName := extractColumnName(errMsg)
-	tableName := extractTableName(errMsg)
+	columnName := extractColumnName(fmt.Sprint(context["error"]))
+	tableName := extractTableName(fmt.Sprint(context["error"]))
 
 	if cn, ok := context["column_name"].(string); ok && columnName == "" {
 		columnName = cn
@@ -291,11 +291,11 @@ func (a *ErrorAnalyzer) handleColumnNotFound(errMsg string, context map[string]i
 }
 
 // handleSQLSyntaxError handles SQL syntax errors
-func (a *ErrorAnalyzer) handleSQLSyntaxError(errMsg string, context map[string]interface{}) *StructuredError {
+func (a *ErrorAnalyzer) handleSQLSyntaxError(context map[string]interface{}) *StructuredError {
 	err := NewStructuredError(
 		ErrorCodeSQLSyntax,
 		"SQL syntax error",
-		errMsg,
+		fmt.Sprint(context["error"]),
 	)
 
 	sql := ""
@@ -350,7 +350,7 @@ func (a *ErrorAnalyzer) handleSQLSyntaxError(errMsg string, context map[string]i
 }
 
 // handleReadOnlyViolation handles read-only profile violations
-func (a *ErrorAnalyzer) handleReadOnlyViolation(errMsg string, context map[string]interface{}) *StructuredError {
+func (a *ErrorAnalyzer) handleReadOnlyViolation(context map[string]interface{}) *StructuredError {
 	err := NewStructuredError(
 		ErrorCodeReadOnlyViolation,
 		"Read-only profile violation",
@@ -424,11 +424,11 @@ func extractColumnName(errMsg string) string {
 
 // Additional error handlers...
 
-func (a *ErrorAnalyzer) handlePermissionDenied(errMsg string, context map[string]interface{}) *StructuredError {
+func (a *ErrorAnalyzer) handlePermissionDenied(context map[string]interface{}) *StructuredError {
 	err := NewStructuredError(
 		ErrorCodePermissionDenied,
 		"Permission denied",
-		errMsg,
+		fmt.Sprint(context["error"]),
 	)
 
 	err.WithSuggestions(
@@ -445,11 +445,11 @@ func (a *ErrorAnalyzer) handlePermissionDenied(errMsg string, context map[string
 	return err
 }
 
-func (a *ErrorAnalyzer) handleConstraintViolation(errMsg string, context map[string]interface{}) *StructuredError {
+func (a *ErrorAnalyzer) handleConstraintViolation(context map[string]interface{}) *StructuredError {
 	err := NewStructuredError(
 		ErrorCodeConstraintViolation,
 		"Database constraint violation",
-		errMsg,
+		fmt.Sprint(context["error"]),
 	)
 
 	err.WithSuggestions(
@@ -466,11 +466,11 @@ func (a *ErrorAnalyzer) handleConstraintViolation(errMsg string, context map[str
 	return err
 }
 
-func (a *ErrorAnalyzer) handleConnectionError(errMsg string, context map[string]interface{}) *StructuredError {
+func (a *ErrorAnalyzer) handleConnectionError(context map[string]interface{}) *StructuredError {
 	err := NewStructuredError(
 		ErrorCodeConnectionFailed,
 		"Database connection failed",
-		errMsg,
+		fmt.Sprint(context["error"]),
 	)
 
 	err.WithSuggestions(
@@ -491,7 +491,7 @@ func (a *ErrorAnalyzer) handleConnectionError(errMsg string, context map[string]
 	return err
 }
 
-func (a *ErrorAnalyzer) handleDatabaseNotFound(errMsg string, context map[string]interface{}) *StructuredError {
+func (a *ErrorAnalyzer) handleDatabaseNotFound(context map[string]interface{}) *StructuredError {
 	dbName := ""
 	if dn, ok := context["database_name"].(string); ok {
 		dbName = dn
@@ -523,11 +523,11 @@ func (a *ErrorAnalyzer) handleDatabaseNotFound(errMsg string, context map[string
 	return err
 }
 
-func (a *ErrorAnalyzer) handleDataTypeMismatch(errMsg string, context map[string]interface{}) *StructuredError {
+func (a *ErrorAnalyzer) handleDataTypeMismatch(context map[string]interface{}) *StructuredError {
 	err := NewStructuredError(
 		ErrorCodeDataTypeMismatch,
 		"Data type mismatch",
-		errMsg,
+		fmt.Sprint(context["error"]),
 	)
 
 	tableName := ""
@@ -559,7 +559,7 @@ func (a *ErrorAnalyzer) handleDataTypeMismatch(errMsg string, context map[string
 	return err
 }
 
-func (a *ErrorAnalyzer) handleUnsupportedDatabase(errMsg string, context map[string]interface{}) *StructuredError {
+func (a *ErrorAnalyzer) handleUnsupportedDatabase(context map[string]interface{}) *StructuredError {
 	dbType := ""
 	if dt, ok := context["db_type"].(string); ok {
 		dbType = dt
@@ -585,11 +585,11 @@ func (a *ErrorAnalyzer) handleUnsupportedDatabase(errMsg string, context map[str
 	return err
 }
 
-func (a *ErrorAnalyzer) handleUnknownError(errMsg string, context map[string]interface{}) *StructuredError {
+func (a *ErrorAnalyzer) handleUnknownError(context map[string]interface{}) *StructuredError {
 	return NewStructuredError(
 		ErrorCodeUnknownError,
 		"An unexpected error occurred",
-		errMsg,
+		fmt.Sprint(context["error"]),
 	).WithSuggestions(
 		ErrorSuggestion{
 			Action:      "Check error details",
