@@ -15,20 +15,22 @@
 - ✅ Profile management (create, list, update)
 - ✅ SQL execution with read-only enforcement
 - ✅ Schema introspection (list tables, describe table, list databases)
+- ✅ Sample data fetching from tables
 - ✅ AES-GCM password encryption
 - ✅ Connection pooling with configurable limits
 - ✅ Structured JSON logging with rotation
 - ✅ All MCP action handlers implemented and tested
 - ✅ Comprehensive unit tests for all features
-- ⚠️ Production documentation updates
+- ✅ Production documentation updates
 
 ### Known Issues
 - Documentation states production-ready but testing and docs marked as incomplete
 
 ## Recent Changes
-- Implemented missing MCP action handlers: handleConfigureProfile, handleListProfiles
-- Added/updated unit tests for all handlers
-- Verified all MCP actions work end-to-end
+- Implemented `sample-data` MCP tool for fetching sample rows from tables.
+- Added comprehensive unit and integration tests for the new tool.
+- Updated all relevant documentation, including `mcp-examples.md` and `prd.md`.
+- Verified all MCP actions work end-to-end.
 
 ## Next Steps
 

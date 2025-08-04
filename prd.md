@@ -122,10 +122,54 @@ Features not listed above are not required for the MVP and may be implemented in
 ## 8. Implementation & Testing Status
 
 - All MVP features are implemented and enforced in code.
-- Unit tests for read-only enforcement are present, but comprehensive tests for all features are **IN PROGRESS**.
-- Documentation update for production readiness is **IN PROGRESS**.
+- All AI/Agent-driven MCP server enhancements (items 1-4) are **COMPLETED**.
+- Comprehensive unit tests are implemented for all features including automated join discovery.
+- Documentation has been updated for production readiness including comprehensive usage examples.
+- **Status: PRODUCTION READY** - All core features implemented, tested, and documented.
 
 ## 9. Remaining Actionable Tasks
 
-- [ ] Write and run comprehensive tests for all features
-- [ ] Update documentation for production readiness
+- [x] Write and run comprehensive tests for all features
+- [x] Update documentation for production readiness
+- [x] Implement automated join discovery with full testing and documentation
+
+**Current Focus:** Items 5-6 (Sample Data Tool and Error Feedback Loop) for future enhancements.
+
+
+# TODO: AI/Agent-Driven MCP Server Enhancements
+
+1. **Schema Introspection Tool** ✅ **COMPLETED**
+   - ✅ Enhanced describe-table tool with comprehensive column metadata
+   - ✅ Retrieves column names, types, comments, defaults, constraints, and database-specific metadata
+   - ✅ Supports MySQL/MariaDB, PostgreSQL, and SQLite with optimized queries
+   - ✅ Enables AI/agents to discover rich schema information and build intelligent queries
+
+2. **Smart Query Builder Tool** ✅ **COMPLETED**
+   - MCP tool implemented: takes a high-level intent (e.g., "attendance dashboard") and generates optimized SQL by analyzing the schema.
+   - Reduces the need for manual SQL authoring. Documentation and tests included.
+
+3. **SQL Execution: Execute arbitrary SQL queries with read-only enforcement option** ✅ **COMPLETED**
+    - MCP action `execute-sql` implemented with parameterized query support, robust read-only enforcement, structured results, error handling, logging, and documentation.
+    - Comprehensive unit tests for SELECT, INSERT, and read-only enforcement for all supported databases.
+
+4. **Automated Join Discovery** ✅ **COMPLETED**
+   - ✅ MCP tool `discover-joins` implemented with comprehensive foreign key relationship discovery
+   - ✅ Supports MySQL, MariaDB, PostgreSQL, and SQLite with database-specific metadata extraction
+   - ✅ Generates suggested JOIN SQL statements for discovered relationships
+   - ✅ Includes smart table filtering and human-readable summaries
+   - ✅ Comprehensive unit tests and integration tests with edge case coverage
+   - ✅ Full documentation with usage examples and practical workflows
+   - ✅ Ensures correct and efficient multi-table queries through programmatic relationship discovery
+
+5. **Sample Data Tool** ✅ **COMPLETED**
+   - ✅ MCP tool `sample-data` implemented for fetching sample rows from any table
+   - ✅ Helps AI/agents infer data types, formats, and value ranges
+   - ✅ Supports all databases with configurable sample size
+   - ✅ Includes comprehensive unit tests, integration tests, and documentation
+
+6. **Error Feedback Loop**
+   - When a query fails (e.g., missing column/table), return a structured error with suggestions or schema hints.
+   - Enables AI/agents to self-correct and retry without human intervention.
+
+---
+(Memory Bank: These are the next priorities for making the MCP server fully autonomous and AI/agent-friendly.)

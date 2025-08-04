@@ -49,6 +49,7 @@ The Database MCP Server follows a layered architecture pattern with clear separa
     - handleDescribeTable
     - handleListDatabases
     - handleMCPInfo (implemented)
+    - handleSampleData
 
 #### Configuration Management (internal/config/)
 - **config.go**: Profile and configuration management
@@ -139,3 +140,4 @@ database-mcp-provider/
 2. **Profile Management**: MCP request → handleConfigureProfile → LoadConfig → SaveConfig
 3. **SQL Execution**: MCP request → handleExecuteSQL → OpenConnection → Execute → Return results
 4. **Schema Discovery**: MCP request → handleListTables → Query information_schema → Return metadata
+5. **Sample Data Fetching**: MCP request → handleSampleData → OpenConnection → Execute LIMIT query → Return results

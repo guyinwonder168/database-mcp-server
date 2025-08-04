@@ -17,6 +17,7 @@ A production-ready Model Context Protocol (MCP) provider for SQL databases, writ
 - **SQL Execution:** Run arbitrary SQL queries (with read-only enforcement) via MCP.
 - **Table & Database Listing:** List tables/views and databases/schemas for any configured profile.
 - **Describe Table:** Get column metadata for any table.
+- **Automated Join Discovery:** Discover foreign key relationships and suggest JOIN SQL for building complex queries.
 - **Read-only Profiles:** Prevent write operations on selected profiles.
 - **Secure Credentials:** Passwords are encrypted at rest using AES-GCM with a key from the `aes_key` field in config.yaml.
 - **Connection Pooling:** Efficient, configurable pooling with max pool size set in `config.yaml`.
@@ -47,6 +48,8 @@ A production-ready Model Context Protocol (MCP) provider for SQL databases, writ
    - `list-tables`
    - `describe-table`
    - `list-databases`
+   - `discover-joins`
+   - `smart-query-builder`
    - `mcp-info`
 
 ---
@@ -239,3 +242,10 @@ go test ./...
 
 - CI runs build, test, and lint checks on every PR.
 - MCP compliance is validated by integration tests.
+## [2025-08-02] Update: Explicit Database Name Required for Table Introspection
+
+- The `describe-table` MCP tool now **always requires both `database_name` and `table_name` as input**.
+- The profile's default database is never used for table introspection.
+- The DESCRIBE query is constructed as `DESCRIBE database_name.table_name` for MySQL/MariaDB.
+- This change ensures explicit, unambiguous table introspection and prevents errors when the default database is not set or is incorrect.
+- All documentation and OpenAPI specs should reflect this requirement.

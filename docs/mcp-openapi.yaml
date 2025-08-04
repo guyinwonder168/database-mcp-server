@@ -111,6 +111,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ListDatabasesResult'
+ /smart-query-builder:
+   post:
+     summary: Generate optimized SQL from high-level intent and schema analysis
+     description: |
+       Takes a natural language intent and generates appropriate SQL by analyzing database schema.
+       Uses keyword matching to select relevant tables and columns.
+     requestBody:
+       required: true
+       content:
+         application/json:
+           schema:
+             $ref: '#/components/schemas/SmartQueryBuilderParams'
+     responses:
+       '200':
+         description: Success
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/SmartQueryBuilderResult'
+       '400':
+         description: Error - No table matches intent
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
     ConfigureProfileParams:
@@ -197,3 +222,50 @@ components:
           type: array
           items:
             type: string
+   SmartQueryBuilderParams:
+     type: object
+     required:
+       - profile_name
+       - intent
+     properties:
+       profile_name:
+         type: string
+         description: Name of the database profile to use
+       intent:
+         type: string
+         description: High-level intent or description in natural language
+         example: "attendance dashboard"
+       database_name:
+         type: string
+         description: Optional database name override
+       table_names:
+         type: array
+         items:
+           type: string
+         description: Optional specific table names to consider
+   SmartQueryBuilderResult:
+     type: object
+     properties:
+       sql:
+         type: string
+         description: Generated SQL query
+         example: "SELECT id, name, date FROM attendance;"
+       explanation:
+         type: string
+         description: Explanation of how the query was generated
+         example: "Selected table 'attendance' based on keywords from intent 'attendance dashboard'."
+   ErrorResponse:
+     type: object
+     properties:
+       status:
+         type: string
+         example: "error"
+       error_code:
+         type: string
+         example: "NO_TABLE_MATCH"
+       message:
+         type: string
+         example: "No table found matching the intent for query generation. Available tables: users, reports, logs."
+# [2025-08-02] CHANGE: describe-table now requires both database_name and table_name as input parameters.
+# The profile's default database is ignored for this operation.
+# [2025-08-04] ADDED: smart-query-builder tool for generating SQL from natural language intent.

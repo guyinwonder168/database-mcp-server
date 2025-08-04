@@ -20,7 +20,8 @@ The Database MCP Server provides a unified conversational API that allows AI age
 2. **Profile Management**: Users can add/update database connections via MCP actions
 3. **Query Execution**: AI agents execute SQL queries through the `execute-sql` action
 4. **Schema Discovery**: Agents can explore database structure via introspection actions
-5. **Secure Operation**: All credentials encrypted at rest, connections managed per-action
+5. **Sample Data Fetching**: Agents can fetch sample rows to infer data formats and value ranges.
+6. **Secure Operation**: All credentials encrypted at rest, connections managed per-action
 
 ### User Experience Goals
 
@@ -33,6 +34,7 @@ The Database MCP Server provides a unified conversational API that allows AI age
 #### For AI Agents
 - **Consistent Interface**: Same actions work across all database types
 - **Discoverable Schema**: Can explore tables and columns programmatically
+- **Sample Data**: Can fetch sample rows to understand data formats and values before querying.
 - **Safe Operations**: Read-only enforcement prevents accidental data loss
 - **Contextual Responses**: Rich metadata in all responses
 

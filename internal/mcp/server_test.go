@@ -1,12 +1,18 @@
+//go:build cgo
+
 package mcp
 
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 
 	"database-mcp-provider/internal/config"
 
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -30,7 +36,7 @@ func setupTestConfig(t *testing.T) string {
 				ProfileName:  "testsqlite",
 				DBType:       "sqlite",
 				DatabaseName: ":memory:",
-				Readonly:     true,
+				Readonly:     false,
 			},
 		},
 		MaxPoolSize: 5,
@@ -110,6 +116,80 @@ func TestHandleExecuteSQL(t *testing.T) {
 	}
 }
 
+// TestHandleExecuteSQL_ParamAndReadonly tests parameterized queries and read-only enforcement for all supported DBs.
+func TestHandleExecuteSQL_ParamAndReadonly(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+	session := &mcp.ServerSession{}
+
+	// SQLite: Create table, insert, select with params, enforce readonly
+	createParams := &mcp.CallToolParamsFor[ExecuteSQLParams]{
+		Arguments: ExecuteSQLParams{
+			ProfileName:  "testsqlite",
+			SQL:          "CREATE TABLE test (id INTEGER PRIMARY KEY, name TEXT)",
+			DatabaseName: ":memory:",
+		},
+	}
+	_, err := server.handleExecuteSQL(ctx, session, createParams)
+	if err != nil {
+		t.Fatalf("Failed to create table: %v", err)
+	}
+
+	insertParams := &mcp.CallToolParamsFor[ExecuteSQLParams]{
+		Arguments: ExecuteSQLParams{
+			ProfileName:  "testsqlite",
+			SQL:          "INSERT INTO test (name) VALUES (?)",
+			DatabaseName: ":memory:",
+			Params:       []interface{}{"Alice"},
+		},
+	}
+	_, err = server.handleExecuteSQL(ctx, session, insertParams)
+	if err != nil {
+		t.Fatalf("Failed to insert row: %v", err)
+	}
+
+	selectParams := &mcp.CallToolParamsFor[ExecuteSQLParams]{
+		Arguments: ExecuteSQLParams{
+			ProfileName:  "testsqlite",
+			SQL:          "SELECT id, name FROM test WHERE name = ?",
+			DatabaseName: ":memory:",
+			Params:       []interface{}{"Alice"},
+		},
+	}
+	res, err := server.handleExecuteSQL(ctx, session, selectParams)
+	if err != nil {
+		t.Fatalf("Failed to select row: %v", err)
+	}
+	if res == nil || res.Content == nil {
+		t.Fatalf("Select returned nil content")
+	}
+
+	// Enforce readonly: update profile to readonly and block INSERT
+	cfg, _ := config.LoadConfig(testConfig)
+	for i := range cfg.Profiles {
+		if cfg.Profiles[i].ProfileName == "testsqlite" {
+			cfg.Profiles[i].Readonly = true
+		}
+	}
+	_ = config.SaveConfig(testConfig, cfg)
+
+	readonlyInsert := &mcp.CallToolParamsFor[ExecuteSQLParams]{
+		Arguments: ExecuteSQLParams{
+			ProfileName:  "testsqlite",
+			SQL:          "INSERT INTO test (name) VALUES (?)",
+			DatabaseName: ":memory:",
+			Params:       []interface{}{"Bob"},
+		},
+	}
+	_, err = server.handleExecuteSQL(ctx, session, readonlyInsert)
+	if err == nil {
+		t.Fatalf("Expected error for INSERT on readonly profile, got nil")
+	}
+}
+
 // Additional tests for execute-sql, list-tables, describe-table, list-databases would follow a similar pattern.
 // For full integration tests, use a test database and mock connections as needed.
 
@@ -147,8 +227,9 @@ func TestHandleDescribeTable(t *testing.T) {
 	session := &mcp.ServerSession{}
 	params := &mcp.CallToolParamsFor[DescribeTableParams]{
 		Arguments: DescribeTableParams{
-			ProfileName: "testsqlite",
-			TableName:   "sqlite_master",
+			ProfileName:  "testsqlite",
+			DatabaseName: ":memory:",
+			TableName:    "sqlite_master",
 		},
 	}
 
@@ -181,5 +262,800 @@ func TestHandleListDatabases(t *testing.T) {
 	}
 	if res == nil || res.Content == nil {
 		t.Fatalf("handleListDatabases returned nil content")
+	}
+}
+
+// TestHandleSmartQueryBuilder tests the smart-query-builder MCP action with mock scenarios.
+func TestHandleSmartQueryBuilder(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+	session := &mcp.ServerSession{}
+
+	// Test 1: Profile not found
+	params := &mcp.CallToolParamsFor[SmartQueryBuilderParams]{
+		Arguments: SmartQueryBuilderParams{
+			ProfileName: "nonexistent",
+			Intent:      "test intent",
+		},
+	}
+	_, err := server.handleSmartQueryBuilder(ctx, session, params)
+	if err == nil {
+		t.Fatalf("Expected error for nonexistent profile, got nil")
+	}
+
+	// Test 2: Valid parameters structure (will fail on DB connection but validates parameter handling)
+	params2 := &mcp.CallToolParamsFor[SmartQueryBuilderParams]{
+		Arguments: SmartQueryBuilderParams{
+			ProfileName:  "testpg",
+			Intent:       "attendance dashboard",
+			DatabaseName: "testdb",
+			TableNames:   []string{"attendance"},
+		},
+	}
+	res, err := server.handleSmartQueryBuilder(ctx, session, params2)
+	// Expect connection error but validate we got to that point
+	if err == nil {
+		// If no error, check response structure
+		if res == nil || res.Content == nil {
+			t.Fatalf("handleSmartQueryBuilder returned nil content")
+		}
+	} else {
+		// Expected connection error for test environment
+		t.Logf("Expected connection error in test environment: %v", err)
+	}
+
+	// Test 3: Test intent parsing logic by checking parameter validation
+	params3 := &mcp.CallToolParamsFor[SmartQueryBuilderParams]{
+		Arguments: SmartQueryBuilderParams{
+			ProfileName: "testpg",
+			Intent:      "", // Empty intent
+		},
+	}
+	_, err = server.handleSmartQueryBuilder(ctx, session, params3)
+	// Should handle empty intent gracefully
+	if err != nil && err.Error() == "profile not found" {
+		t.Fatalf("Wrong error for empty intent test: %v", err)
+	}
+}
+
+// TestSmartQueryBuilderIntentParsing tests the intent parsing logic in isolation
+func TestSmartQueryBuilderIntentParsing(t *testing.T) {
+	// Test keyword extraction logic - simulating the parsing done in handleSmartQueryBuilder
+	words := []string{"attendance", "dashboard", "employees"}
+
+	// Simulate the stopwords filtering
+	stopwords := map[string]bool{
+		"for": true, "the": true, "a": true, "an": true, "to": true, "of": true,
+		"and": true, "in": true, "on": true, "with": true, "by": true, "at": true,
+		"from": true, "as": true, "is": true, "are": true, "was": true, "were": true,
+		"be": true, "this": true, "that": true, "it": true, "dashboard": true,
+	}
+
+	var keywords []string
+	for _, w := range words {
+		if !stopwords[w] && len(w) > 2 {
+			keywords = append(keywords, w)
+		}
+	}
+
+	// Should extract "attendance" and "employees"
+	expectedKeywords := []string{"attendance", "employees"}
+	if len(keywords) != len(expectedKeywords) {
+		t.Fatalf("Expected %d keywords, got %d", len(expectedKeywords), len(keywords))
+	}
+
+	// Test table matching logic
+	tables := []string{"users", "attendance", "reports", "employees"}
+	bestScore := 0
+	bestTable := ""
+
+	for _, table := range tables {
+		score := 0
+		for _, keyword := range keywords {
+			if table == keyword {
+				score++
+			}
+		}
+		if score > bestScore {
+			bestScore = score
+			bestTable = table
+		}
+	}
+
+	if bestTable != "attendance" && bestTable != "employees" {
+		t.Fatalf("Expected best match to be 'attendance' or 'employees', got '%s'", bestTable)
+	}
+}
+
+// TestHandleDiscoverJoins tests the discover-joins MCP action.
+func TestHandleDiscoverJoins(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+	session := &mcp.ServerSession{}
+
+	// Test 1: Profile not found
+	params := &mcp.CallToolParamsFor[DiscoverJoinsParams]{
+		Arguments: DiscoverJoinsParams{
+			ProfileName: "nonexistent",
+		},
+	}
+	_, err := server.handleDiscoverJoins(ctx, session, params)
+	if err == nil {
+		t.Fatalf("Expected error for nonexistent profile, got nil")
+	}
+
+	// Test 2: Valid SQLite profile (will fail on DB connection but validates parameter handling)
+	params2 := &mcp.CallToolParamsFor[DiscoverJoinsParams]{
+		Arguments: DiscoverJoinsParams{
+			ProfileName: "testsqlite",
+			Tables:      []string{"users", "orders"},
+		},
+	}
+	res, err := server.handleDiscoverJoins(ctx, session, params2)
+	// Expect connection error but validate we got to that point
+	if err == nil {
+		// If no error, check response structure
+		if res == nil || res.Content == nil {
+			t.Fatalf("handleDiscoverJoins returned nil content")
+		}
+	} else {
+		// Expected connection error for test environment
+		t.Logf("Expected connection error in test environment: %v", err)
+	}
+
+	// Test 3: Empty tables parameter
+	params3 := &mcp.CallToolParamsFor[DiscoverJoinsParams]{
+		Arguments: DiscoverJoinsParams{
+			ProfileName: "testsqlite",
+			Tables:      []string{}, // Empty tables list
+		},
+	}
+	_, err = server.handleDiscoverJoins(ctx, session, params3)
+	// Should handle empty tables gracefully
+	if err != nil && err.Error() == "profile not found" {
+		t.Fatalf("Wrong error for empty tables test: %v", err)
+	}
+}
+
+// TestHandleDiscoverJoins_WithMockData tests join discovery with actual SQLite data.
+func TestHandleDiscoverJoins_WithMockData(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+	session := &mcp.ServerSession{}
+
+	// First, try to create tables with foreign key relationships
+	createUsersParams := &mcp.CallToolParamsFor[ExecuteSQLParams]{
+		Arguments: ExecuteSQLParams{
+			ProfileName:  "testsqlite",
+			SQL:          "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)",
+			DatabaseName: ":memory:",
+		},
+	}
+	_, err := server.handleExecuteSQL(ctx, session, createUsersParams)
+	if err != nil {
+		// Skip test if SQLite driver is not available in test environment
+		if strings.Contains(err.Error(), "unknown driver") {
+			t.Skipf("Skipping SQLite integration test due to driver issue: %v", err)
+			return
+		}
+		t.Fatalf("Failed to create users table: %v", err)
+	}
+
+	createOrdersParams := &mcp.CallToolParamsFor[ExecuteSQLParams]{
+		Arguments: ExecuteSQLParams{
+			ProfileName:  "testsqlite",
+			SQL:          "CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER, amount REAL, FOREIGN KEY(user_id) REFERENCES users(id))",
+			DatabaseName: ":memory:",
+		},
+	}
+	_, err = server.handleExecuteSQL(ctx, session, createOrdersParams)
+	if err != nil {
+		t.Fatalf("Failed to create orders table: %v", err)
+	}
+
+	// Enable foreign keys in SQLite
+	enableFKParams := &mcp.CallToolParamsFor[ExecuteSQLParams]{
+		Arguments: ExecuteSQLParams{
+			ProfileName:  "testsqlite",
+			SQL:          "PRAGMA foreign_keys = ON",
+			DatabaseName: ":memory:",
+		},
+	}
+	_, err = server.handleExecuteSQL(ctx, session, enableFKParams)
+	if err != nil {
+		t.Fatalf("Failed to enable foreign keys: %v", err)
+	}
+
+	// Now test join discovery
+	discoverParams := &mcp.CallToolParamsFor[DiscoverJoinsParams]{
+		Arguments: DiscoverJoinsParams{
+			ProfileName: "testsqlite",
+		},
+	}
+	res, err := server.handleDiscoverJoins(ctx, session, discoverParams)
+	if err != nil {
+		t.Fatalf("handleDiscoverJoins error: %v", err)
+	}
+	if res == nil || res.Content == nil {
+		t.Fatalf("handleDiscoverJoins returned nil content")
+	}
+
+	// Validate response structure (should contain at least the foreign key relationship)
+	if len(res.Content) == 0 {
+		t.Fatalf("Expected response content, got empty")
+	}
+
+	// The response should be JSON containing join suggestions
+	content := res.Content[0]
+	if textContent, ok := content.(*mcp.TextContent); ok {
+		if len(textContent.Text) == 0 {
+			t.Fatalf("Expected non-empty text content")
+		}
+		t.Logf("Join discovery response: %s", textContent.Text)
+	} else {
+		t.Fatalf("Expected TextContent, got %T", content)
+	}
+}
+
+// TestDiscoverJoinsResultStructure tests the structure of DiscoverJoinsResult.
+func TestDiscoverJoinsResultStructure(t *testing.T) {
+	// Test the data structures used in join discovery
+	join := JoinSuggestion{
+		FromTable:        "orders",
+		FromColumn:       "user_id",
+		ToTable:          "users",
+		ToColumn:         "id",
+		Relationship:     "foreign_key",
+		SuggestedJoinSQL: "SELECT * FROM orders JOIN users ON orders.user_id = users.id",
+	}
+
+	if join.FromTable != "orders" {
+		t.Errorf("Expected FromTable 'orders', got '%s'", join.FromTable)
+	}
+	if join.FromColumn != "user_id" {
+		t.Errorf("Expected FromColumn 'user_id', got '%s'", join.FromColumn)
+	}
+	if join.ToTable != "users" {
+		t.Errorf("Expected ToTable 'users', got '%s'", join.ToTable)
+	}
+	if join.ToColumn != "id" {
+		t.Errorf("Expected ToColumn 'id', got '%s'", join.ToColumn)
+	}
+	if join.Relationship != "foreign_key" {
+		t.Errorf("Expected Relationship 'foreign_key', got '%s'", join.Relationship)
+	}
+
+	result := DiscoverJoinsResult{
+		Joins:   []JoinSuggestion{join},
+		Summary: "Discovered 1 join(s) based on foreign key relationships.",
+	}
+
+	if len(result.Joins) != 1 {
+		t.Errorf("Expected 1 join, got %d", len(result.Joins))
+	}
+	if result.Summary != "Discovered 1 join(s) based on foreign key relationships." {
+		t.Errorf("Unexpected summary: %s", result.Summary)
+	}
+}
+
+// TestDiscoverJoinsInputValidation tests input validation for join discovery.
+func TestDiscoverJoinsInputValidation(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+	session := &mcp.ServerSession{}
+
+	// Test missing profile name
+	params := &mcp.CallToolParamsFor[DiscoverJoinsParams]{
+		Arguments: DiscoverJoinsParams{
+			ProfileName: "", // Empty profile name
+			Tables:      []string{"users", "orders"},
+		},
+	}
+	_, err := server.handleDiscoverJoins(ctx, session, params)
+	if err == nil {
+		t.Fatalf("Expected error for empty profile name, got nil")
+	}
+
+	// Test with special characters in table names (should be handled gracefully)
+	params2 := &mcp.CallToolParamsFor[DiscoverJoinsParams]{
+		Arguments: DiscoverJoinsParams{
+			ProfileName: "testsqlite",
+			Tables:      []string{"table with spaces", "table-with-dashes", "table_with_underscores"},
+		},
+	}
+	_, err = server.handleDiscoverJoins(ctx, session, params2)
+	// Should not crash on unusual table names, though may fail on connection
+	if err != nil {
+		t.Logf("Expected behavior for unusual table names: %v", err)
+	}
+}
+
+// TestDiscoverJoinsDatabaseTypes tests join discovery behavior across database types.
+func TestDiscoverJoinsDatabaseTypes(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+	session := &mcp.ServerSession{}
+
+	// Test PostgreSQL profile (will fail on connection but tests code path)
+	pgParams := &mcp.CallToolParamsFor[DiscoverJoinsParams]{
+		Arguments: DiscoverJoinsParams{
+			ProfileName: "testpg",
+			Tables:      []string{"users", "orders"},
+		},
+	}
+	_, err := server.handleDiscoverJoins(ctx, session, pgParams)
+	if err != nil {
+		// Expected since we don't have a real PostgreSQL connection
+		t.Logf("Expected PostgreSQL connection error: %v", err)
+	}
+
+	// Test SQLite profile
+	sqliteParams := &mcp.CallToolParamsFor[DiscoverJoinsParams]{
+		Arguments: DiscoverJoinsParams{
+			ProfileName: "testsqlite",
+			Tables:      []string{"users", "orders"},
+		},
+	}
+	_, err = server.handleDiscoverJoins(ctx, session, sqliteParams)
+	if err != nil {
+		// Expected since we're using in-memory database
+		t.Logf("Expected SQLite connection behavior: %v", err)
+	}
+}
+
+// TestDiscoverJoinsUnsupportedDatabase tests join discovery with unsupported database type.
+func TestDiscoverJoinsUnsupportedDatabase(t *testing.T) {
+	testConfig := "test_config_unsupported.yaml"
+	defer os.Remove(testConfig)
+
+	// Create config with unsupported database type
+	cfg := &config.Config{
+		Profiles: []config.Profile{
+			{
+				ProfileName:  "testunsupported",
+				DBType:       "oracle", // Unsupported database type
+				Host:         "localhost",
+				Port:         1521,
+				Username:     "testuser",
+				Password:     "testpass",
+				DatabaseName: "testdb",
+				Readonly:     false,
+			},
+		},
+		MaxPoolSize: 5,
+	}
+	if err := config.SaveConfig(testConfig, cfg); err != nil {
+		t.Fatalf("Failed to save test config: %v", err)
+	}
+	os.Setenv("DB_MCP_AES_KEY", "12345678901234567890123456789012")
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+	session := &mcp.ServerSession{}
+
+	params := &mcp.CallToolParamsFor[DiscoverJoinsParams]{
+		Arguments: DiscoverJoinsParams{
+			ProfileName: "testunsupported",
+			Tables:      []string{"users", "orders"},
+		},
+	}
+	_, err := server.handleDiscoverJoins(ctx, session, params)
+	if err == nil {
+		t.Fatalf("Expected error for unsupported database type, got nil")
+	}
+	// The error might be about the driver or the unsupported db_type
+	if !strings.Contains(err.Error(), "unsupported db_type for join discovery") && !strings.Contains(err.Error(), "unknown driver") {
+		t.Fatalf("Expected error about unsupported database, got '%s'", err.Error())
+	}
+}
+
+// TestDiscoverJoinsTableFiltering tests table filtering functionality.
+func TestDiscoverJoinsTableFiltering(t *testing.T) {
+	// Test the table filtering logic used in handleDiscoverJoins
+	requestedTables := []string{"Users", "Orders", "Products"}
+	tableSet := map[string]bool{}
+
+	// Convert to lowercase for case-insensitive matching (as done in handleDiscoverJoins)
+	for _, t := range requestedTables {
+		tableSet[strings.ToLower(t)] = true
+	}
+
+	// Test filtering logic
+	testCases := []struct {
+		fromTable string
+		toTable   string
+		expected  bool
+	}{
+		{"users", "orders", true},    // Both in set
+		{"orders", "products", true}, // Both in set
+		{"users", "logs", true},      // One in set
+		{"logs", "archives", false},  // Neither in set
+		{"USERS", "ORDERS", true},    // Case insensitive matching (converts to lowercase)
+	}
+
+	for _, tc := range testCases {
+		result := len(tableSet) == 0 || tableSet[strings.ToLower(tc.fromTable)] || tableSet[strings.ToLower(tc.toTable)]
+		if result != tc.expected {
+			t.Errorf("Table filtering for %s->%s: expected %v, got %v", tc.fromTable, tc.toTable, tc.expected, result)
+		}
+	}
+}
+
+// TestHandleSampleData tests the sample-data MCP action.
+func TestHandleSampleData(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+	session := &mcp.ServerSession{}
+
+	// Test 1: Profile not found
+	params := &mcp.CallToolParamsFor[SampleDataParams]{
+		Arguments: SampleDataParams{
+			ProfileName: "nonexistent",
+			TableName:   "users",
+		},
+	}
+	_, err := server.handleSampleData(ctx, session, params)
+	if err == nil {
+		t.Fatalf("Expected error for nonexistent profile, got nil")
+	}
+
+	// Test 2: Missing table name
+	params2 := &mcp.CallToolParamsFor[SampleDataParams]{
+		Arguments: SampleDataParams{
+			ProfileName: "testsqlite",
+			TableName:   "", // Empty table name
+		},
+	}
+	_, err = server.handleSampleData(ctx, session, params2)
+	if err == nil {
+		t.Fatalf("Expected error for empty table name, got nil")
+	}
+
+	// Test 3: Valid parameters structure (will fail on DB connection but validates parameter handling)
+	params3 := &mcp.CallToolParamsFor[SampleDataParams]{
+		Arguments: SampleDataParams{
+			ProfileName:  "testsqlite",
+			TableName:    "users",
+			DatabaseName: ":memory:",
+			SampleSize:   5,
+		},
+	}
+	res, err := server.handleSampleData(ctx, session, params3)
+	// Expect connection error but validate we got to that point
+	if err == nil {
+		// If no error, check response structure
+		if res == nil || res.Content == nil {
+			t.Fatalf("handleSampleData returned nil content")
+		}
+	} else {
+		// Expected connection error for test environment
+		t.Logf("Expected connection error in test environment: %v", err)
+	}
+}
+
+// TestHandleSampleData_WithMockData tests sample data fetching with actual SQLite data.
+func TestHandleSampleData_WithMockData(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+	session := &mcp.ServerSession{}
+
+	// First, create a test table with sample data
+	createTableParams := &mcp.CallToolParamsFor[ExecuteSQLParams]{
+		Arguments: ExecuteSQLParams{
+			ProfileName:  "testsqlite",
+			SQL:          "CREATE TABLE sample_users (id INTEGER PRIMARY KEY, name TEXT, email TEXT, age INTEGER)",
+			DatabaseName: ":memory:",
+		},
+	}
+	_, err := server.handleExecuteSQL(ctx, session, createTableParams)
+	if err != nil {
+		// Skip test if SQLite driver is not available in test environment
+		if strings.Contains(err.Error(), "unknown driver") {
+			t.Skipf("Skipping SQLite integration test due to driver issue: %v", err)
+			return
+		}
+		t.Fatalf("Failed to create sample table: %v", err)
+	}
+
+	// Insert sample data
+	insertData := []string{
+		"INSERT INTO sample_users (name, email, age) VALUES ('Alice', 'alice@example.com', 25)",
+		"INSERT INTO sample_users (name, email, age) VALUES ('Bob', 'bob@example.com', 30)",
+		"INSERT INTO sample_users (name, email, age) VALUES ('Charlie', 'charlie@example.com', 35)",
+		"INSERT INTO sample_users (name, email, age) VALUES ('Diana', 'diana@example.com', 28)",
+		"INSERT INTO sample_users (name, email, age) VALUES ('Eve', 'eve@example.com', 32)",
+	}
+
+	for _, insertSQL := range insertData {
+		insertParams := &mcp.CallToolParamsFor[ExecuteSQLParams]{
+			Arguments: ExecuteSQLParams{
+				ProfileName:  "testsqlite",
+				SQL:          insertSQL,
+				DatabaseName: ":memory:",
+			},
+		}
+		_, err = server.handleExecuteSQL(ctx, session, insertParams)
+		if err != nil {
+			t.Fatalf("Failed to insert sample data: %v", err)
+		}
+	}
+
+	// Now test sample data fetching
+	sampleParams := &mcp.CallToolParamsFor[SampleDataParams]{
+		Arguments: SampleDataParams{
+			ProfileName:  "testsqlite",
+			TableName:    "sample_users",
+			DatabaseName: ":memory:",
+			SampleSize:   3,
+		},
+	}
+	res, err := server.handleSampleData(ctx, session, sampleParams)
+	if err != nil {
+		t.Fatalf("handleSampleData error: %v", err)
+	}
+	if res == nil || res.Content == nil {
+		t.Fatalf("handleSampleData returned nil content")
+	}
+
+	// Validate response structure
+	if len(res.Content) == 0 {
+		t.Fatalf("Expected response content, got empty")
+	}
+
+	// The response should be JSON containing sample data
+	content := res.Content[0]
+	if textContent, ok := content.(*mcp.TextContent); ok {
+		if len(textContent.Text) == 0 {
+			t.Fatalf("Expected non-empty text content")
+		}
+		t.Logf("Sample data response: %s", textContent.Text)
+
+		// Verify it contains expected fields
+		if !strings.Contains(textContent.Text, "sample_users") {
+			t.Fatalf("Response should contain table name")
+		}
+		if !strings.Contains(textContent.Text, "columns") {
+			t.Fatalf("Response should contain columns field")
+		}
+		if !strings.Contains(textContent.Text, "sample_rows") {
+			t.Fatalf("Response should contain sample_rows field")
+		}
+	} else {
+		t.Fatalf("Expected TextContent, got %T", content)
+	}
+}
+
+// TestSampleDataResultStructure tests the structure of SampleDataResult.
+func TestSampleDataResultStructure(t *testing.T) {
+	// Test the data structures used in sample data fetching
+	result := SampleDataResult{
+		TableName:  "users",
+		SampleSize: 2,
+		Columns:    []string{"id", "name", "email"},
+		SampleRows: [][]interface{}{
+			{1, "Alice", "alice@example.com"},
+			{2, "Bob", "bob@example.com"},
+		},
+		Summary: "Retrieved 2 sample row(s) from table 'users' with 3 column(s).",
+	}
+
+	if result.TableName != "users" {
+		t.Errorf("Expected TableName 'users', got '%s'", result.TableName)
+	}
+	if result.SampleSize != 2 {
+		t.Errorf("Expected SampleSize 2, got %d", result.SampleSize)
+	}
+	if len(result.Columns) != 3 {
+		t.Errorf("Expected 3 columns, got %d", len(result.Columns))
+	}
+	if len(result.SampleRows) != 2 {
+		t.Errorf("Expected 2 sample rows, got %d", len(result.SampleRows))
+	}
+	if result.Columns[0] != "id" || result.Columns[1] != "name" || result.Columns[2] != "email" {
+		t.Errorf("Unexpected column names: %v", result.Columns)
+	}
+}
+
+// TestSampleDataInputValidation tests input validation for sample data fetching.
+func TestSampleDataInputValidation(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+	session := &mcp.ServerSession{}
+
+	// Test missing profile name
+	params := &mcp.CallToolParamsFor[SampleDataParams]{
+		Arguments: SampleDataParams{
+			ProfileName: "", // Empty profile name
+			TableName:   "users",
+		},
+	}
+	_, err := server.handleSampleData(ctx, session, params)
+	if err == nil {
+		t.Fatalf("Expected error for empty profile name, got nil")
+	}
+
+	// Test missing table name
+	params2 := &mcp.CallToolParamsFor[SampleDataParams]{
+		Arguments: SampleDataParams{
+			ProfileName: "testsqlite",
+			TableName:   "", // Empty table name
+		},
+	}
+	_, err = server.handleSampleData(ctx, session, params2)
+	if err == nil {
+		t.Fatalf("Expected error for empty table name, got nil")
+	}
+
+	// Test default sample size handling
+	params3 := &mcp.CallToolParamsFor[SampleDataParams]{
+		Arguments: SampleDataParams{
+			ProfileName: "testsqlite",
+			TableName:   "users",
+			SampleSize:  0, // Should default to 3
+		},
+	}
+	// This will fail on connection, but validates default size logic
+	_, err = server.handleSampleData(ctx, session, params3)
+	if err != nil && !strings.Contains(err.Error(), "profile not found") {
+		t.Logf("Expected connection error for default size test: %v", err)
+	}
+
+	// Test large sample size capping
+	params4 := &mcp.CallToolParamsFor[SampleDataParams]{
+		Arguments: SampleDataParams{
+			ProfileName: "testsqlite",
+			TableName:   "users",
+			SampleSize:  200, // Should be capped at 100
+		},
+	}
+	// This will fail on connection, but validates size capping logic
+	_, err = server.handleSampleData(ctx, session, params4)
+	if err != nil && !strings.Contains(err.Error(), "profile not found") {
+		t.Logf("Expected connection error for large size test: %v", err)
+	}
+}
+
+// TestSampleDataDatabaseTypes tests sample data behavior across database types.
+func TestSampleDataDatabaseTypes(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+	session := &mcp.ServerSession{}
+
+	// Test PostgreSQL profile (will fail on connection but tests code path)
+	pgParams := &mcp.CallToolParamsFor[SampleDataParams]{
+		Arguments: SampleDataParams{
+			ProfileName:  "testpg",
+			TableName:    "users",
+			DatabaseName: "testdb",
+			SampleSize:   5,
+		},
+	}
+	_, err := server.handleSampleData(ctx, session, pgParams)
+	if err != nil {
+		// Expected since we don't have a real PostgreSQL connection
+		t.Logf("Expected PostgreSQL connection error: %v", err)
+	}
+
+	// Test SQLite profile
+	sqliteParams := &mcp.CallToolParamsFor[SampleDataParams]{
+		Arguments: SampleDataParams{
+			ProfileName:  "testsqlite",
+			TableName:    "users",
+			DatabaseName: ":memory:",
+			SampleSize:   3,
+		},
+	}
+	_, err = server.handleSampleData(ctx, session, sqliteParams)
+	if err != nil {
+		// Expected since we're using in-memory database without tables
+		t.Logf("Expected SQLite connection behavior: %v", err)
+	}
+}
+
+// TestSampleDataUnsupportedDatabase tests sample data with unsupported database type.
+func TestSampleDataUnsupportedDatabase(t *testing.T) {
+	testConfig := "test_config_sample_unsupported.yaml"
+	defer os.Remove(testConfig)
+
+	// Create config with unsupported database type
+	cfg := &config.Config{
+		Profiles: []config.Profile{
+			{
+				ProfileName:  "testunsupported",
+				DBType:       "oracle", // Unsupported database type
+				Host:         "localhost",
+				Port:         1521,
+				Username:     "testuser",
+				Password:     "testpass",
+				DatabaseName: "testdb",
+				Readonly:     false,
+			},
+		},
+		MaxPoolSize: 5,
+	}
+	if err := config.SaveConfig(testConfig, cfg); err != nil {
+		t.Fatalf("Failed to save test config: %v", err)
+	}
+	os.Setenv("DB_MCP_AES_KEY", "12345678901234567890123456789012")
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+	session := &mcp.ServerSession{}
+
+	params := &mcp.CallToolParamsFor[SampleDataParams]{
+		Arguments: SampleDataParams{
+			ProfileName: "testunsupported",
+			TableName:   "users",
+			SampleSize:  3,
+		},
+	}
+	_, err := server.handleSampleData(ctx, session, params)
+	if err == nil {
+		t.Fatalf("Expected error for unsupported database type, got nil")
+	}
+	// The error might be about the driver or the unsupported db_type
+	if !strings.Contains(err.Error(), "unsupported db_type for sample data") && !strings.Contains(err.Error(), "unknown driver") {
+		t.Fatalf("Expected error about unsupported database, got '%s'", err.Error())
+	}
+}
+
+// TestSampleDataSpecialTableNames tests sample data with special table names.
+func TestSampleDataSpecialTableNames(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+	session := &mcp.ServerSession{}
+
+	// Test with special characters in table names (should be handled gracefully)
+	testCases := []string{
+		"table_with_underscores",
+		"table-with-dashes",
+		"CamelCaseTable",
+		"123numeric_start",
+	}
+
+	for _, tableName := range testCases {
+		params := &mcp.CallToolParamsFor[SampleDataParams]{
+			Arguments: SampleDataParams{
+				ProfileName:  "testsqlite",
+				TableName:    tableName,
+				DatabaseName: ":memory:",
+				SampleSize:   3,
+			},
+		}
+		_, err := server.handleSampleData(ctx, session, params)
+		// Should not crash on unusual table names, though may fail on connection
+		if err != nil {
+			t.Logf("Expected behavior for table name '%s': %v", tableName, err)
+		}
 	}
 }

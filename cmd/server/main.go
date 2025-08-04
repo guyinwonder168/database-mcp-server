@@ -40,21 +40,26 @@ func main() {
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		log.JSONLog("warn", "config.yaml not found at startup. MCP server will start and allow configuration via MCP actions only; no interactive prompt will be triggered.", map[string]interface{}{"configPath": configPath})
 		// Self-healing: create a minimal config.yaml if missing, so server always has a valid config file
-		// Generate a random 32-byte AES key for config.yaml
+		// Generate a random 32-character ASCII AES key for config.yaml
+		const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 		aesKey := make([]byte, 32)
 		{
 			f, err := os.Open("/dev/urandom")
 			if err == nil {
 				defer f.Close()
-				_, _ = f.Read(aesKey)
+				b := make([]byte, 32)
+				_, _ = f.Read(b)
+				for i := range aesKey {
+					aesKey[i] = charset[int(b[i])%len(charset)]
+				}
 			} else {
 				// fallback: deterministic but not secure, for environments without urandom
 				for i := range aesKey {
-					aesKey[i] = byte(65 + i%26)
+					aesKey[i] = charset[i%len(charset)]
 				}
 			}
 		}
-		minimalConfig := []byte("profiles: []\nmax_pool_size: 10\naes_key: \"" + string(aesKey) + "\"\n")
+		minimalConfig := []byte("profiles: []\nmax_pool_size: 5\naes_key: \"" + string(aesKey) + "\"\n")
 		if err := os.WriteFile(configPath, minimalConfig, 0644); err != nil {
 			log.JSONLog("error", "Failed to auto-create minimal config.yaml", map[string]interface{}{"error": err.Error(), "configPath": configPath})
 		} else {

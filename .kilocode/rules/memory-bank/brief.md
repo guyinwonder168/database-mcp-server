@@ -13,8 +13,9 @@ Provide a secure, stateless, and unified interface for accessing MySQL, MariaDB,
 2. **Profile Management**: Create, update, list database connection profiles
 3. **SQL Execution**: Execute arbitrary SQL queries with read-only enforcement option
 4. **Schema Introspection**: List tables/views, describe table schemas, list databases
-5. **Interactive Setup**: CLI-based configuration wizard for first-time setup
-6. **MCP Actions**: Full suite of database operations exposed as MCP tools
+5. **Sample Data Fetching**: Fetch sample rows from tables to infer data formats.
+6. **Interactive Setup**: CLI-based configuration wizard for first-time setup
+7. **MCP Actions**: Full suite of database operations exposed as MCP tools
 
 ### Non-Functional Requirements
 1. **Security**: AES-GCM encryption for stored passwords (32-char key)
