@@ -67,6 +67,7 @@ paths:
           name: database_name
           schema:
             type: string
+          required: true
       responses:
         '200':
           description: Success
@@ -195,6 +196,10 @@ components:
                 type: string
     ExecuteSQLParams:
       type: object
+      required:
+        - profile_name
+        - database_name
+        - sql
       properties:
         profile_name:
           type: string
@@ -321,3 +326,4 @@ components:
 # [2025-08-02] CHANGE: describe-table now requires both database_name and table_name as input parameters.
 # The profile's default database is ignored for this operation.
 # [2025-08-04] ADDED: smart-query-builder tool for generating SQL from natural language intent.
+# [2025-08-04] CHANGE: database_name is now a required parameter for execute-sql, list-tables, and sample-data actions.

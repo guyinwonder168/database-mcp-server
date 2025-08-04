@@ -20,7 +20,7 @@ When a query fails (e.g., referencing a missing table), the MCP server returns a
     {
       "action": "List available tables",
       "description": "Use the list-tables tool to see all tables in the database",
-      "example": "{\"tool\": \"list-tables\", \"profile_name\": \"mydb\"}"
+      "example": "{\"tool\": \"list-tables\", \"profile_name\": \"mydb\", \"database_name\": \"sampledb\"}"
     },
     {
       "action": "Check table name spelling",
@@ -41,6 +41,7 @@ When a query fails (e.g., referencing a missing table), the MCP server returns a
     ```json
     {
       "profile_name": "mydb",
+      "database_name": "sampledb",
       "sql": "SELECT * FROM users"
     }
     ```
@@ -48,7 +49,8 @@ When a query fails (e.g., referencing a missing table), the MCP server returns a
 3. **Agent reads suggestions** and issues a `list-tables` request:
     ```json
     {
-      "profile_name": "mydb"
+      "profile_name": "mydb",
+      "database_name": "sampledb"
     }
     ```
 4. **Agent corrects the query** using the actual table name and retries.

@@ -78,11 +78,10 @@ Example:
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name: "execute-sql",
-		Description: `Execute an arbitrary SQL query or statement. Use the 'database_name' parameter to select a database if needed.
+		Description: `Execute an arbitrary SQL query or statement. Both 'profile_name' and 'database_name' are required parameters.
 Note: For cross-database queries or describing tables in another database, use fully qualified table names (e.g., db.table).
 Example:
-{"profile_name":"some-profile-name","database_name":"some-database-name","sql":"SELECT * FROM some-table-name WHERE some-field-name=34;"}
-{"profile_name":"some-profile-name","sql":"DESCRIBE some-database-name.some-table-name"}`,
+{"profile_name":"some-profile-name","database_name":"some-database-name","sql":"SELECT * FROM some-table-name WHERE some-field-name=34;"}`,
 	}, s.handleExecuteSQL)
 	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "execute-sql", Description: `Execute an arbitrary SQL query or statement. Use the 'database_name' parameter to select a database if needed.
 Note: For cross-database queries or describing tables in another database, use fully qualified table names (e.g., db.table).
@@ -92,7 +91,7 @@ Example:
 
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name: "list-tables",
-		Description: `List all tables in the selected database. Use 'database_name' to override the profile's default database.
+		Description: `List all tables in the selected database. Both 'profile_name' and 'database_name' are required parameters.
 Example:
 {"profile_name":"some-profile-name","database_name":"some-database-name"}`,
 	}, s.handleListTables)
@@ -163,10 +162,10 @@ Example:
 	mcp.AddTool(s.server, &mcp.Tool{
 		Name: "sample-data",
 		Description: `Fetch sample rows from a table to help AI/agents infer data types, formats, and value ranges.
-Input: profile_name (required), table_name (required), database_name (optional), sample_size (optional, default: 3).
+Input: profile_name (required), database_name (required), table_name (required), sample_size (optional, default: 3).
 Returns: sample rows with column names and values.
 Example:
-{"profile_name":"analytics_db","table_name":"users","sample_size":5}`,
+{"profile_name":"analytics_db","database_name":"analytics_db","table_name":"users","sample_size":5}`,
 	}, s.handleSampleData)
 	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "sample-data", Description: `Fetch sample rows from a table to help AI/agents infer data types, formats, and value ranges.
 Input: profile_name (required), table_name (required), database_name (optional), sample_size (optional, default: 3).
@@ -374,23 +373,7 @@ func (s *MCPServer) handleDiscoverJoins(
 	}
 	if prof == nil {
 		log.JSONLog("error", "Profile not found", map[string]interface{}{"profile_name": p.ProfileName})
-		structErr := NewStructuredError(
-			ErrorCodeProfileNotFound,
-			fmt.Sprintf("Profile '%s' not found", p.ProfileName),
-			"The specified database profile does not exist",
-		).WithSuggestions(
-			ErrorSuggestion{
-				Tool:        "list-profiles",
-				Description: "List all available database profiles",
-			},
-		)
-		return &mcp.CallToolResultFor[any]{
-			Content: []mcp.Content{
-				&mcp.TextContent{
-					Text: structErr.ToJSON(),
-				},
-			},
-		}, nil
+		return nil, fmt.Errorf("profile not found")
 	}
 
 	// 2. Connect to DB
@@ -579,7 +562,7 @@ type ListProfilesResult struct {
 type ExecuteSQLParams struct {
 	ProfileName  string        `json:"profile_name"`
 	SQL          string        `json:"sql"`
-	DatabaseName string        `json:"database_name,omitempty"`
+	DatabaseName string        `json:"database_name"`
 	Params       []interface{} `json:"params,omitempty"`
 }
 
@@ -591,7 +574,7 @@ type ExecuteSQLResult struct {
 
 type ListTablesParams struct {
 	ProfileName  string `json:"profile_name"`
-	DatabaseName string `json:"database_name,omitempty"`
+	DatabaseName string `json:"database_name"`
 }
 
 type ListTablesResult struct {
@@ -669,7 +652,7 @@ type ListDatabasesResult struct {
 type SampleDataParams struct {
 	ProfileName  string `json:"profile_name"`
 	TableName    string `json:"table_name"`
-	DatabaseName string `json:"database_name,omitempty"`
+	DatabaseName string `json:"database_name"`
 	SampleSize   int    `json:"sample_size,omitempty"`
 }
 
@@ -739,23 +722,7 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, session *mcp.Se
 		}
 	}
 	if prof == nil {
-		structErr := NewStructuredError(
-			ErrorCodeProfileNotFound,
-			fmt.Sprintf("Profile '%s' not found", p.ProfileName),
-			"The specified database profile does not exist",
-		).WithSuggestions(
-			ErrorSuggestion{
-				Tool:        "list-profiles",
-				Description: "List all available database profiles",
-			},
-		)
-		return &mcp.CallToolResultFor[any]{
-			Content: []mcp.Content{
-				&mcp.TextContent{
-					Text: structErr.ToJSON(),
-				},
-			},
-		}, nil
+		return nil, fmt.Errorf("profile not found")
 	}
 
 	// 2. Fetch all table names
@@ -1095,28 +1062,17 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, session *mcp.ServerSes
 		}, nil
 	}
 	p := params.Arguments
-	var prof *config.Profile
-	for i := range cfg.Profiles {
-		if cfg.Profiles[i].ProfileName == p.ProfileName {
-			prof = &cfg.Profiles[i]
-			break
-		}
-	}
-	if prof == nil {
-		log.JSONLog("error", "Profile not found", map[string]interface{}{"profile_name": p.ProfileName})
+	// Validate required parameters
+	if p.ProfileName == "" || p.DatabaseName == "" {
 		structErr := NewStructuredError(
-			ErrorCodeProfileNotFound,
-			fmt.Sprintf("Profile '%s' not found", p.ProfileName),
-			"The specified database profile does not exist",
+			ErrorCodeMissingParameter,
+			"Missing required parameters",
+			"Both profile_name and database_name are required",
 		).WithSuggestions(
 			ErrorSuggestion{
-				Tool:        "list-profiles",
-				Description: "List all available database profiles",
-			},
-			ErrorSuggestion{
-				Tool:        "configure-profile",
-				Description: "Create a new database profile",
-				Example:     fmt.Sprintf(`{"profile_name": "%s", "db_type": "mysql", ...}`, p.ProfileName),
+				Action:      "Provide all required parameters",
+				Description: "Ensure profile_name and database_name are included",
+				Example:     `{"profile_name": "mydb", "database_name": "mydb", "sql": "SELECT 1"}`,
 			},
 		)
 		return &mcp.CallToolResultFor[any]{
@@ -1126,6 +1082,17 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, session *mcp.ServerSes
 				},
 			},
 		}, nil
+	}
+	var prof *config.Profile
+	for i := range cfg.Profiles {
+		if cfg.Profiles[i].ProfileName == p.ProfileName {
+			prof = &cfg.Profiles[i]
+			break
+		}
+	}
+	if prof == nil {
+		log.JSONLog("error", "Profile not found", map[string]interface{}{"profile_name": p.ProfileName})
+		return nil, fmt.Errorf("profile not found")
 	}
 	// Enhanced read-only enforcement
 	if prof.Readonly {
@@ -1181,7 +1148,7 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, session *mcp.ServerSes
 						Text: structErr.ToJSON(),
 					},
 				},
-			}, nil
+			}, fmt.Errorf("blocked by readonly profile")
 		}
 	}
 	// Use requested database if provided, else profile default
@@ -1438,6 +1405,27 @@ func (s *MCPServer) handleListTables(ctx context.Context, session *mcp.ServerSes
 		}, nil
 	}
 	p := params.Arguments
+	// Validate required parameters
+	if p.ProfileName == "" || p.DatabaseName == "" {
+		structErr := NewStructuredError(
+			ErrorCodeMissingParameter,
+			"Missing required parameters",
+			"Both profile_name and database_name are required",
+		).WithSuggestions(
+			ErrorSuggestion{
+				Action:      "Provide all required parameters",
+				Description: "Ensure profile_name and database_name are included",
+				Example:     `{"profile_name": "mydb", "database_name": "mydb"}`,
+			},
+		)
+		return &mcp.CallToolResultFor[any]{
+			Content: []mcp.Content{
+				&mcp.TextContent{
+					Text: structErr.ToJSON(),
+				},
+			},
+		}, nil
+	}
 	var prof *config.Profile
 	for i := range cfg.Profiles {
 		if cfg.Profiles[i].ProfileName == p.ProfileName {
@@ -1656,8 +1644,8 @@ func (s *MCPServer) handleDescribeTable(ctx context.Context, session *mcp.Server
 			CHARACTER_SET_NAME as character_set,
 			COLLATION_NAME as collation,
 			CHARACTER_MAXIMUM_LENGTH as max_length,
-			NUMERIC_PRECISION as precision,
-			NUMERIC_SCALE as scale
+			NUMERIC_PRECISION as numeric_precision,
+			NUMERIC_SCALE as numeric_scale
 		FROM INFORMATION_SCHEMA.COLUMNS
 		WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
 		ORDER BY ORDINAL_POSITION`
@@ -2010,16 +1998,48 @@ func (s *MCPServer) handleSampleData(
 	p := params.Arguments
 
 	// Input validation
-	if p.ProfileName == "" || p.TableName == "" {
+	var prof *config.Profile
+	var cfg *config.Config
+	var err error
+	cfg, err = config.LoadConfig(s.ConfigPath)
+	if err == nil && p.ProfileName != "" {
+		for i := range cfg.Profiles {
+			if cfg.Profiles[i].ProfileName == p.ProfileName {
+				prof = &cfg.Profiles[i]
+				break
+			}
+		}
+		if prof != nil {
+			switch prof.DBType {
+			case "mysql", "mariadb", "postgres", "sqlite":
+				// Supported, continue
+			default:
+				log.JSONLog("error", "Unsupported database type for sample data", map[string]interface{}{"db_type": prof.DBType})
+				structErr := NewStructuredError(
+					ErrorCodeUnsupportedDB,
+					fmt.Sprintf("Unsupported database type: %s", prof.DBType),
+					"Sample data is only supported for MySQL, MariaDB, PostgreSQL, and SQLite",
+				).WithContext("supported_types", []string{"mysql", "mariadb", "postgres", "sqlite"})
+				return &mcp.CallToolResultFor[any]{
+					Content: []mcp.Content{
+						&mcp.TextContent{
+							Text: structErr.ToJSON(),
+						},
+					},
+				}, fmt.Errorf("unsupported db_type for sample data")
+			}
+		}
+	}
+	if p.ProfileName == "" || p.DatabaseName == "" || p.TableName == "" {
 		structErr := NewStructuredError(
 			ErrorCodeMissingParameter,
 			"Missing required parameters",
-			"Both profile_name and table_name are required",
+			"Both profile_name, database_name, and table_name are required",
 		).WithSuggestions(
 			ErrorSuggestion{
 				Action:      "Provide all required parameters",
-				Description: "Ensure profile_name and table_name are included",
-				Example:     `{"profile_name": "mydb", "table_name": "users", "sample_size": 5}`,
+				Description: "Ensure profile_name, database_name, and table_name are included",
+				Example:     `{"profile_name": "mydb", "database_name": "mydb", "table_name": "users", "sample_size": 5}`,
 			},
 		)
 		return &mcp.CallToolResultFor[any]{
@@ -2028,7 +2048,7 @@ func (s *MCPServer) handleSampleData(
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, nil
+		}, fmt.Errorf("missing required parameters")
 	}
 
 	// Set default sample size if not provided
@@ -2041,53 +2061,40 @@ func (s *MCPServer) handleSampleData(
 	}
 
 	// 1. Load config and profile
-	cfg, err := config.LoadConfig(s.ConfigPath)
-	if err != nil {
-		log.JSONLog("error", "Failed to load config for sample data", map[string]interface{}{"error": err.Error()})
-		structErr := NewStructuredError(
-			ErrorCodeConfigNotFound,
-			"Failed to load configuration",
-			err.Error(),
-		).WithSuggestions(
-			ErrorSuggestion{
-				Action:      "Initialize configuration",
-				Description: "Run the server to create initial configuration",
-			},
-		)
-		return &mcp.CallToolResultFor[any]{
-			Content: []mcp.Content{
-				&mcp.TextContent{
-					Text: structErr.ToJSON(),
+	if cfg == nil {
+		cfg, err = config.LoadConfig(s.ConfigPath)
+		if err != nil {
+			log.JSONLog("error", "Failed to load config for sample data", map[string]interface{}{"error": err.Error()})
+			structErr := NewStructuredError(
+				ErrorCodeConfigNotFound,
+				"Failed to load configuration",
+				err.Error(),
+			).WithSuggestions(
+				ErrorSuggestion{
+					Action:      "Initialize configuration",
+					Description: "Run the server to create initial configuration",
 				},
-			},
-		}, nil
+			)
+			return &mcp.CallToolResultFor[any]{
+				Content: []mcp.Content{
+					&mcp.TextContent{
+						Text: structErr.ToJSON(),
+					},
+				},
+			}, nil
+		}
 	}
-	var prof *config.Profile
-	for i := range cfg.Profiles {
-		if cfg.Profiles[i].ProfileName == p.ProfileName {
-			prof = &cfg.Profiles[i]
-			break
+	if prof == nil {
+		for i := range cfg.Profiles {
+			if cfg.Profiles[i].ProfileName == p.ProfileName {
+				prof = &cfg.Profiles[i]
+				break
+			}
 		}
 	}
 	if prof == nil {
 		log.JSONLog("error", "Profile not found for sample data", map[string]interface{}{"profile_name": p.ProfileName})
-		structErr := NewStructuredError(
-			ErrorCodeProfileNotFound,
-			fmt.Sprintf("Profile '%s' not found", p.ProfileName),
-			"The specified database profile does not exist",
-		).WithSuggestions(
-			ErrorSuggestion{
-				Tool:        "list-profiles",
-				Description: "List all available database profiles",
-			},
-		)
-		return &mcp.CallToolResultFor[any]{
-			Content: []mcp.Content{
-				&mcp.TextContent{
-					Text: structErr.ToJSON(),
-				},
-			},
-		}, nil
+		return nil, fmt.Errorf("profile not found")
 	}
 
 	// 2. Determine database name
@@ -2117,8 +2124,8 @@ func (s *MCPServer) handleSampleData(
 	}
 	defer conn.Close()
 
-	// 4. Switch database if needed (MySQL/MariaDB)
-	if (prof.DBType == "mysql" || prof.DBType == "mariadb") && p.DatabaseName != "" && p.DatabaseName != prof.DatabaseName {
+	// 4. Switch database context for MySQL/MariaDB if database_name is specified
+	if (prof.DBType == "mysql" || prof.DBType == "mariadb") && p.DatabaseName != "" {
 		if _, err := conn.Exec("USE " + p.DatabaseName); err != nil {
 			log.JSONLog("error", "Failed to switch database for sample data", map[string]interface{}{"database": p.DatabaseName, "error": err.Error()})
 			structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
@@ -2159,7 +2166,7 @@ func (s *MCPServer) handleSampleData(
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, nil
+		}, fmt.Errorf("unsupported db_type for sample data")
 	}
 
 	// 6. Execute sample query
