@@ -238,13 +238,68 @@ Use the `configure-profile` MCP tool with parameters matching your database type
 
 ### Executing SQL
 
+The `execute-sql` MCP tool executes arbitrary SQL queries or statements on a configured database profile.
+
+**Parameters:**
+- `profile_name` (string, required): Name of the database profile to use.
+- `database_name` (string, required): Database/schema to execute the query against. For MySQL/MariaDB, this can override the profile's default database.
+- `sql` (string, required): The SQL query or statement to execute.
+- `params` (array, optional): Query parameters for prepared statements (use `?` placeholders in SQL).
+
+**Parameter Validation:**
+- All of `profile_name`, `database_name`, and `sql` are required. If any are missing, a structured error is returned.
+
+**Read-only Enforcement:**
+- If the profile is marked as `readonly: true`, only safe queries are allowed: `SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN`, and `PRAGMA`.
+- Any other statement (e.g., `INSERT`, `UPDATE`, `DELETE`, DDL) is blocked with a structured error.
+
+**Database Switching:**
+- For MySQL/MariaDB, if `database_name` differs from the profile's default, the server issues a `USE database_name` statement before executing the query.
+- For PostgreSQL/SQLite, the connection is made directly to the specified database.
+
+**Error Handling:**
+- All errors are returned as structured JSON with `error_code`, `message`, and actionable `suggestions`.
+- Example error response:
+  ```json
+  {
+    "status": "error",
+    "error_code": "SQL_EXECUTION_ERROR",
+    "message": "Read-only profile restriction",
+    "suggestions": [
+      {
+        "action": "Use read-only queries",
+        "description": "Only SELECT, SHOW, DESCRIBE, EXPLAIN, and PRAGMA queries are allowed",
+        "example": "SELECT * FROM table_name"
+      }
+    ],
+    "context": {
+      "profile_name": "readonly-profile",
+      "query": "UPDATE users SET name = 'X'"
+    }
+  }
+  ```
+
+**Example Usage:**
 ```json
 {
   "method": "execute-sql",
   "params": {
     "profile_name": "pg-main",
-    "sql": "SELECT * FROM users LIMIT 10"
+    "database_name": "main",
+    "sql": "SELECT * FROM users WHERE age > ? LIMIT 10",
+    "params": [21]
   }
+}
+```
+
+**Successful Response:**
+```json
+{
+  "columns": ["id", "name", "age"],
+  "rows": [
+    [1, "Alice", 25],
+    [2, "Bob", 32]
+  ]
 }
 ```
 
