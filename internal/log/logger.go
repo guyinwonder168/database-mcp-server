@@ -21,7 +21,7 @@ func Init(logFile string) error {
 	rotator, err := rotatelogs.New(
 		logFile+".%Y%m%d%H%M",
 		rotatelogs.WithLinkName(logFile),
-		rotatelogs.WithRotationSize(500*1024), // 500kB
+		rotatelogs.WithRotationSize(500*1024), // 500KiB
 		rotatelogs.WithMaxAge(7*24*time.Hour),
 	)
 	if err != nil {

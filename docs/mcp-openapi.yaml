@@ -1,0 +1,199 @@
+openapi: 3.0.0
+info:
+  title: Database MCP Provider API
+  version: "1.0.0"
+  description: |
+    OpenAPI documentation for all MCP tools exposed by the Database MCP Provider.
+    This enables LLMs and clients to discover and use all available actions programmatically.
+servers:
+  - url: http://localhost/
+  - url: http://localhost:8080/docs/
+paths:
+  /configure-profile:
+    post:
+      summary: Create or update a database connection profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfigureProfileParams'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+  /list-profiles:
+    get:
+      summary: List all configured database profiles
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListProfilesResult'
+  /execute-sql:
+    post:
+      summary: Execute an arbitrary SQL query or statement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecuteSQLParams'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecuteSQLResult'
+  /list-tables:
+    get:
+      summary: List all tables in the selected database
+      parameters:
+        - in: query
+          name: profile_name
+          schema:
+            type: string
+          required: true
+        - in: query
+          name: database_name
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListTablesResult'
+  /describe-table:
+    get:
+      summary: Describe the columns and types of a table
+      parameters:
+        - in: query
+          name: profile_name
+          schema:
+            type: string
+          required: true
+        - in: query
+          name: table_name
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DescribeTableResult'
+  /list-databases:
+    get:
+      summary: List all databases/schemas available to the profile
+      parameters:
+        - in: query
+          name: profile_name
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListDatabasesResult'
+components:
+  schemas:
+    ConfigureProfileParams:
+      type: object
+      properties:
+        profile_name:
+          type: string
+        db_type:
+          type: string
+        host:
+          type: string
+        port:
+          type: integer
+        username:
+          type: string
+        password:
+          type: string
+        database_name:
+          type: string
+        readonly:
+          type: boolean
+    ListProfilesResult:
+      type: object
+      properties:
+        profiles:
+          type: array
+          items:
+            type: object
+            properties:
+              profile_name:
+                type: string
+              db_type:
+                type: string
+    ExecuteSQLParams:
+      type: object
+      properties:
+        profile_name:
+          type: string
+        sql:
+          type: string
+        database_name:
+          type: string
+    ExecuteSQLResult:
+      type: object
+      properties:
+        columns:
+          type: array
+          items:
+            type: string
+        rows:
+          type: array
+          items:
+            type: array
+            items: {}
+        affected:
+          type: integer
+    ListTablesResult:
+      type: object
+      properties:
+        tables:
+          type: array
+          items:
+            type: string
+    DescribeTableResult:
+      type: object
+      properties:
+        columns:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              type:
+                type: string
+              nullable:
+                type: boolean
+              key:
+                type: string
+    ListDatabasesResult:
+      type: object
+      properties:
+        databases:
+          type: array
+          items:
+            type: string

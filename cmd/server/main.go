@@ -5,36 +5,72 @@
 package main
 
 import (
-	"database-mcp-provider/internal/config"
 	"database-mcp-provider/internal/log"
 	"database-mcp-provider/internal/mcp"
 	"os"
+	"path/filepath"
 )
 
 func main() {
+	// Ensure log directory exists in the same folder as the binary
+	exePath, err := os.Executable()
+	if err != nil {
+		log.JSONLog("fatal", "Failed to get executable path", map[string]interface{}{"error": err.Error()})
+		os.Exit(1)
+	}
+	exeDir := filepath.Dir(exePath)
+	logDir := filepath.Join(exeDir, "log")
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		log.JSONLog("fatal", "Failed to create log directory", map[string]interface{}{"error": err.Error()})
+		os.Exit(1)
+	}
+	logPath := logDir + "/mcp-provider.log"
 	// Initialize structured JSON logger with rotation
-	if err := log.Init("mcp-provider.log"); err != nil {
+	if err := log.Init(logPath); err != nil {
 		log.JSONLog("fatal", "Failed to initialize logger", map[string]interface{}{"error": err.Error()})
 		os.Exit(1)
 	}
 
 	log.JSONLog("info", "Database MCP Provider starting...", nil)
 
-	const configPath = "config.yaml"
+	// Use config.yaml in the same directory as the binary
+	configPath := filepath.Join(exeDir, "config.yaml")
+	log.JSONLog("debug", "Resolved config.yaml path", map[string]interface{}{"configPath": configPath})
+	// Do not block on interactive setup at startup.
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		profiles, maxPoolSize, aesKey := config.PromptForProfiles()
-		cfg := &config.Config{Profiles: profiles, MaxPoolSize: maxPoolSize, AESKey: aesKey}
-		if err := config.SaveConfig(configPath, cfg); err != nil {
-			log.JSONLog("fatal", "Failed to save config.yaml", map[string]interface{}{"error": err.Error()})
-			os.Exit(1)
+		log.JSONLog("warn", "config.yaml not found at startup. MCP server will start and allow configuration via MCP actions only; no interactive prompt will be triggered.", map[string]interface{}{"configPath": configPath})
+		// Self-healing: create a minimal config.yaml if missing, so server always has a valid config file
+		// Generate a random 32-byte AES key for config.yaml
+		aesKey := make([]byte, 32)
+		{
+			f, err := os.Open("/dev/urandom")
+			if err == nil {
+				defer f.Close()
+				_, _ = f.Read(aesKey)
+			} else {
+				// fallback: deterministic but not secure, for environments without urandom
+				for i := range aesKey {
+					aesKey[i] = byte(65 + i%26)
+				}
+			}
 		}
-		log.JSONLog("info", "config.yaml created", nil)
+		minimalConfig := []byte("profiles: []\nmax_pool_size: 10\naes_key: \"" + string(aesKey) + "\"\n")
+		if err := os.WriteFile(configPath, minimalConfig, 0644); err != nil {
+			log.JSONLog("error", "Failed to auto-create minimal config.yaml", map[string]interface{}{"error": err.Error(), "configPath": configPath})
+		} else {
+			log.JSONLog("info", "Auto-created minimal config.yaml for self-healing", map[string]interface{}{"configPath": configPath})
+		}
+	} else {
+		log.JSONLog("debug", "config.yaml found, proceeding with startup", map[string]interface{}{"configPath": configPath})
 	}
 
 	// Start MCP server
-	server := mcp.NewMCPServer()
+	log.JSONLog("debug", "About to initialize MCP server", nil)
+	server := mcp.NewMCPServerWithConfig(configPath)
+	log.JSONLog("debug", "MCP server instance created, starting server...", map[string]interface{}{"configPath": configPath})
 	if err := server.Start(); err != nil {
 		log.JSONLog("fatal", "Failed to start MCP server", map[string]interface{}{"error": err.Error()})
 		os.Exit(1)
 	}
+	log.JSONLog("info", "MCP server exited normally", nil)
 }

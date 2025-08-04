@@ -32,3 +32,4 @@ vendor/
 
 # MCP server build output
 pkg/mcp-server
+pkg/log/*.log.*

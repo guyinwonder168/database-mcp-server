@@ -12,7 +12,11 @@ import (
 
 // OpenConnection opens a DB connection and applies pooling config if provided.
 func OpenConnectionWithPool(profileType, dsn string, maxPoolSize int) (*sql.DB, error) {
-	db, err := sql.Open(profileType, dsn)
+	driverName := profileType
+	if profileType == "mariadb" {
+		driverName = "mysql"
+	}
+	db, err := sql.Open(driverName, dsn)
 	if err != nil {
 		return nil, err
 	}
