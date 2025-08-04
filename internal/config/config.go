@@ -29,8 +29,6 @@ type Profile struct {
 type Config struct {
 	Profiles    []Profile `yaml:"profiles"`
 	MaxPoolSize int       `yaml:"max_pool_size"`
-	UserKey     string    `yaml:"user_key"`
-	UserSecret  string    `yaml:"user_secret"`
 	AESKey      string    `yaml:"aes_key"`
 }
 

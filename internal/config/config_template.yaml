@@ -1,7 +1,6 @@
 # config.yaml template for Database MCP Provider
 
 max_pool_size: 10
-
 # AES key for password encryption (must be exactly 32 characters)
 aes_key: "<your-32-char-aes-key>"
 
