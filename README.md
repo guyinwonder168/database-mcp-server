@@ -395,7 +395,7 @@ mcp_providers:
 
 - All MCP actions and usage examples are documented in [`docs/mcp-openapi.yaml`](docs/mcp-openapi.yaml).
 - The `list-tools` MCP action provides a machine-readable list of all available tools/actions.
-- No HTTP endpoints or web server are provided; all communication is via stdio/JSON-RPC MCP protocol.
+- No HTTP endpoints or web server are provided; all communication is via stdio MCP protocol.
 
 ---
 
