@@ -81,17 +81,53 @@ Features not listed above are not required for the MVP and may be implemented in
 
 ## 4. MCP Action Specification
 
-- **configure-profile:** Create/update a profile. Params: `profile_name`, `db_type`, `host`, `port`, `username`, `password`, `database_name`. Output: success message.
+### Core Actions (MVP)
+- **configure-profile:** Create/update a profile. Params: `profile_name`, `db_type`, `host`, `port`, `username`, `password`, `database_name`, `readonly` (optional). Output: success message.
 - **list-profiles:** List all profiles. Output: array of `{profile_name, db_type}`.
-- **execute-sql:** Execute SQL on a profile. Params: `profile_name`, `sql_query`. Output: query results or affected rows.
-- **list-tables:** List tables/views for a profile. Params: `profile_name`. Output: array of table/view names.
-- **describe-table:** Describe table schema. Params: `profile_name`, `table_name`. Output: columns with name, type, nullability, key info.
-- **Error Handling:** All actions return structured errors on failure, e.g., `{ "status": "error", "error_code": "...", "message": "..." }`.
-- **list-tools:** List all available MCP actions/tools.
-  Params: _none_.
-  Output: array of `{tool_name, description}`.
-  Description: Returns a list of all MCP actions supported by the server, including their names and brief descriptions. Useful for clients and agents to discover available capabilities programmatically.
-  Communication: Invoked via the official MCP protocol over stdio (not HTTP, not JSON-RPC).
+- **execute-sql:** Execute SQL on a profile. Params: `profile_name`, `sql_query`, `database_name` (optional). Output: query results or affected rows. Supports cross-database queries with fully qualified table names.
+- **list-tables:** List tables/views for a profile. Params: `profile_name`, `database_name` (optional). Output: array of table/view names with metadata.
+- **describe-table:** Describe table schema. Params: `profile_name`, `table_name`, `database_name` (optional). Output: columns with comprehensive metadata including:
+  - Column name, type, nullability, key info
+  - Default values, auto-increment status
+  - Character set and collation (MySQL/MariaDB)
+  - Numeric precision and scale
+  - Maximum length for string columns
+  - Column comments
+- **list-databases:** List all databases/schemas. Params: `profile_name`. Output: array of database names.
+
+### Additional Implemented Actions
+- **delete-profile:** Delete a profile. Params: `profile_name`. Output: success message. **[DONE]**
+- **update-profile:** Update existing profile. Params: `profile_name` and fields to update. Output: success message. **[DONE]**
+- **mcp-info:** Get MCP server information. Params: _none_. Output: server name, version, capabilities. **[DONE]**
+- **sample-data:** Fetch sample rows from a table. Params: `profile_name`, `table_name`, `limit` (default 10), `database_name` (optional). Output: sample rows with data. **[DONE]**
+- **smart-query-builder:** Generate SQL from natural language intent. Params: `profile_name`, `intent`, `database_name` (optional), `table_names` (optional). Output: generated SQL and explanation. **[DONE]**
+- **discover-joins:** Discover foreign key relationships. Params: `profile_name`, `tables` (optional). Output: joinable relationships with suggested SQL. **[DONE]**
+- **list-tools:** List all available MCP actions/tools. Params: _none_. Output: array of `{tool_name, description}`. **[DONE]**
+- **analyze-schema:** Comprehensive schema analysis (registered but not implemented). Params: `profile_name`, `database_name` (optional). **[TODO]**
+
+### Error Handling
+All actions return structured errors on failure with:
+- `status`: "error"
+- `error_code`: Standardized code (see section 4.1)
+- `message`: Human-readable error message
+- `details`: Additional context
+- `suggestions`: Array of actionable suggestions to fix the error
+- `context`: Error-specific metadata
+
+### 4.1 Standardized Error Codes
+- `CONNECTION_FAILED` - Database connection failures
+- `PROFILE_NOT_FOUND` - Profile configuration not found
+- `UNSUPPORTED_DATABASE` - Unsupported database type
+- `SQL_SYNTAX_ERROR` - SQL syntax errors
+- `TABLE_NOT_FOUND` - Table doesn't exist
+- `COLUMN_NOT_FOUND` - Column doesn't exist
+- `PERMISSION_DENIED` - Insufficient permissions
+- `READONLY_VIOLATION` - Write operation on read-only profile
+- `CONSTRAINT_VIOLATION` - Database constraint violations
+- `DATA_TYPE_MISMATCH` - Data type conflicts
+- `DATABASE_NOT_FOUND` - Database doesn't exist
+- `CONFIG_NOT_FOUND` - Configuration file missing
+- `MISSING_PARAMETER` - Required parameter not provided
 
 ## 5. Non-Functional Requirements
 
@@ -99,18 +135,29 @@ Features not listed above are not required for the MVP and may be implemented in
   - **Status:** Implemented (Go MCP SDK integrated and used for action registration/serving)
 - **Database Drivers:** Use `database/sql`-compatible drivers for all supported databases.
   - **Status:** Implemented
+  - MySQL/MariaDB: `github.com/go-sql-driver/mysql`
+  - PostgreSQL: `github.com/lib/pq`
+  - SQLite: `github.com/mattn/go-sqlite3`
 - **Security:** Credentials must not be stored in plain text. Prefer environment variables; if file storage is necessary, encrypt with AES-GCM and store the key in an environment variable.
-  - **Status:** Implemented (AES-GCM encryption with env key)
+  - **Status:** Implemented (AES-256-GCM encryption with 32-character key)
+  - Key can be set via `DB_MCP_AES_KEY` environment variable
 - **Configuration:** Profiles persisted in a human-readable `config.yaml`.
-  - **Status:** Implemented
-- **Statelessness:** Connections opened per action and closed immediately (no pooling).
-  - **Status:** Partially Implemented (connections opened/closed per action, no pooling)
-- **Error Handling:** All errors returned as structured JSON via MCP.
-  - **Status:** Implemented
+  - **Status:** Implemented with automatic creation if missing
+- **Connection Management:** Connection pooling with configurable limits.
+  - **Status:** Implemented (uses `SetMaxOpenConns` and `SetMaxIdleConns`)
+  - Idle connections set to half of max connections
+  - Pool size configurable via `max_pool_size` in config.yaml
+- **Error Handling:** All errors returned as structured JSON via MCP with suggestions.
+  - **Status:** Implemented with comprehensive error analyzer
 - **Logging:** Structured JSON logs to stdout/stderr and a log file; log file must support rotation and size limit (default 500k). **[DONE]**
-  - **Status:** Implemented (structured JSON, rotation, size limit, all major actions/errors use JSONLog)
+  - **Status:** Implemented (structured JSON, rotation at 500KB, 7-day retention)
+  - Log directory created automatically
 - **Read-only profile flag:** Ability to disable delete and/or update table operations (readonly mode) via config option. **[DONE]**
-  - **Status:** Implemented and enforced in execute-sql
+  - **Status:** Implemented and enforced in execute-sql at SQL parsing level
+- **Self-Healing Configuration:** Automatically create minimal config.yaml if missing.
+  - **Status:** Implemented with secure random AES key generation
+- **Type Safety:** Automatic type conversion for database results.
+  - **Status:** Implemented for MySQL (int, float, string conversions)
 
 ## 6. Out of Scope (V1)
 
@@ -131,19 +178,41 @@ Features not listed above are not required for the MVP and may be implemented in
 ## 8. Implementation & Testing Status
 
 - All MVP features are implemented and enforced in code.
-- All AI/Agent-driven MCP server enhancements (items 1-4) are **COMPLETED**.
+- All AI/Agent-driven MCP server enhancements (items 1-6) are **COMPLETED**.
 - Comprehensive unit tests are implemented for all features including automated join discovery.
 - Documentation has been updated for production readiness including comprehensive usage examples.
 - **Status: PRODUCTION READY** - All core features implemented, tested, and documented.
 - **All communication is via the official MCP protocol over stdio. No HTTP endpoints, port 8080, or JSON-RPC are provided.**
+
+### 8.1 Additional Implemented Features (Not in Original PRD)
+1. **Enhanced Error Handling System** - Structured errors with suggestions and context
+2. **Smart Query Builder Tool** - Natural language to SQL generation
+3. **Discover Joins Tool** - Automatic foreign key relationship discovery
+4. **List Tools Action** - Dynamic tool discovery for MCP clients
+5. **Self-Healing Configuration** - Auto-creates config.yaml with secure defaults
+6. **Advanced Type Mapping** - Automatic type conversion for query results
+7. **Cross-Database Query Support** - Fully qualified table names
+8. **Delete/Update Profile Actions** - Complete profile management
+9. **MCP Info Action** - Server capability discovery
+10. **Sample Data Tool** - Data inference for AI agents
+
+### 8.2 Known Implementation Details
+- Duplicate tool registration exists in server.go Start() method (tools registered twice)
+- All tools are fully functional despite the duplication
+- Type conversion is currently implemented only for MySQL
 
 ## 9. Remaining Actionable Tasks
 
 - [x] Write and run comprehensive tests for all features
 - [x] Update documentation for production readiness
 - [x] Implement automated join discovery with full testing and documentation
+- [x] Implement Sample Data Tool
+- [x] Implement Error Feedback Loop with suggestions
+- [ ] Implement analyze-schema tool (currently registered but not implemented)
+- [ ] Fix duplicate tool registration in server.go
+- [ ] Extend type conversion to PostgreSQL and SQLite
 
-**Current Focus:** Items 5-6 (Sample Data Tool and Error Feedback Loop) for future enhancements.
+**Current Focus:** Production deployment and monitoring.
 
 
 # TODO: AI/Agent-Driven MCP Server Enhancements

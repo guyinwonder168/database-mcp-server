@@ -1,7 +1,7 @@
 # Database MCP Server - Project Brief
 
 ## Project Overview
-A production-ready Model Context Protocol (MCP) provider for SQL databases, written in Go. This server enables AI agents and developers to interact with multiple database types through a unified conversational API. All 11 MCP tools are implemented and comprehensively documented in the README, with configuration and usage examples for MySQL, MariaDB, PostgreSQL, and SQLite.
+A production-ready Model Context Protocol (MCP) provider for SQL databases, written in Go. This server enables AI agents and developers to interact with multiple database types through a unified conversational API. All 12 MCP tools (including analyze-schema) are implemented and comprehensively documented in the README, with configuration and usage examples for MySQL, MariaDB, PostgreSQL, and SQLite.
 
 ## Core Mission
 Provide a secure, stateless, and unified interface for accessing MySQL, MariaDB, PostgreSQL, and SQLite databases via the Model Context Protocol, abstracting away database-specific complexities. Ensure robust documentation, easy onboarding, and safe credential management.
@@ -15,7 +15,8 @@ Provide a secure, stateless, and unified interface for accessing MySQL, MariaDB,
 4. **Schema Introspection**: List tables/views, describe table schemas, list databases
 5. **Sample Data Fetching**: Fetch sample rows from tables to infer data formats.
 6. **Interactive Setup**: CLI-based configuration wizard for first-time setup
-7. **MCP Actions**: Full suite of 11 database operations exposed as MCP tools, all documented in README.md
+7. **Analyze-Schema**: Advanced schema analysis MCP tool supporting BASIC, DETAILED, and COMPREHENSIVE levels, business context inference, data quality metrics, relationship discovery, Smart Query Builder integration
+8. **MCP Actions**: Full suite of 12 database operations exposed as MCP tools, all documented in README.md
 
 ### Non-Functional Requirements
 1. **Security**: AES-GCM encryption for stored passwords (32-char key)

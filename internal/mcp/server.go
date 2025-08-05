@@ -15,8 +15,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
+	"unicode"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -31,6 +35,211 @@ type MCPServer struct {
 
 const MCPVersion = "v1.0.0"
 const MCPAuthor = "guyinwonder"
+
+// --- Semantic Relationship Mapping Helpers ---
+//
+// mapSemanticRelationships combines formal foreign keys, join suggestions, and naming pattern analysis.
+func (s *MCPServer) mapSemanticRelationships(
+	tables map[string]TableInfo,
+	joinSuggestions []JoinSuggestion,
+) RelationshipGraph {
+	var fkRels []ForeignKeyRelationship
+	var semanticRels []SemanticRelationship
+	var suggestedJoins []string
+
+	// Add formal FK relationships
+	for tableName, t := range tables {
+		for _, col := range t.Columns {
+			if col.IsForeignKey && col.ForeignKeyRef != nil {
+				fkRels = append(fkRels, ForeignKeyRelationship{
+					FromTable:        tableName,
+					FromColumn:       col.ColumnName,
+					ToTable:          col.ForeignKeyRef.RefTable,
+					ToColumn:         col.ForeignKeyRef.RefColumn,
+					RelationshipType: "many_to_one",
+					SuggestedJoin:    fmt.Sprintf("SELECT * FROM %s JOIN %s ON %s.%s = %s.%s", tableName, col.ForeignKeyRef.RefTable, tableName, col.ColumnName, col.ForeignKeyRef.RefTable, col.ForeignKeyRef.RefColumn),
+				})
+				suggestedJoins = append(suggestedJoins, fmt.Sprintf("SELECT * FROM %s JOIN %s ON %s.%s = %s.%s", tableName, col.ForeignKeyRef.RefTable, tableName, col.ColumnName, col.ForeignKeyRef.RefTable, col.ForeignKeyRef.RefColumn))
+			}
+		}
+	}
+
+	// Add join suggestions as semantic relationships
+	for _, js := range joinSuggestions {
+		semanticRels = append(semanticRels, SemanticRelationship{
+			Tables:           []string{js.FromTable, js.ToTable},
+			RelationshipType: "join_suggestion",
+			ConnectionBasis:  "discover-joins",
+			ConfidenceScore:  0.8,
+			SuggestedJoin:    js.SuggestedJoinSQL,
+		})
+		suggestedJoins = append(suggestedJoins, js.SuggestedJoinSQL)
+	}
+
+	// Add implicit relationships from naming patterns
+	implicit := s.detectImplicitRelationships(tables)
+	semanticRels = append(semanticRels, implicit...)
+
+	return RelationshipGraph{
+		ForeignKeys:           fkRels,
+		SemanticRelationships: semanticRels,
+		SuggestedJoins:        suggestedJoins,
+	}
+}
+
+// detectImplicitRelationships finds relationships via naming patterns.
+func (s *MCPServer) detectImplicitRelationships(tables map[string]TableInfo) []SemanticRelationship {
+	var relationships []SemanticRelationship
+	for srcName, source := range tables {
+		for tgtName, target := range tables {
+			if srcName == tgtName {
+				continue
+			}
+			rel := s.analyzeNamingRelationships(srcName, source, tgtName, target)
+			if rel != nil && rel.ConfidenceScore > 0.5 {
+				relationships = append(relationships, *rel)
+			}
+		}
+	}
+	return relationships
+}
+
+// analyzeNamingRelationships compares column names for reference patterns.
+func (s *MCPServer) analyzeNamingRelationships(srcName string, source TableInfo, tgtName string, target TableInfo) *SemanticRelationship {
+	for _, col := range source.Columns {
+		// Pattern: targetTableName + "_id"
+		expected := tgtName + "_id"
+		if col.ColumnName == expected {
+			return &SemanticRelationship{
+				Tables:           []string{srcName, tgtName},
+				RelationshipType: "implicit_naming",
+				ConnectionBasis:  "column_naming",
+				ConfidenceScore:  0.8,
+				SuggestedJoin:    fmt.Sprintf("SELECT * FROM %s JOIN %s ON %s.%s = %s.id", srcName, tgtName, srcName, col.ColumnName, tgtName),
+			}
+		}
+		// Pattern: shared column names
+		for _, tgtCol := range target.Columns {
+			if col.ColumnName == tgtCol.ColumnName && col.ColumnName != "id" {
+				return &SemanticRelationship{
+					Tables:           []string{srcName, tgtName},
+					RelationshipType: "shared_column",
+					ConnectionBasis:  "shared_column",
+					ConfidenceScore:  0.6,
+					SuggestedJoin:    fmt.Sprintf("SELECT * FROM %s JOIN %s ON %s.%s = %s.%s", srcName, tgtName, srcName, col.ColumnName, tgtName, tgtCol.ColumnName),
+				}
+			}
+		}
+		// Pattern: *_id columns
+		if len(col.ColumnName) > 3 && col.ColumnName[len(col.ColumnName)-3:] == "_id" {
+			prefix := col.ColumnName[:len(col.ColumnName)-3]
+			if prefix == tgtName {
+				return &SemanticRelationship{
+					Tables:           []string{srcName, tgtName},
+					RelationshipType: "implicit_naming",
+					ConnectionBasis:  "column_naming",
+					ConfidenceScore:  0.7,
+					SuggestedJoin:    fmt.Sprintf("SELECT * FROM %s JOIN %s ON %s.%s = %s.id", srcName, tgtName, srcName, col.ColumnName, tgtName),
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// correlateDataValues checks if values in source reference columns exist in target table.
+func (s *MCPServer) correlateDataValues(
+	srcName string, source TableInfo,
+	tgtName string,
+	sampleData map[string][]map[string]interface{},
+) float64 {
+	// Find candidate reference columns
+	var refCols []string
+	for _, col := range source.Columns {
+		if col.ColumnName == tgtName+"_id" || (len(col.ColumnName) > 3 && col.ColumnName[len(col.ColumnName)-3:] == "_id") {
+			refCols = append(refCols, col.ColumnName)
+		}
+	}
+	if len(refCols) == 0 {
+		return 0.0
+	}
+
+	// Get sample values
+	sourceRows := sampleData[srcName]
+	targetRows := sampleData[tgtName]
+	if len(sourceRows) == 0 || len(targetRows) == 0 {
+		return 0.0
+	}
+
+	// Build set of target IDs
+	targetIDs := map[interface{}]struct{}{}
+	for _, row := range targetRows {
+		if id, ok := row["id"]; ok {
+			targetIDs[id] = struct{}{}
+		}
+	}
+
+	// Check how many source values exist in target
+	total := 0
+	matches := 0
+	for _, row := range sourceRows {
+		for _, col := range refCols {
+			if val, ok := row[col]; ok {
+				total++
+				if _, exists := targetIDs[val]; exists {
+					matches++
+				}
+			}
+		}
+	}
+	if total == 0 {
+		return 0.0
+	}
+	return float64(matches) / float64(total)
+}
+
+// buildRelationshipGraph creates a graph representation for AI consumption.
+func (s *MCPServer) buildRelationshipGraph(relGraph RelationshipGraph) map[string]interface{} {
+	graph := map[string]interface{}{}
+	nodes := map[string]map[string]interface{}{}
+	edges := []map[string]interface{}{}
+
+	// Add nodes from FK and semantic relationships
+	for _, fk := range relGraph.ForeignKeys {
+		if _, ok := nodes[fk.FromTable]; !ok {
+			nodes[fk.FromTable] = map[string]interface{}{"name": fk.FromTable}
+		}
+		if _, ok := nodes[fk.ToTable]; !ok {
+			nodes[fk.ToTable] = map[string]interface{}{"name": fk.ToTable}
+		}
+		edges = append(edges, map[string]interface{}{
+			"from":           fk.FromTable,
+			"to":             fk.ToTable,
+			"source_column":  fk.FromColumn,
+			"target_column":  fk.ToColumn,
+			"type":           fk.RelationshipType,
+			"suggested_join": fk.SuggestedJoin,
+		})
+	}
+	for _, rel := range relGraph.SemanticRelationships {
+		for _, t := range rel.Tables {
+			if _, ok := nodes[t]; !ok {
+				nodes[t] = map[string]interface{}{"name": t}
+			}
+		}
+		edges = append(edges, map[string]interface{}{
+			"tables":           rel.Tables,
+			"type":             rel.RelationshipType,
+			"basis":            rel.ConnectionBasis,
+			"confidence_score": rel.ConfidenceScore,
+			"suggested_join":   rel.SuggestedJoin,
+		})
+	}
+	graph["nodes"] = nodes
+	graph["edges"] = edges
+	graph["suggested_joins"] = relGraph.SuggestedJoins
+	return graph
+}
 
 // NewMCPServer creates a new MCPServer instance using the MCP SDK.
 func NewMCPServer() *MCPServer {
@@ -261,6 +470,48 @@ Example:
 Example:
 {"profile_name":"some-profile-name"}`})
 	log.JSONLog("debug", "Registered MCP tool", map[string]interface{}{"name": "list-databases", "description": "List databases/schemas"})
+
+	// Register the analyze-schema MCP tool
+	mcp.AddTool(s.server, &mcp.Tool{
+		Name: "analyze-schema",
+		Description: `Perform schema analysis for a database, including table/column metadata, relationships, and sample data integration.
+
+Required parameters:
+	 - profile_name: Database profile to analyze
+	 - analysis_level: REQUIRED. Must be one of "basic", "detailed", "comprehensive".
+	   - BASIC: Quick overview for initial exploration
+	   - DETAILED: Comprehensive schema for query construction
+	   - COMPREHENSIVE: Deep business context with AI insights
+
+Optional parameters:
+	 - database_name: Specific database (uses profile default if empty)
+	 - include_tables: Specific tables to analyze (all if empty)
+	 - exclude_tables: Tables to exclude from analysis
+	 - sample_size: Rows to sample per table (default: 10)
+	 - include_queries: Generate query suggestions (default: true)
+
+AI agents MUST specify analysis_level. Example:
+{"profile_name":"analytics_db","analysis_level":"detailed","database_name":"analytics_db"}`,
+	}, s.handleAnalyzeSchema)
+	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "analyze-schema", Description: `Perform schema analysis for a database, including table/column metadata, relationships, and sample data integration.
+
+Required parameters:
+	 - profile_name: Database profile to analyze
+	 - analysis_level: REQUIRED. Must be one of "basic", "detailed", "comprehensive".
+	   - BASIC: Quick overview for initial exploration
+	   - DETAILED: Comprehensive schema for query construction
+	   - COMPREHENSIVE: Deep business context with AI insights
+
+Optional parameters:
+	 - database_name: Specific database (uses profile default if empty)
+	 - include_tables: Specific tables to analyze (all if empty)
+	 - exclude_tables: Tables to exclude from analysis
+	 - sample_size: Rows to sample per table (default: 10)
+	 - include_queries: Generate query suggestions (default: true)
+
+AI agents MUST specify analysis_level. Example:
+{"profile_name":"analytics_db","analysis_level":"detailed","database_name":"analytics_db"}`})
+	log.JSONLog("debug", "Registered MCP tool", map[string]interface{}{"name": "analyze-schema", "description": "Comprehensive schema analysis"})
 
 	// Add version/author info tool
 	mcp.AddTool(s.server, &mcp.Tool{
@@ -917,6 +1168,29 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, session *mcp.Se
 	}, nil
 }
 
+// Helper: Invoke smart-query-builder handler for query suggestion generation
+func (s *MCPServer) generateQuerySuggestionViaSmartBuilder(
+	ctx context.Context,
+	session *mcp.ServerSession,
+	profileName, intent, dbName string,
+	tableNames []string,
+) (*SmartQueryBuilderResult, error) {
+	params := &mcp.CallToolParamsFor[SmartQueryBuilderParams]{Arguments: SmartQueryBuilderParams{
+		ProfileName:  profileName,
+		Intent:       intent,
+		DatabaseName: dbName,
+		TableNames:   tableNames,
+	}}
+	result, err := s.handleSmartQueryBuilder(ctx, session, params)
+	if err != nil || result == nil || len(result.Content) == 0 {
+		return nil, err
+	}
+	var sqbr SmartQueryBuilderResult
+	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &sqbr); err != nil {
+		return nil, err
+	}
+	return &sqbr, nil
+}
 func (s *MCPServer) handleConfigureProfile(ctx context.Context, session *mcp.ServerSession, params *mcp.CallToolParamsFor[ConfigureProfileParams]) (*mcp.CallToolResultFor[any], error) {
 	// Load config, or create new if missing
 	cfg, err := config.LoadConfig(s.ConfigPath)
@@ -2253,4 +2527,967 @@ func (s *MCPServer) handleSampleData(
 			},
 		},
 	}, nil
+}
+
+// handleAnalyzeSchema implements the MCP handler for comprehensive schema analysis.
+func (s *MCPServer) handleAnalyzeSchema(
+	ctx context.Context,
+	session *mcp.ServerSession,
+	params *mcp.CallToolParamsFor[AnalyzeSchemaParams],
+) (*mcp.CallToolResultFor[any], error) {
+	startTime := time.Now()
+	p := params.Arguments
+	if err := p.Validate(); err != nil {
+		structErr := NewStructuredError(
+			ErrorCodeMissingParameter,
+			"Missing or invalid required parameter",
+			err.Error(),
+		).WithSuggestions(
+			ErrorSuggestion{
+				Action:      "Specify analysis_level",
+				Description: "analysis_level is required and must be one of: basic, detailed, comprehensive",
+				Example:     `{"profile_name": "analytics_db", "analysis_level": "detailed"}`,
+			},
+		)
+		return &mcp.CallToolResultFor[any]{
+			Content: []mcp.Content{
+				&mcp.TextContent{
+					Text: structErr.ToJSON(),
+				},
+			},
+		}, fmt.Errorf("missing or invalid analysis_level")
+	}
+
+	// 1. Load config and profile
+	cfg, err := config.LoadConfig(s.ConfigPath)
+	if err != nil {
+		structErr := NewStructuredError(
+			ErrorCodeConfigNotFound,
+			"Failed to load configuration",
+			err.Error(),
+		)
+		return &mcp.CallToolResultFor[any]{
+			Content: []mcp.Content{
+				&mcp.TextContent{
+					Text: structErr.ToJSON(),
+				},
+			},
+		}, err
+	}
+	var prof *config.Profile
+	for i := range cfg.Profiles {
+		if cfg.Profiles[i].ProfileName == p.ProfileName {
+			prof = &cfg.Profiles[i]
+			break
+		}
+	}
+	if prof == nil {
+		structErr := NewStructuredError(
+			ErrorCodeProfileNotFound,
+			fmt.Sprintf("Profile '%s' not found", p.ProfileName),
+			"The specified database profile does not exist",
+		)
+		return &mcp.CallToolResultFor[any]{
+			Content: []mcp.Content{
+				&mcp.TextContent{
+					Text: structErr.ToJSON(),
+				},
+			},
+		}, fmt.Errorf("profile not found")
+	}
+	dbName := prof.DatabaseName
+	if p.DatabaseName != "" {
+		dbName = p.DatabaseName
+	}
+
+	// 2. Connect to database
+	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, dbName)
+	conn, err := db.OpenConnectionWithPool(prof.DBType, dsn, cfg.MaxPoolSize)
+	if err != nil {
+		log.JSONLog("error", "Failed to connect to database", map[string]interface{}{"error": err})
+		structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
+			"profile_name": p.ProfileName,
+			"operation":    "analyze_schema",
+			"db_type":      prof.DBType,
+		})
+		return &mcp.CallToolResultFor[any]{
+			Content: []mcp.Content{
+				&mcp.TextContent{
+					Text: structErr.ToJSON(),
+				},
+			},
+		}, err
+	}
+	defer conn.Close()
+
+	// 3. Table list (reuse handleListTables logic)
+	var tables []string
+	{
+		var query string
+		switch prof.DBType {
+		case "mysql", "mariadb":
+			query = "SHOW FULL TABLES"
+		case "postgres":
+			query = "SELECT table_name FROM information_schema.tables WHERE table_schema='public'"
+		case "sqlite":
+			query = "SELECT name FROM sqlite_master WHERE type='table'"
+		default:
+			return nil, fmt.Errorf("unsupported db_type")
+		}
+		rows, err := conn.Query(query)
+		if err != nil {
+			log.JSONLog("error", "Failed to list tables", map[string]interface{}{"error": err})
+			structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
+				"profile_name":  p.ProfileName,
+				"database_name": dbName,
+				"operation":     "list_tables",
+				"db_type":       prof.DBType,
+			})
+			return &mcp.CallToolResultFor[any]{
+				Content: []mcp.Content{
+					&mcp.TextContent{
+						Text: structErr.ToJSON(),
+					},
+				},
+			}, err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			if prof.DBType == "mysql" || prof.DBType == "mariadb" {
+				var name, tableType string
+				if err := rows.Scan(&name, &tableType); err == nil {
+					tables = append(tables, name)
+				}
+			} else {
+				var name string
+				if err := rows.Scan(&name); err == nil {
+					tables = append(tables, name)
+				}
+			}
+		}
+	}
+
+	// Filter tables if include/exclude specified
+	tableSet := map[string]bool{}
+	if len(p.IncludeTables) > 0 {
+		for _, t := range p.IncludeTables {
+			tableSet[strings.ToLower(t)] = true
+		}
+	}
+	excludeSet := map[string]bool{}
+	if len(p.ExcludeTables) > 0 {
+		for _, t := range p.ExcludeTables {
+			excludeSet[strings.ToLower(t)] = true
+		}
+	}
+	filteredTables := []string{}
+	for _, t := range tables {
+		tLower := strings.ToLower(t)
+		if len(tableSet) > 0 && !tableSet[tLower] {
+			continue
+		}
+		if excludeSet[tLower] {
+			continue
+		}
+		filteredTables = append(filteredTables, t)
+	}
+	if len(filteredTables) == 0 {
+		filteredTables = tables
+	}
+
+	// 4. Table schemas and sample data
+	tableSchemas := map[string]TableInfo{}
+	relationshipCandidates := map[string]TableInfo{}
+	sampleDataMap := map[string][]map[string]interface{}{}
+	totalColumns := 0
+	sampleSize := p.SampleSize
+	if sampleSize <= 0 {
+		sampleSize = 10
+	}
+	for _, tbl := range filteredTables {
+		// Describe table (reuse handleDescribeTable logic)
+		var columns []SchemaColumnInfo
+		var keyCols KeyColumns
+		var colQuery string
+		switch prof.DBType {
+		case "mysql", "mariadb":
+			colQuery = fmt.Sprintf("SHOW COLUMNS FROM `%s`", tbl)
+		case "postgres":
+			colQuery = fmt.Sprintf("SELECT column_name FROM information_schema.columns WHERE table_name = '%s' AND table_schema = 'public'", tbl)
+		case "sqlite":
+			colQuery = fmt.Sprintf("PRAGMA table_info('%s')", tbl)
+		default:
+			continue
+		}
+		rows, err := conn.Query(colQuery)
+		if err != nil {
+			continue
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var colName string
+			switch prof.DBType {
+			case "mysql", "mariadb":
+				var field, typ, null, key, def, extra string
+				if err := rows.Scan(&field, &typ, &null, &key, &def, &extra); err == nil {
+					colName = field
+					columns = append(columns, SchemaColumnInfo{
+						ColumnName:   field,
+						DataType:     typ,
+						IsNullable:   null == "YES",
+						IsPrimaryKey: key == "PRI",
+						Unique:       key == "UNI",
+						Indexed:      key == "MUL",
+						DefaultValue: def,
+						Description:  extra,
+					})
+					if key == "PRI" {
+						keyCols.PrimaryKey = field
+					}
+					if key == "MUL" {
+						keyCols.IndexedColumns = append(keyCols.IndexedColumns, field)
+					}
+					if key == "UNI" {
+						keyCols.UniqueColumns = append(keyCols.UniqueColumns, field)
+					}
+				}
+			case "postgres":
+				if err := rows.Scan(&colName); err == nil {
+					columns = append(columns, SchemaColumnInfo{
+						ColumnName: colName,
+						DataType:   "", // Could fetch type with more queries
+					})
+				}
+			case "sqlite":
+				var cid int
+				var typ string
+				var notnull, pk interface{}
+				var dflt_value interface{}
+				if err := rows.Scan(&cid, &colName, &typ, &notnull, &dflt_value, &pk); err == nil {
+					columns = append(columns, SchemaColumnInfo{
+						ColumnName:   colName,
+						DataType:     typ,
+						IsNullable:   notnull == 0,
+						IsPrimaryKey: pk == 1,
+						DefaultValue: dflt_value,
+					})
+					if pk == 1 {
+						keyCols.PrimaryKey = colName
+					}
+				}
+			}
+		}
+		totalColumns += len(columns)
+		relationshipCandidates[tbl] = TableInfo{
+			ColumnCount: len(columns),
+			KeyColumns:  keyCols,
+			Columns:     columns,
+		}
+
+		// Sample data (reuse handleSampleData logic)
+		var sampleQuery string
+		switch prof.DBType {
+		case "mysql", "mariadb":
+			sampleQuery = fmt.Sprintf("SELECT * FROM `%s` LIMIT %d", tbl, sampleSize)
+		case "postgres":
+			sampleQuery = fmt.Sprintf("SELECT * FROM \"%s\" LIMIT %d", tbl, sampleSize)
+		case "sqlite":
+			sampleQuery = fmt.Sprintf("SELECT * FROM '%s' LIMIT %d", tbl, sampleSize)
+		default:
+			continue
+		}
+		sampleRows := []map[string]interface{}{}
+		sampleRowsRaw, err := conn.Query(sampleQuery)
+		if err == nil {
+			cols, _ := sampleRowsRaw.Columns()
+			for sampleRowsRaw.Next() {
+				row := make([]interface{}, len(cols))
+				ptrs := make([]interface{}, len(cols))
+				for i := range row {
+					ptrs[i] = &row[i]
+				}
+				if err := sampleRowsRaw.Scan(ptrs...); err == nil {
+					rowMap := map[string]interface{}{}
+					for i, v := range row {
+						if bytes, ok := v.([]byte); ok {
+							rowMap[cols[i]] = string(bytes)
+						} else {
+							rowMap[cols[i]] = v
+						}
+					}
+					sampleRows = append(sampleRows, rowMap)
+				}
+			}
+			sampleRowsRaw.Close()
+		}
+		sampleDataMap[tbl] = sampleRows
+		tableSchemas[tbl] = TableInfo{
+			ColumnCount:  len(columns),
+			KeyColumns:   keyCols,
+			Columns:      columns,
+			DataPatterns: map[string]DataPattern{}, // Could fill with analyzeDataPatterns
+		}
+	}
+
+	// 5. Relationship discovery
+	relGraph := s.mapSemanticRelationships(relationshipCandidates, nil)
+
+	// 6. Business context inference (comprehensive only)
+	var businessCtx *BusinessContext
+	var domain string
+	var confidence float64
+	var businessDesc string
+	if p.AnalysisLevel == AnalysisLevelComprehensive {
+		businessCtx = s.inferBusinessContext(relationshipCandidates)
+		for k, v := range businessCtx.DomainIndicators {
+			domain = k
+			confidence = v
+			businessDesc = s.generateBusinessDescription(domain, businessCtx.EntityRelationships.CentralEntities, confidence)
+			break
+		}
+		// --- Advanced helpers integration ---
+		// 1. Data pattern analysis for each table
+		for tbl, schema := range tableSchemas {
+			tableSample := sampleDataMap[tbl]
+			tableSchemas[tbl] = TableInfo{
+				ColumnCount:  schema.ColumnCount,
+				KeyColumns:   schema.KeyColumns,
+				Columns:      schema.Columns,
+				DataPatterns: map[string]DataPattern{},
+			}
+			patterns := s.analyzeDataPatterns(tbl, tableSample, schema.Columns)
+			for i, col := range schema.Columns {
+				if i < len(patterns) {
+					tableSchemas[tbl].DataPatterns[col.ColumnName] = patterns[i]
+				}
+			}
+		}
+		// 2. Correlate data values between tables for relationship confidence
+		for srcName, srcSchema := range tableSchemas {
+			for tgtName := range tableSchemas {
+				if srcName == tgtName {
+					continue
+				}
+				conf := s.correlateDataValues(srcName, srcSchema, tgtName, sampleDataMap)
+				if conf > 0.5 {
+					// Optionally, add to relationship graph or log
+					// Example: log.JSONLog("info", "Correlated data values", map[string]interface{}{"from": srcName, "to": tgtName, "confidence": conf})
+				}
+			}
+		}
+		// 3. Build relationship graph for AI consumption
+		_ = s.buildRelationshipGraph(relGraph) // Build for future use or logging, but do not assign
+	}
+
+	// 7. Query suggestions (comprehensive only)
+	var aiQuerySuggestions AIQuerySuggestions
+	if p.AnalysisLevel == AnalysisLevelComprehensive && p.IncludeQueries {
+		// Example: Generate one suggestion per table
+		for _, tbl := range filteredTables {
+			suggestion, err := s.generateQuerySuggestionViaSmartBuilder(ctx, session, p.ProfileName, fmt.Sprintf("Show all rows in %s", tbl), dbName, []string{tbl})
+			if err == nil && suggestion != nil {
+				aiQuerySuggestions.DataExploration = append(aiQuerySuggestions.DataExploration, QuerySuggestion{
+					Category:   "exploration",
+					Question:   fmt.Sprintf("Show all rows in %s", tbl),
+					SQL:        suggestion.SQL,
+					Complexity: "easy",
+				})
+			}
+		}
+	}
+
+	// 8. Assemble result
+	dataQualityMetrics := make(map[string]QualityMetrics)
+	if p.AnalysisLevel == AnalysisLevelDetailed || p.AnalysisLevel == AnalysisLevelComprehensive {
+		for tbl, schema := range tableSchemas {
+			metrics := s.generateDataQualityMetrics(sampleDataMap[tbl], schema.Columns)
+			// Aggregate table-level metrics (average of columns)
+			if len(metrics) > 0 {
+				var sum, count float64
+				for _, qm := range metrics {
+					sum += qm.OverallScore
+					count++
+				}
+				avg := 0.0
+				if count > 0 {
+					avg = sum / count
+				}
+				metrics["__table__"] = QualityMetrics{
+					OverallScore: avg,
+					Issues:       []string{},
+				}
+			}
+			// Flatten into main map with table.column keys
+			for col, qm := range metrics {
+				key := tbl
+				if col != "__table__" {
+					key += "." + col
+				}
+				dataQualityMetrics[key] = qm
+			}
+		}
+		// Database-level aggregate
+		var dbSum, dbCount float64
+		for k, qm := range dataQualityMetrics {
+			if !strings.HasSuffix(k, "__table__") {
+				dbSum += qm.OverallScore
+				dbCount++
+			}
+		}
+		if dbCount > 0 {
+			dataQualityMetrics["__database__"] = QualityMetrics{
+				OverallScore: dbSum / dbCount,
+				Issues:       []string{},
+			}
+		}
+	}
+
+	// Categorize tables for TableCatalog
+	tableCatalog := s.categorizeTables(filteredTables, tableSchemas)
+	log.JSONLog("info", "Assembling AnalyzeSchemaResult", map[string]interface{}{
+		"tables":         len(filteredTables),
+		"columns":        totalColumns,
+		"relationships":  len(relGraph.ForeignKeys) + len(relGraph.SemanticRelationships),
+		"analysis_level": p.AnalysisLevel,
+	})
+	result := AnalyzeSchemaResult{
+		AnalysisMetadata: AnalysisMetadata{
+			AnalysisLevel:      p.AnalysisLevel,
+			DatabaseType:       prof.DBType,
+			AnalysisTimestamp:  startTime,
+			ToolsUsed:          []string{"list-tables", "describe-table", "sample-data", "discover-joins"},
+			AnalysisDurationMs: int(time.Since(startTime).Milliseconds()),
+		},
+		DatabaseOverview: DatabaseOverview{
+			DatabaseCount:           1,
+			TotalTables:             len(filteredTables),
+			TotalColumns:            totalColumns,
+			TotalRelationships:      len(relGraph.ForeignKeys) + len(relGraph.SemanticRelationships),
+			EstimatedBusinessDomain: domain,
+			ConfidenceScore:         confidence,
+			BusinessModelInsights:   []string{},
+			Summary:                 fmt.Sprintf("Analyzed %d tables and %d columns.", len(filteredTables), totalColumns),
+		},
+		TableCatalog:       tableCatalog,
+		TableSchemas:       tableSchemas,
+		RelationshipGraph:  relGraph,
+		BusinessContext:    BusinessContext{},
+		AIQuerySuggestions: aiQuerySuggestions,
+		DataQualityMetrics: dataQualityMetrics,
+		QuickInsights:      []string{fmt.Sprintf("Schema analysis completed for %d tables.", len(filteredTables))},
+	}
+
+	if businessCtx != nil {
+		result.BusinessContext = *businessCtx
+		// Add business description summary
+		if result.DatabaseOverview.BusinessModelInsights == nil {
+			result.DatabaseOverview.BusinessModelInsights = []string{}
+		}
+		result.DatabaseOverview.BusinessModelInsights = append(result.DatabaseOverview.BusinessModelInsights, businessDesc)
+	}
+
+	b, err := json.Marshal(result)
+	if err != nil {
+		log.JSONLog("error", "Failed to serialize AnalyzeSchemaResult", map[string]interface{}{"error": err.Error()})
+		return nil, err
+	}
+	return &mcp.CallToolResultFor[any]{
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: string(b),
+			},
+		},
+	}, nil
+}
+
+// Business Context Inference Helpers
+
+func (s *MCPServer) inferBusinessContext(tableSchemas map[string]TableInfo) *BusinessContext {
+	// Collect table names
+	tableNames := make([]string, 0, len(tableSchemas))
+	tables := make([]TableInfo, 0, len(tableSchemas))
+	for name, t := range tableSchemas {
+		tableNames = append(tableNames, name)
+		tables = append(tables, t)
+	}
+	domain, confidence := s.detectDomain(tableNames)
+	naming := s.analyzeNamingConventions(tables)
+	entities := s.identifyEntityTypes(tableNames)
+	// Compose BusinessContext struct
+	return &BusinessContext{
+		DomainIndicators: map[string]float64{domain: confidence},
+		NamingConventions: NamingConventions{
+			Pattern:           naming["main_case"].(string),
+			ConsistencyScore:  naming["consistency"].(float64),
+			ForeignKeyPattern: naming["fk_pattern"].(string),
+			AuditColumns:      naming["timestampCols"].([]string),
+		},
+		EntityRelationships: EntityRelationships{
+			CentralEntities:      entities,
+			RelationshipDensity:  0.0, // Placeholder, can be computed from relationships
+			MaxRelationshipDepth: 0,   // Placeholder
+		},
+		DataPatterns: map[string]DataPattern{}, // Placeholder, can be extended
+	}
+}
+
+func (s *MCPServer) detectDomain(tableNames []string) (string, float64) {
+	domainPatterns := map[string][]string{
+		"e-commerce":         {"product", "order", "cart", "customer", "payment", "inventory"},
+		"healthcare":         {"patient", "doctor", "appointment", "medical", "prescription", "diagnosis"},
+		"finance":            {"account", "transaction", "ledger", "invoice", "payment", "balance"},
+		"crm":                {"lead", "contact", "opportunity", "customer", "activity"},
+		"project-management": {"project", "task", "milestone", "issue", "sprint"},
+		"education":          {"student", "course", "grade", "teacher", "enrollment"},
+		"logistics":          {"shipment", "warehouse", "delivery", "route", "tracking"},
+	}
+	domainScores := make(map[string]float64)
+	for domain, patterns := range domainPatterns {
+		score := 0.0
+		for _, name := range tableNames {
+			for _, pat := range patterns {
+				if strings.Contains(strings.ToLower(name), pat) {
+					score += 1.0
+				}
+			}
+		}
+		domainScores[domain] = score / float64(len(patterns))
+	}
+	var bestDomain string
+	var bestScore float64
+	for domain, score := range domainScores {
+		if score > bestScore {
+			bestDomain = domain
+			bestScore = score
+		}
+	}
+	if bestScore == 0 {
+		return "unknown", 0.0
+	}
+	return bestDomain, bestScore
+}
+
+func (s *MCPServer) analyzeNamingConventions(tables []TableInfo) map[string]interface{} {
+	cases := map[string]int{"snake_case": 0, "camelCase": 0, "PascalCase": 0}
+	prefixes := map[string]int{}
+	suffixes := map[string]int{}
+	timestampCols := []string{}
+	for _, t := range tables {
+		for _, col := range t.Columns {
+			name := col.ColumnName
+			if strings.Contains(name, "_") {
+				cases["snake_case"]++
+			} else if len(name) > 1 && unicode.IsUpper(rune(name[0])) {
+				cases["PascalCase"]++
+			} else if len(name) > 1 && unicode.IsLower(rune(name[0])) && strings.IndexFunc(name, unicode.IsUpper) > 0 {
+				cases["camelCase"]++
+			}
+			parts := strings.Split(name, "_")
+			if len(parts) > 1 {
+				prefixes[parts[0]]++
+				suffixes[parts[len(parts)-1]]++
+			}
+			if strings.HasSuffix(name, "created_at") || strings.HasSuffix(name, "updated_at") ||
+				strings.HasSuffix(name, "timestamp") || strings.HasSuffix(name, "created") || strings.HasSuffix(name, "modified") {
+				timestampCols = append(timestampCols, name)
+			}
+		}
+	}
+	return map[string]interface{}{
+		"cases":         cases,
+		"prefixes":      prefixes,
+		"suffixes":      suffixes,
+		"timestampCols": timestampCols,
+	}
+}
+
+func (s *MCPServer) identifyEntityTypes(tableNames []string) []string {
+	types := []string{}
+	for _, name := range tableNames {
+		lower := strings.ToLower(name)
+		if strings.Contains(lower, "log") || strings.Contains(lower, "audit") {
+			types = append(types, "log")
+		} else if strings.Contains(lower, "lookup") || strings.HasSuffix(lower, "_type") || strings.HasSuffix(lower, "_status") {
+			types = append(types, "lookup")
+		} else if strings.Contains(lower, "transaction") || strings.Contains(lower, "order") || strings.Contains(lower, "invoice") {
+			types = append(types, "transactional")
+		} else if strings.Contains(lower, "user") || strings.Contains(lower, "product") || strings.Contains(lower, "customer") {
+			types = append(types, "master_data")
+		} else {
+			types = append(types, "other")
+		}
+	}
+	return types
+}
+
+func (s *MCPServer) generateBusinessDescription(domain string, entities []string, confidence float64) string {
+	if domain == "unknown" || confidence < 0.2 {
+		return "The database schema does not match any well-known business domain. It may be custom or generic."
+	}
+	entitySummary := map[string]int{}
+	for _, e := range entities {
+		entitySummary[e]++
+	}
+	entityDesc := []string{}
+	for k, v := range entitySummary {
+		entityDesc = append(entityDesc, fmt.Sprintf("%d %s tables", v, k))
+	}
+	return fmt.Sprintf("This database appears to represent a %s system, with %s. Domain detection confidence: %.2f.", domain, strings.Join(entityDesc, ", "), confidence)
+}
+
+// --- Data Pattern Recognition Helpers ---
+
+// analyzeDataPatterns analyzes sample data for each column to detect patterns.
+func (s *MCPServer) analyzeDataPatterns(tableName string, sampleData []map[string]interface{}, columns []SchemaColumnInfo) []DataPattern {
+	patterns := make([]DataPattern, len(columns))
+	for i, col := range columns {
+		var values []interface{}
+		for _, row := range sampleData {
+			if v, ok := row[col.ColumnName]; ok {
+				values = append(values, v)
+			}
+		}
+		pattern := s.detectColumnPattern(tableName, col.ColumnName, values)
+		if pattern != nil {
+			patterns[i] = *pattern
+		} else {
+			patterns[i] = DataPattern{}
+		}
+	}
+	return patterns
+}
+
+// detectColumnPattern analyzes individual column data to detect value distribution, patterns, ranges, and examples.
+func (s *MCPServer) detectColumnPattern(tableName string, columnName string, values []interface{}) *DataPattern {
+	dist := s.analyzeValueDistribution(values)
+	nullCount := 0
+	uniqueSet := map[string]struct{}{}
+	var min, max interface{}
+	var minSet, maxSet bool
+	var decimalPlaces int
+	var enumValues []string
+
+	// Use detectDataType for semantic inference
+	semanticType := s.detectDataType(values)
+
+	// Regex patterns for semantic types
+	regexes := map[string]string{
+		"email":    `^[\w\.\-]+@[\w\.\-]+\.\w+$`,
+		"phone":    `^\+?\d[\d\-\s]{7,}$`,
+		"url":      `^https?://[^\s]+$`,
+		"id":       `^[a-fA-F0-9\-]{8,}$`,
+		"uuid":     `^[a-fA-F0-9\-]{36}$`,
+		"date":     `^\d{4}-\d{2}-\d{2}`,
+		"currency": `^\$?\d+(\.\d{2})?$`,
+	}
+
+	patternType := semanticType
+	validationRegex := ""
+	for _, v := range values {
+		if v == nil {
+			nullCount++
+			continue
+		}
+		strVal := fmt.Sprintf("%v", v)
+		uniqueSet[strVal] = struct{}{}
+		// Numeric min/max
+		switch val := v.(type) {
+		case int, int32, int64, float32, float64:
+			f, err := toFloat64(val)
+			if err == nil {
+				if !minSet || f < min.(float64) {
+					min = f
+					minSet = true
+				}
+				if !maxSet || f > max.(float64) {
+					max = f
+					maxSet = true
+				}
+				dec := countDecimalPlaces(strVal)
+				if dec > decimalPlaces {
+					decimalPlaces = dec
+				}
+			}
+		case string:
+			// Pattern detection
+			for typ, rx := range regexes {
+				if matchRegex(rx, val) {
+					patternType = typ
+					validationRegex = rx
+					break
+				}
+			}
+		}
+	}
+	// Enum detection: if unique count is small and all are strings
+	if len(uniqueSet) > 0 && len(uniqueSet) <= 10 {
+		for k := range uniqueSet {
+			enumValues = append(enumValues, k)
+		}
+	}
+	// Range for numbers
+	var rng *ValueRange
+	if minSet && maxSet {
+		rng = &ValueRange{Min: min, Max: max}
+	}
+	// Null percentage
+	nullPct := float64(nullCount) / float64(len(values))
+	// Uniqueness
+	uniqRatio := float64(len(uniqueSet)) / float64(len(values))
+	// Distribution type
+	distType := dist["distribution"].(string)
+	// Enhanced logging for tableName and columnName
+	fmt.Printf("[PatternAnalysis] Table: %s, Column: %s, PatternType: %s\n", tableName, columnName, patternType)
+	return &DataPattern{
+		PatternType:     patternType,
+		ValidationRegex: validationRegex,
+		Uniqueness:      uniqRatio,
+		NullPercentage:  nullPct,
+		DecimalPlaces:   decimalPlaces,
+		Range:           rng,
+		Distribution:    distType,
+		Values:          enumValues,
+	}
+}
+
+// analyzeValueDistribution calculates statistics: unique values, null count, most common values.
+func (s *MCPServer) analyzeValueDistribution(values []interface{}) map[string]interface{} {
+	stats := map[string]interface{}{}
+	counts := map[string]int{}
+	nullCount := 0
+	for _, v := range values {
+		if v == nil {
+			nullCount++
+			continue
+		}
+		strVal := fmt.Sprintf("%v", v)
+		counts[strVal]++
+	}
+	stats["unique_count"] = len(counts)
+	stats["null_count"] = nullCount
+	// Most common values
+	type kv struct {
+		Key   string
+		Value int
+	}
+	var freq []kv
+	for k, v := range counts {
+		freq = append(freq, kv{k, v})
+	}
+	// Sort by frequency
+	sort.Slice(freq, func(i, j int) bool { return freq[i].Value > freq[j].Value })
+	var common []string
+	for i := 0; i < len(freq) && i < 3; i++ {
+		common = append(common, freq[i].Key)
+	}
+	stats["most_common"] = common
+	// Distribution type
+	if len(counts) == 1 {
+		stats["distribution"] = "constant"
+	} else if len(counts) < len(values)/2 {
+		stats["distribution"] = "categorical"
+	} else {
+		stats["distribution"] = "variable"
+	}
+	return stats
+}
+
+// detectDataType infers semantic data type beyond SQL type.
+func (s *MCPServer) detectDataType(values []interface{}) string {
+	regexes := map[string]string{
+		"email":    `^[\w\.\-]+@[\w\.\-]+\.\w+$`,
+		"phone":    `^\+?\d[\d\-\s]{7,}$`,
+		"url":      `^https?://[^\s]+$`,
+		"id":       `^[a-fA-F0-9\-]{8,}$`,
+		"uuid":     `^[a-fA-F0-9\-]{36}$`,
+		"date":     `^\d{4}-\d{2}-\d{2}`,
+		"currency": `^\$?\d+(\.\d{2})?$`,
+	}
+	typeCounts := map[string]int{}
+	for _, v := range values {
+		if v == nil {
+			continue
+		}
+		strVal := fmt.Sprintf("%v", v)
+		for typ, rx := range regexes {
+			if matchRegex(rx, strVal) {
+				typeCounts[typ]++
+			}
+		}
+	}
+	// Pick the most frequent type
+	maxType := ""
+	maxCount := 0
+	for typ, cnt := range typeCounts {
+		if cnt > maxCount {
+			maxType = typ
+			maxCount = cnt
+		}
+	}
+	if maxType != "" && float64(maxCount)/float64(len(values)) > 0.5 {
+		return maxType
+	}
+	return "unknown"
+}
+
+// generateDataQualityMetrics calculates completeness, consistency, validity.
+func (s *MCPServer) generateDataQualityMetrics(
+	sampleData []map[string]interface{},
+	columns []SchemaColumnInfo,
+) map[string]QualityMetrics {
+	metrics := make(map[string]QualityMetrics)
+	for _, col := range columns {
+		var values []interface{}
+		for _, row := range sampleData {
+			if v, ok := row[col.ColumnName]; ok {
+				values = append(values, v)
+			}
+		}
+		total := len(values)
+		if total == 0 {
+			metrics[col.ColumnName] = QualityMetrics{
+				Issues:       []string{"No sample data available"},
+				OverallScore: 0,
+			}
+			continue
+		}
+		nonNull := 0
+		valid := 0
+		uniqueSet := map[string]struct{}{}
+		temporalConsistent := 0
+		businessRuleCompliant := 0
+		consistency := 1.0 // Placeholder: could be calculated from repeated values, etc.
+		issues := []string{}
+
+		// Temporal consistency: for date/time columns, check if values are in order
+		isTemporal := col.DataType == "date" || col.DataType == "datetime" || col.DataType == "timestamp"
+		var lastTime time.Time
+		var temporalOrderBroken bool
+
+		for i, v := range values {
+			if v != nil {
+				nonNull++
+				uniqueSet[fmt.Sprintf("%v", v)] = struct{}{}
+				// Validity: check pattern if available
+				if col.PatternType != "" && col.ValidationRegex != "" {
+					if matchRegex(col.ValidationRegex, fmt.Sprintf("%v", v)) {
+						valid++
+					} else {
+						issues = append(issues, fmt.Sprintf("Invalid value for %s: %v", col.ColumnName, v))
+					}
+				} else {
+					valid++
+				}
+				// Temporal consistency
+				if isTemporal {
+					strVal := fmt.Sprintf("%v", v)
+					t, err := time.Parse("2006-01-02", strVal)
+					if err == nil {
+						if i > 0 && !lastTime.IsZero() && t.Before(lastTime) {
+							temporalOrderBroken = true
+						}
+						lastTime = t
+						temporalConsistent++
+					}
+				}
+				// Business rule compliance: placeholder, always 1 for now
+				businessRuleCompliant++
+			} else {
+				issues = append(issues, fmt.Sprintf("Null value in %s", col.ColumnName))
+			}
+		}
+		completeness := float64(nonNull) / float64(total)
+		uniqueness := float64(len(uniqueSet)) / float64(total)
+		validity := float64(valid) / float64(total)
+		temporalConsistency := 1.0
+		if isTemporal && temporalOrderBroken {
+			temporalConsistency = 0.0
+			issues = append(issues, "Temporal inconsistency detected")
+		}
+		businessRuleCompliance := float64(businessRuleCompliant) / float64(total)
+		overall := (completeness + uniqueness + validity + consistency + temporalConsistency + businessRuleCompliance) / 6.0
+
+		metrics[col.ColumnName] = QualityMetrics{
+			Completeness:           completeness,
+			Uniqueness:             uniqueness,
+			Validity:               validity,
+			Consistency:            consistency,
+			TemporalConsistency:    temporalConsistency,
+			BusinessRuleCompliance: businessRuleCompliance,
+			OverallScore:           overall,
+			Issues:                 issues,
+		}
+	}
+	return metrics
+}
+
+// categorizeTables classifies tables for TableCatalog (core, lookup, junction, audit)
+func (s *MCPServer) categorizeTables(tableNames []string, schemas map[string]TableInfo) TableCatalog {
+	var coreEntities, lookupTables, junctionTables, auditTables []TableEntity
+	for _, tbl := range tableNames {
+		info := schemas[tbl]
+		entity := TableEntity{
+			TableName:   tbl,
+			ColumnCount: info.ColumnCount,
+			PrimaryKey:  info.KeyColumns.PrimaryKey,
+		}
+		lower := strings.ToLower(tbl)
+		switch {
+		case strings.Contains(lower, "log") || strings.Contains(lower, "audit"):
+			entity.BusinessRole = "audit"
+			auditTables = append(auditTables, entity)
+		case strings.Contains(lower, "lookup") || strings.HasSuffix(lower, "_type") || strings.HasSuffix(lower, "_status"):
+			entity.BusinessRole = "lookup"
+			lookupTables = append(lookupTables, entity)
+		case strings.Contains(lower, "junction") || strings.Contains(lower, "join"):
+			entity.BusinessRole = "junction"
+			junctionTables = append(junctionTables, entity)
+		default:
+			entity.BusinessRole = "core"
+			coreEntities = append(coreEntities, entity)
+		}
+	}
+	return TableCatalog{
+		CoreEntities:   coreEntities,
+		LookupTables:   lookupTables,
+		JunctionTables: junctionTables,
+		AuditTables:    auditTables,
+	}
+}
+
+// --- Utility functions ---
+
+func toFloat64(v interface{}) (float64, error) {
+	switch val := v.(type) {
+	case int:
+		return float64(val), nil
+	case int32:
+		return float64(val), nil
+	case int64:
+		return float64(val), nil
+	case float32:
+		return float64(val), nil
+	case float64:
+		return val, nil
+	case string:
+		return strconv.ParseFloat(val, 64)
+	default:
+		return 0, fmt.Errorf("not a number")
+	}
+}
+
+func countDecimalPlaces(s string) int {
+	parts := strings.Split(s, ".")
+	if len(parts) == 2 {
+		return len(parts[1])
+	}
+	return 0
+}
+
+func matchRegex(pattern, value string) bool {
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return false
+	}
+	return re.MatchString(value)
 }

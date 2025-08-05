@@ -1173,3 +1173,147 @@ func TestHandleListTools_VerifyAllTools(t *testing.T) {
 		}
 	}
 }
+
+// --- AnalyzeSchema MCP Action Tests ---
+
+func TestHandleAnalyzeSchema(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+	session := &mcp.ServerSession{}
+
+	levels := []string{AnalysisLevelBasic, AnalysisLevelDetailed, AnalysisLevelComprehensive}
+	for _, level := range levels {
+		params := &mcp.CallToolParamsFor[AnalyzeSchemaParams]{
+			Arguments: AnalyzeSchemaParams{
+				ProfileName:   "testsqlite",
+				DatabaseName:  ":memory:",
+				AnalysisLevel: level,
+				SampleSize:    2,
+			},
+		}
+		res, err := server.handleAnalyzeSchema(ctx, session, params)
+		if err != nil {
+			t.Fatalf("handleAnalyzeSchema error for level %s: %v", level, err)
+		}
+		if res == nil || res.Content == nil {
+			t.Fatalf("handleAnalyzeSchema returned nil content for level %s", level)
+		}
+	}
+
+	// Invalid analysis_level
+	paramsInvalid := &mcp.CallToolParamsFor[AnalyzeSchemaParams]{
+		Arguments: AnalyzeSchemaParams{
+			ProfileName:   "testsqlite",
+			DatabaseName:  ":memory:",
+			AnalysisLevel: "invalid",
+		},
+	}
+	_, err := server.handleAnalyzeSchema(ctx, session, paramsInvalid)
+	if err == nil {
+		t.Fatalf("Expected error for invalid analysis_level, got nil")
+	}
+
+	// Missing profile_name
+	paramsMissing := &mcp.CallToolParamsFor[AnalyzeSchemaParams]{
+		Arguments: AnalyzeSchemaParams{
+			ProfileName:   "",
+			DatabaseName:  ":memory:",
+			AnalysisLevel: AnalysisLevelBasic,
+		},
+	}
+	_, err = server.handleAnalyzeSchema(ctx, session, paramsMissing)
+	if err == nil {
+		t.Fatalf("Expected error for missing profile_name, got nil")
+	}
+
+	// Profile not found
+	paramsNotFound := &mcp.CallToolParamsFor[AnalyzeSchemaParams]{
+		Arguments: AnalyzeSchemaParams{
+			ProfileName:   "nonexistent",
+			DatabaseName:  ":memory:",
+			AnalysisLevel: AnalysisLevelBasic,
+		},
+	}
+	_, err = server.handleAnalyzeSchema(ctx, session, paramsNotFound)
+	if err == nil {
+		t.Fatalf("Expected error for profile not found, got nil")
+	}
+
+	// Database connection failure (simulate by using bad DB type)
+	badConfig := "test_config_bad.yaml"
+	defer os.Remove(badConfig)
+	cfg := &config.Config{
+		Profiles: []config.Profile{
+			{
+				ProfileName:  "badprofile",
+				DBType:       "oracle", // Unsupported
+				DatabaseName: "bad",
+			},
+		},
+		MaxPoolSize: 5,
+	}
+	if err := config.SaveConfig(badConfig, cfg); err != nil {
+		t.Fatalf("Failed to save bad test config: %v", err)
+	}
+	serverBad := NewMCPServerWithConfig(badConfig)
+	paramsBad := &mcp.CallToolParamsFor[AnalyzeSchemaParams]{
+		Arguments: AnalyzeSchemaParams{
+			ProfileName:   "badprofile",
+			DatabaseName:  "bad",
+			AnalysisLevel: AnalysisLevelBasic,
+		},
+	}
+	_, err = serverBad.handleAnalyzeSchema(ctx, session, paramsBad)
+	if err == nil {
+		t.Fatalf("Expected error for unsupported DB type, got nil")
+	}
+}
+
+// --- AnalyzeSchema Helper Method Unit Tests ---
+
+func TestDetectDomain(t *testing.T) {
+	server := NewMCPServerWithConfig(setupTestConfig(t))
+	domain, confidence := server.detectDomain([]string{"orders", "products", "customers"})
+	if domain != "e-commerce" {
+		t.Errorf("Expected domain 'e-commerce', got '%s'", domain)
+	}
+	if confidence <= 0 {
+		t.Errorf("Expected positive confidence, got %f", confidence)
+	}
+}
+
+func TestAnalyzeNamingConventions(t *testing.T) {
+	server := NewMCPServerWithConfig(setupTestConfig(t))
+	tables := []TableInfo{
+		{Columns: []SchemaColumnInfo{{ColumnName: "created_at"}, {ColumnName: "user_id"}}},
+		{Columns: []SchemaColumnInfo{{ColumnName: "order_id"}, {ColumnName: "updated_at"}}},
+	}
+	result := server.analyzeNamingConventions(tables)
+	if result["cases"].(map[string]int)["snake_case"] == 0 {
+		t.Errorf("Expected snake_case detection")
+	}
+	if len(result["timestampCols"].([]string)) == 0 {
+		t.Errorf("Expected timestamp columns detection")
+	}
+}
+
+func BenchmarkHandleAnalyzeSchema(b *testing.B) {
+	testConfig := setupTestConfig(&testing.T{})
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+	session := &mcp.ServerSession{}
+	params := &mcp.CallToolParamsFor[AnalyzeSchemaParams]{
+		Arguments: AnalyzeSchemaParams{
+			ProfileName:   "testsqlite",
+			DatabaseName:  ":memory:",
+			AnalysisLevel: AnalysisLevelComprehensive,
+			SampleSize:    2,
+		},
+	}
+	for i := 0; i < b.N; i++ {
+		_, _ = server.handleAnalyzeSchema(ctx, session, params)
+	}
+}

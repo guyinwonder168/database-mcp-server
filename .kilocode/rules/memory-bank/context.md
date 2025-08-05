@@ -19,18 +19,20 @@
 - ✅ AES-GCM password encryption (32-char key)
 - ✅ Connection pooling with configurable limits
 - ✅ Structured JSON logging with rotation
-- ✅ All 11 MCP tools implemented and documented in README.md
+- ✅ All 12 MCP tools implemented and documented in README.md (including analyze-schema)
 - ✅ Comprehensive unit and integration tests for all features
 - ✅ Configuration cleanup (user_key/user_secret fields removed)
 - ✅ All database profile examples (MySQL, MariaDB, PostgreSQL, SQLite) included in documentation
 - ✅ Execute-SQL documentation updated to match implementation
 - ✅ Production documentation fully updated for stdio/JSON-RPC and all MCP actions
+- ✅ Analyze-schema MCP tool fully implemented: complete type system, handler, tests, supports BASIC/DETAILED/COMPREHENSIVE levels, business context inference, data quality metrics, relationship discovery, Smart Query Builder integration
 
 ### Known Issues
 - None
 
 ## Recent Changes
-- README.md comprehensively updated to document all 11 MCP tools, usage, and configuration
+- README.md updated to document all 12 MCP tools, including analyze-schema usage and configuration
+- Analyze-schema MCP tool implemented: type system, handler, tests, analysis levels, business context inference, data quality metrics, relationship discovery, Smart Query Builder integration
 - Configuration cleanup: removed obsolete user_key/user_secret fields from config and documentation
 - Execute-SQL documentation aligned with current implementation
 - Added full database profile examples for MySQL, MariaDB, PostgreSQL, and SQLite
