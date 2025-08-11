@@ -161,6 +161,32 @@ paths:
            application/json:
              schema:
                $ref: '#/components/schemas/ErrorResponse'
+
+ /analyze-schema:
+   post:
+     summary: Perform comprehensive schema analysis
+     description: |
+       Analyzes database schema at BASIC, DETAILED, or COMPREHENSIVE level.
+       Returns metadata, relationships, data quality metrics, and query suggestions.
+     requestBody:
+       required: true
+       content:
+         application/json:
+           schema:
+             $ref: '#/components/schemas/AnalyzeSchemaParams'
+     responses:
+       '200':
+         description: Success
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/AnalyzeSchemaResult'
+       '400':
+         description: Error - Invalid parameters
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
     ConfigureProfileParams:
@@ -311,6 +337,146 @@ components:
          type: string
          description: Explanation of how the query was generated
          example: "Selected table 'attendance' based on keywords from intent 'attendance dashboard'."
+   
+   AnalyzeSchemaParams:
+     type: object
+     required:
+       - profile_name
+       - analysis_level
+     properties:
+       profile_name:
+         type: string
+         description: Name of the database profile to use
+       analysis_level:
+         type: string
+         enum: ["basic", "detailed", "comprehensive"]
+         description: Level of analysis to perform
+       database_name:
+         type: string
+         description: Optional database name override
+       include_tables:
+         type: array
+         items:
+           type: string
+         description: Specific tables to analyze (all if empty)
+       exclude_tables:
+         type: array
+         items:
+           type: string
+         description: Tables to exclude from analysis
+       sample_size:
+         type: integer
+         description: Number of sample rows to fetch per table
+         default: 10
+       include_queries:
+         type: boolean
+         description: Whether to include AI-generated query suggestions
+         default: true
+
+   AnalyzeSchemaResult:
+     type: object
+     properties:
+       analysis_metadata:
+         type: object
+         properties:
+           analysis_level:
+             type: string
+           database_type:
+             type: string
+           analysis_timestamp:
+             type: string
+             format: date-time
+       database_overview:
+         type: object
+         properties:
+           total_tables:
+             type: integer
+           total_columns:
+             type: integer
+       table_schemas:
+         type: object
+         additionalProperties:
+           $ref: '#/components/schemas/TableSchema'
+       relationship_graph:
+         type: object
+         properties:
+           foreign_keys:
+             type: array
+             items:
+               $ref: '#/components/schemas/ForeignKey'
+       ai_query_suggestions:
+         type: object
+         properties:
+           data_exploration:
+             type: array
+             items:
+               $ref: '#/components/schemas/QuerySuggestion'
+           business_intelligence:
+             type: array
+             items:
+               $ref: '#/components/schemas/QuerySuggestion'
+
+   TableSchema:
+     type: object
+     properties:
+       column_count:
+         type: integer
+       key_columns:
+         type: object
+         properties:
+           primary_key:
+             type: string
+           foreign_keys:
+             type: array
+             items:
+               type: string
+       columns:
+         type: array
+         items:
+           type: object
+           properties:
+             column_name:
+               type: string
+             data_type:
+               type: string
+             is_nullable:
+               type: boolean
+             is_primary_key:
+               type: boolean
+             is_foreign_key:
+               type: boolean
+             foreign_key_ref:
+               type: object
+               properties:
+                 ref_table:
+                   type: string
+                 ref_column:
+                   type: string
+
+   ForeignKey:
+     type: object
+     properties:
+       from_table:
+         type: string
+       from_column:
+         type: string
+       to_table:
+         type: string
+       to_column:
+         type: string
+       relationship_type:
+         type: string
+       suggested_join:
+         type: string
+
+   QuerySuggestion:
+     type: object
+     properties:
+       question:
+         type: string
+       sql:
+         type: string
+
    ErrorResponse:
      type: object
      properties:

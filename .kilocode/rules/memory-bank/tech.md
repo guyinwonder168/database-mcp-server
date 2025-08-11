@@ -177,4 +177,4 @@ go list -m -json all | nancy sleuth
 
 ## Documentation
 
-- README.md provides comprehensive documentation for all 11 MCP tools, configuration scenarios, and usage examples for all supported databases.
+- README.md provides comprehensive documentation for all 12 MCP tools, configuration scenarios, and usage examples for all supported databases.

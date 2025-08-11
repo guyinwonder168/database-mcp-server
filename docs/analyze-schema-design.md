@@ -23,7 +23,7 @@
 The `analyze-schema` MCP tool provides comprehensive database schema analysis specifically designed to help AI Large Language Models (LLMs) understand databases for better query construction, data exploration, and intelligent database interactions.
 
 ### Key Innovation
-Unlike traditional schema introspection tools, `analyze-schema` orchestrates all 11 existing MCP tools to create a unified, AI-optimized understanding of database structure, relationships, and business context.
+Unlike traditional schema introspection tools, `analyze-schema` orchestrates all 12 existing MCP tools to create a unified, AI-optimized understanding of database structure, relationships, and business context.
 
 ### Core Value Proposition
 - **AI-First Design**: Output format optimized for LLM consumption and reasoning
