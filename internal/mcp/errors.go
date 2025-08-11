@@ -42,6 +42,7 @@ const (
 	ErrorCodeUnknownError      ErrorCode = "UNKNOWN_ERROR"
 	ErrorCodeConfigNotFound    ErrorCode = "CONFIG_NOT_FOUND"
 	ErrorCodeSQLExecutionError ErrorCode = "SQL_EXECUTION_ERROR"
+	ErrorCodeDecryptionFailed  ErrorCode = "DECRYPTION_FAILED"
 )
 
 // ErrorSuggestion represents a suggestion to fix an error
@@ -160,6 +161,9 @@ func (a *ErrorAnalyzer) AnalyzeError(err error, context map[string]interface{}) 
 
 	case strings.Contains(errMsg, "unsupported db_type"):
 		return a.handleUnsupportedDatabase(context)
+
+	case strings.Contains(errMsg, "decrypt password") || strings.Contains(errMsg, "decrypt password failed"):
+		return a.handleDecryptionFailed(context)
 
 	default:
 		return a.handleUnknownError(context)
@@ -556,6 +560,37 @@ func (a *ErrorAnalyzer) handleDataTypeMismatch(context map[string]interface{}) *
 	}
 
 	err.WithSuggestions(suggestions...)
+	return err
+}
+
+func (a *ErrorAnalyzer) handleDecryptionFailed(context map[string]interface{}) *StructuredError {
+	profileName := ""
+	if pn, ok := context["profile_name"].(string); ok {
+		profileName = pn
+	}
+	err := NewStructuredError(
+		ErrorCodeDecryptionFailed,
+		"Failed to decrypt stored database credentials",
+		"Encrypted password could not be decrypted with the provided AES key",
+	)
+	if profileName != "" {
+		err.WithContext("profile_name", profileName)
+	}
+	err.WithSuggestions(
+		ErrorSuggestion{
+			Action:      "Verify AES key",
+			Description: "Ensure the aes_key in config.yaml matches the one originally used (32 characters)",
+		},
+		ErrorSuggestion{
+			Action:      "Re-enter credentials",
+			Description: "Use configure-profile to re-save the profile (will re-encrypt with the correct key)",
+			Example:     `{"tool":"configure-profile","profile_name":"mydb","db_type":"mysql",...}`,
+		},
+		ErrorSuggestion{
+			Action:      "Regenerate AES key",
+			Description: "Generate a new 32-char key and reconfigure profiles if original key is lost",
+		},
+	)
 	return err
 }
 

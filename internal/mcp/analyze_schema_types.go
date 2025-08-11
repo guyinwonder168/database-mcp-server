@@ -59,17 +59,18 @@ func (p *AnalyzeSchemaParams) Validate() error {
 
 // AnalyzeSchemaResult is the main response structure for schema analysis.
 type AnalyzeSchemaResult struct {
-	AnalysisMetadata        AnalysisMetadata          `json:"analysis_metadata"`                  // Metadata about the analysis run
-	DatabaseOverview        DatabaseOverview          `json:"database_overview"`                  // High-level database summary
-	TableCatalog            TableCatalog              `json:"table_catalog,omitempty"`            // Categorized tables (basic/detailed)
-	TableSchemas            map[string]TableInfo      `json:"table_schemas,omitempty"`            // Detailed table schemas (detailed/comprehensive)
-	RelationshipGraph       RelationshipGraph         `json:"relationship_graph,omitempty"`       // Foreign key and semantic relationships
-	BusinessContext         BusinessContext           `json:"business_context,omitempty"`         // Inferred business context
-	DataQualityMetrics      map[string]QualityMetrics `json:"data_quality_metrics,omitempty"`     // Data quality metrics per column/table
-	AIQuerySuggestions      AIQuerySuggestions        `json:"ai_query_suggestions,omitempty"`     // AI-optimized query suggestions
-	SemanticInsights        SemanticInsights          `json:"semantic_insights,omitempty"`        // Business processes, KPIs, etc.
-	PerformanceOptimization PerformanceOptimization   `json:"performance_optimization,omitempty"` // Index and query hints
-	QuickInsights           []string                  `json:"quick_insights,omitempty"`           // Human-readable summary points
+	AnalysisMetadata        AnalysisMetadata          `json:"analysis_metadata"`                   // Metadata about the analysis run
+	DatabaseOverview        DatabaseOverview          `json:"database_overview"`                   // High-level database summary
+	TableCatalog            TableCatalog              `json:"table_catalog,omitempty"`             // Categorized tables (basic/detailed)
+	TableSchemas            map[string]TableInfo      `json:"table_schemas,omitempty"`             // Detailed table schemas (detailed/comprehensive)
+	RelationshipGraph       RelationshipGraph         `json:"relationship_graph,omitempty"`        // Foreign key and semantic relationships
+	RelationshipGraphVisual map[string]interface{}    `json:"relationship_graph_visual,omitempty"` // Visual/graph form for UI/AI consumption
+	BusinessContext         BusinessContext           `json:"business_context,omitempty"`          // Inferred business context
+	DataQualityMetrics      map[string]QualityMetrics `json:"data_quality_metrics,omitempty"`      // Data quality metrics per column/table
+	AIQuerySuggestions      AIQuerySuggestions        `json:"ai_query_suggestions,omitempty"`      // AI-optimized query suggestions
+	SemanticInsights        SemanticInsights          `json:"semantic_insights,omitempty"`         // Business processes, KPIs, etc.
+	PerformanceOptimization PerformanceOptimization   `json:"performance_optimization,omitempty"`  // Index and query hints
+	QuickInsights           []string                  `json:"quick_insights,omitempty"`            // Human-readable summary points
 }
 
 // AnalysisMetadata provides metadata about the analysis run.

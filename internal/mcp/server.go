@@ -9,10 +9,12 @@ package mcp
 
 import (
 	"context"
+	"crypto/rand"
 	"database-mcp-provider/internal/config"
 	"database-mcp-provider/internal/db"
 	"database-mcp-provider/internal/log"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -35,6 +37,9 @@ type MCPServer struct {
 
 const MCPVersion = "v1.0.0"
 const MCPAuthor = "guyinwonder"
+
+// Cap for number of data quality issues retained per column to prevent unbounded payload growth
+const maxQualityIssuesPerColumn = 10
 
 // --- Semantic Relationship Mapping Helpers ---
 //
@@ -265,332 +270,190 @@ func (s *MCPServer) registerAllTools() {
 	if len(s.toolsRegistry) > 0 {
 		return
 	}
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name: "configure-profile",
-		Description: `Create or update a database connection profile. Required for all database actions.
-Example:
-{"profile_name":"some-profile-name","db_type":"mariadb","host":"localhost","port":3306,"username":"app","password":"secret","database_name":"mysql","readonly":false}`,
-	}, s.handleConfigureProfile)
-	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "configure-profile", Description: `Create or update a database connection profile. Required for all database actions.
-Example:
-{"profile_name":"some-profile-name","db_type":"mariadb","host":"localhost","port":3306,"username":"app","password":"secret","database_name":"mysql","readonly":false}`})
 
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name: "list-profiles",
-		Description: `List all configured database profiles.
-Example:
-{}`,
-	}, s.handleListProfiles)
-	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "list-profiles", Description: `List all configured database profiles.
-Example:
-{}`})
+	// configure-profile
+	{
+		tool := &mcp.Tool{
+			Name: "configure-profile",
+			Description: `Create or update a database connection profile. Required for all database actions.
+		Fields:
+		  profile_name (required)
+		  db_type (mysql|mariadb|postgres|sqlite) (required)
+		  host / port / username / password (required except sqlite)
+		  database_name (required)
+		  readonly (boolean)
+		  sslmode (Postgres only, optional: disable|require|verify-ca|verify-full; defaults to require)
+		Example:
+		{"profile_name":"some-profile-name","db_type":"postgres","host":"localhost","port":5432,"username":"app","password":"secret","database_name":"appdb","readonly":false,"sslmode":"require"}`,
+		}
+		mcp.AddTool(s.server, tool, s.handleConfigureProfile)
+		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+	}
 
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name: "execute-sql",
-		Description: `Execute an arbitrary SQL query or statement. Both 'profile_name' and 'database_name' are required parameters.
-Note: For cross-database queries or describing tables in another database, use fully qualified table names (e.g., db.table).
-Example:
-{"profile_name":"some-profile-name","database_name":"some-database-name","sql":"SELECT * FROM some-table-name WHERE some-field-name=34;"}`,
-	}, s.handleExecuteSQL)
-	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "execute-sql", Description: `Execute an arbitrary SQL query or statement. Use the 'database_name' parameter to select a database if needed.
-Note: For cross-database queries or describing tables in another database, use fully qualified table names (e.g., db.table).
-Example:
-{"profile_name":"some-profile-name","database_name":"some-database-name","sql":"SELECT * FROM some-table-name WHERE some-field-name=34;"}
-{"profile_name":"some-profile-name","sql":"DESCRIBE some-database-name.some-table-name"}`})
+	// list-profiles
+	{
+		tool := &mcp.Tool{
+			Name: "list-profiles",
+			Description: `List all configured database profiles.
+  Example:
+  {}`,
+		}
+		mcp.AddTool(s.server, tool, s.handleListProfiles)
+		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+	}
 
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name: "list-tables",
-		Description: `List all tables in the selected database. Both 'profile_name' and 'database_name' are required parameters.
-Example:
-{"profile_name":"some-profile-name","database_name":"some-database-name"}`,
-	}, s.handleListTables)
-	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "list-tables", Description: `List all tables in the selected database. Use 'database_name' to override the profile's default database.
-Example:
-{"profile_name":"some-profile-name","database_name":"some-database-name"}`})
+	// execute-sql
+	{
+		tool := &mcp.Tool{
+			Name: "execute-sql",
+			Description: `Execute an arbitrary SQL query or statement. Both 'profile_name' and 'database_name' are required.
+		Note: For cross-database queries or describing tables in another database, use fully qualified table names (e.g., db.table).
+		Example:
+		{"profile_name":"some-profile-name","database_name":"some-database-name","sql":"SELECT * FROM some-table-name WHERE some-field-name=34;"}
+		{"profile_name":"some-profile-name","sql":"DESCRIBE some-database-name.some-table-name"}`,
+		}
+		mcp.AddTool(s.server, tool, s.handleExecuteSQL)
+		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+	}
 
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name: "describe-table",
-		Description: `Describe the comprehensive schema of a table including columns, types, constraints, comments, and metadata. Returns detailed information to enable AI/agents to understand table structure and build intelligent queries.
-Returns: column names, data types, nullable status, key constraints, default values, column comments, character sets, collation, auto-increment status, max length, precision, and scale.
-Example:
-{"profile_name":"some-profile-name","database_name":"some-database-name","table_name":"some-table-name"}`,
-	}, s.handleDescribeTable)
-	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "describe-table", Description: `Describe the comprehensive schema of a table including columns, types, constraints, comments, and metadata. Returns detailed information to enable AI/agents to understand table structure and build intelligent queries.
-Returns: column names, data types, nullable status, key constraints, default values, column comments, character sets, collation, auto-increment status, max length, precision, and scale.
-Example:
-{"profile_name":"some-profile-name","database_name":"some-database-name","table_name":"some-table-name"}`})
+	// list-tables
+	{
+		tool := &mcp.Tool{
+			Name: "list-tables",
+			Description: `List all tables in the selected database. Both 'profile_name' and 'database_name' are required.
+		Example:
+		{"profile_name":"some-profile-name","database_name":"some-database-name"}`,
+		}
+		mcp.AddTool(s.server, tool, s.handleListTables)
+		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+	}
 
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name: "list-databases",
-		Description: `List all databases/schemas available to the profile.
-Example:
-{"profile_name":"some-profile-name"}`,
-	}, s.handleListDatabases)
-	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "list-databases", Description: `List all databases/schemas available to the profile.
-Example:
-{"profile_name":"some-profile-name"}`})
+	// describe-table
+	{
+		tool := &mcp.Tool{
+			Name: "describe-table",
+			Description: `Describe the comprehensive schema of a table including columns, types, constraints, comments, and metadata.
+  Returns: column names, data types, nullable status, key constraints, default values, column comments, character sets, collation, auto-increment status, max length, precision, and scale.
+  Example:
+  {"profile_name":"some-profile-name","database_name":"some-database-name","table_name":"some-table-name"}`,
+		}
+		mcp.AddTool(s.server, tool, s.handleDescribeTable)
+		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+	}
 
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name: "mcp-info",
-		Description: `Show MCP provider version and author.
-Example:
-{}`,
-	}, s.handleMCPInfo)
-	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "mcp-info", Description: `Show MCP provider version and author.
-Example:
-{}`})
+	// list-databases
+	{
+		tool := &mcp.Tool{
+			Name: "list-databases",
+			Description: `List all databases/schemas available to the profile.
+  Example:
+  {"profile_name":"some-profile-name"}`,
+		}
+		mcp.AddTool(s.server, tool, s.handleListDatabases)
+		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+	}
 
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name: "smart-query-builder",
-		Description: `Generate optimized SQL from high-level intent and schema analysis.
-Input: profile_name, intent (natural language), optional database_name/table_name(s).
-Returns: generated SQL, explanation, and any errors.
-Example:
-{"profile_name":"some-profile-name","intent":"attendance dashboard"}`,
-	}, s.handleSmartQueryBuilder)
-	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "smart-query-builder", Description: `Generate optimized SQL from high-level intent and schema analysis.
-Input: profile_name, intent (natural language), optional database_name/table_name(s).
-Returns: generated SQL, explanation, and any errors.
-Example:
-{"profile_name":"some-profile-name","intent":"attendance dashboard"}`})
+	// analyze-schema
+	{
+		tool := &mcp.Tool{
+			Name: "analyze-schema",
+			Description: `Perform schema analysis for a database, including table/column metadata, relationships, and sample data integration.
+  
+  Required parameters:
+   - profile_name: Database profile to analyze
+   - analysis_level: REQUIRED. Must be one of "basic", "detailed", "comprehensive".
+     - BASIC: Quick overview for initial exploration
+     - DETAILED: Comprehensive schema for query construction
+     - COMPREHENSIVE: Deep business context with AI insights
+  
+  Optional parameters:
+   - database_name: Specific database (uses profile default if empty)
+   - include_tables: Specific tables to analyze (all if empty)
+   - exclude_tables: Tables to exclude from analysis
+   - sample_size: Rows to sample per table (default: 10)
+   - include_queries: Generate query suggestions (default: true)
+  
+  AI agents MUST specify analysis_level. Example:
+  {"profile_name":"analytics_db","analysis_level":"detailed","database_name":"analytics_db"}`,
+		}
+		mcp.AddTool(s.server, tool, s.handleAnalyzeSchema)
+		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+	}
 
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name: "discover-joins",
-		Description: `Discover joinable relationships (foreign keys) between tables and suggest JOIN SQL.
-Input: profile_name (required), tables (optional).
-Returns: list of join suggestions and summary.
-Example:
-{"profile_name":"analytics_db","tables":["orders","customers"]}`,
-	}, s.handleDiscoverJoins)
-	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "discover-joins", Description: `Discover joinable relationships (foreign keys) between tables and suggest JOIN SQL.
-Input: profile_name (required), tables (optional).
-Returns: list of join suggestions and summary.
-Example:
-{"profile_name":"analytics_db","tables":["orders","customers"]}`})
+	// smart-query-builder
+	{
+		tool := &mcp.Tool{
+			Name: "smart-query-builder",
+			Description: `Generate optimized SQL from high-level intent and schema analysis.
+  Input: profile_name, intent (natural language), optional database_name/table_name(s).
+  Returns: generated SQL, explanation, and any errors.
+  Example:
+  {"profile_name":"some-profile-name","intent":"attendance dashboard"}`,
+		}
+		mcp.AddTool(s.server, tool, s.handleSmartQueryBuilder)
+		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+	}
 
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name: "sample-data",
-		Description: `Fetch sample rows from a table to help AI/agents infer data types, formats, and value ranges.
-Input: profile_name (required), database_name (required), table_name (required), sample_size (optional, default: 3).
-Returns: sample rows with column names and values.
-Example:
-{"profile_name":"analytics_db","database_name":"analytics_db","table_name":"users","sample_size":5}`,
-	}, s.handleSampleData)
-	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "sample-data", Description: `Fetch sample rows from a table to help AI/agents infer data types, formats, and value ranges.
-Input: profile_name (required), table_name (required), database_name (optional), sample_size (optional, default: 3).
-Returns: sample rows with column names and values.
-Example:
-{"profile_name":"analytics_db","table_name":"users","sample_size":5}`})
+	// discover-joins
+	{
+		tool := &mcp.Tool{
+			Name: "discover-joins",
+			Description: `Discover joinable relationships (foreign keys) between tables and suggest JOIN SQL.
+  Input: profile_name (required), tables (optional).
+  Returns: list of join suggestions and summary.
+  Example:
+  {"profile_name":"analytics_db","tables":["orders","customers"]}`,
+		}
+		mcp.AddTool(s.server, tool, s.handleDiscoverJoins)
+		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+	}
 
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name: "list-tools",
-		Description: `List all available MCP tools and their descriptions.
-Example:
-{}`,
-	}, s.handleListTools)
-	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "list-tools", Description: `List all available MCP tools and their descriptions.
-Example:
-{}`})
+	// sample-data
+	{
+		tool := &mcp.Tool{
+			Name: "sample-data",
+			Description: `Fetch sample rows from a table to help AI/agents infer data types, formats, and value ranges.
+  Input: profile_name (required), database_name (required), table_name (required), sample_size (optional, default: 3).
+  Returns: sample rows with column names and values.
+  Example:
+  {"profile_name":"analytics_db","database_name":"analytics_db","table_name":"users","sample_size":5}`,
+		}
+		mcp.AddTool(s.server, tool, s.handleSampleData)
+		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+	}
+
+	// mcp-info
+	{
+		tool := &mcp.Tool{
+			Name: "mcp-info",
+			Description: `Show MCP provider version and author.
+  Example:
+  {}`,
+		}
+		mcp.AddTool(s.server, tool, s.handleMCPInfo)
+		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+	}
+
+	// list-tools
+	{
+		tool := &mcp.Tool{
+			Name: "list-tools",
+			Description: `List all available MCP tools and their descriptions.
+  Example:
+  {}`,
+		}
+		mcp.AddTool(s.server, tool, s.handleListTools)
+		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+	}
 }
 
 // Start launches the MCP server, registers all tools, and starts listening for MCP requests.
 func (s *MCPServer) Start() error {
-	// Register all MCP tools/actions
-
-	// Register all MCP tools/actions
-
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name: "configure-profile",
-		Description: `Create or update a database connection profile. Required for all database actions.
-Example:
-{"profile_name":"some-profile-name","db_type":"mariadb","host":"localhost","port":3306,"username":"app","password":"secret","database_name":"mysql","readonly":false}`,
-	}, s.handleConfigureProfile)
-	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "configure-profile", Description: `Create or update a database connection profile. Required for all database actions.
-Example:
-{"profile_name":"some-profile-name","db_type":"mariadb","host":"localhost","port":3306,"username":"app","password":"secret","database_name":"mysql","readonly":false}`})
-	log.JSONLog("debug", "Registered MCP tool", map[string]interface{}{"name": "configure-profile", "description": "Configure a DB profile"})
-
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name: "list-profiles",
-		Description: `List all configured database profiles.
-Example:
-{}`,
-	}, s.handleListProfiles)
-	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "list-profiles", Description: `List all configured database profiles.
-Example:
-{}`})
-	log.JSONLog("debug", "Registered MCP tool", map[string]interface{}{"name": "list-profiles", "description": "List DB profiles"})
-
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name: "execute-sql",
-		Description: `Execute an arbitrary SQL query or statement. Use the 'database_name' parameter to select a database if needed.
-Note: For cross-database queries or describing tables in another database, use fully qualified table names (e.g., db.table).
-Example:
-{"profile_name":"some-profile-name","database_name":"some-database-name","sql":"SELECT * FROM some-table-name WHERE some-field-name=34;"}
-{"profile_name":"some-profile-name","sql":"DESCRIBE some-database-name.some-table-name"}`,
-	}, s.handleExecuteSQL)
-	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "execute-sql", Description: `Execute an arbitrary SQL query or statement. Use the 'database_name' parameter to select a database if needed.
-Note: For cross-database queries or describing tables in another database, use fully qualified table names (e.g., db.table).
-Example:
-{"profile_name":"some-profile-name","database_name":"some-database-name","sql":"SELECT * FROM some-table-name WHERE some-field-name=34;"}
-{"profile_name":"some-profile-name","sql":"DESCRIBE some-database-name.some-table-name"}`})
-	log.JSONLog("debug", "Registered MCP tool", map[string]interface{}{"name": "execute-sql", "description": "Execute SQL"})
-
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name: "list-tables",
-		Description: `List all tables in the selected database. Use 'database_name' to override the profile's default database.
-Example:
-{"profile_name":"some-profile-name","database_name":"some-database-name"}`,
-	}, s.handleListTables)
-	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "list-tables", Description: `List all tables in the selected database. Use 'database_name' to override the profile's default database.
-Example:
-{"profile_name":"some-profile-name","database_name":"some-database-name"}`})
-	log.JSONLog("debug", "Registered MCP tool", map[string]interface{}{"name": "list-tables", "description": "List tables"})
-
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name: "describe-table",
-		Description: `Describe the comprehensive schema of a table including columns, types, constraints, comments, and metadata. Returns detailed information to enable AI/agents to understand table structure and build intelligent queries.
-Returns: column names, data types, nullable status, key constraints, default values, column comments, character sets, collation, auto-increment status, max length, precision, and scale.
-Example:
-{"profile_name":"some-profile-name","database_name":"some-database-name","table_name":"some-table-name"}`,
-	}, s.handleDescribeTable)
-	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "describe-table", Description: `Describe the comprehensive schema of a table including columns, types, constraints, comments, and metadata. Returns detailed information to enable AI/agents to understand table structure and build intelligent queries.
-Returns: column names, data types, nullable status, key constraints, default values, column comments, character sets, collation, auto-increment status, max length, precision, and scale.
-Example:
-{"profile_name":"some-profile-name","database_name":"some-database-name","table_name":"some-table-name"}`})
-	log.JSONLog("debug", "Registered MCP tool", map[string]interface{}{"name": "describe-table", "description": "Describe table"})
-
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name: "list-databases",
-		Description: `List all databases/schemas available to the profile.
-Example:
-{"profile_name":"some-profile-name"}`,
-	}, s.handleListDatabases)
-	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "list-databases", Description: `List all databases/schemas available to the profile.
-Example:
-{"profile_name":"some-profile-name"}`})
-	log.JSONLog("debug", "Registered MCP tool", map[string]interface{}{"name": "list-databases", "description": "List databases/schemas"})
-
-	// Register the analyze-schema MCP tool
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name: "analyze-schema",
-		Description: `Perform schema analysis for a database, including table/column metadata, relationships, and sample data integration.
-
-Required parameters:
-	 - profile_name: Database profile to analyze
-	 - analysis_level: REQUIRED. Must be one of "basic", "detailed", "comprehensive".
-	   - BASIC: Quick overview for initial exploration
-	   - DETAILED: Comprehensive schema for query construction
-	   - COMPREHENSIVE: Deep business context with AI insights
-
-Optional parameters:
-	 - database_name: Specific database (uses profile default if empty)
-	 - include_tables: Specific tables to analyze (all if empty)
-	 - exclude_tables: Tables to exclude from analysis
-	 - sample_size: Rows to sample per table (default: 10)
-	 - include_queries: Generate query suggestions (default: true)
-
-AI agents MUST specify analysis_level. Example:
-{"profile_name":"analytics_db","analysis_level":"detailed","database_name":"analytics_db"}`,
-	}, s.handleAnalyzeSchema)
-	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "analyze-schema", Description: `Perform schema analysis for a database, including table/column metadata, relationships, and sample data integration.
-
-Required parameters:
-	 - profile_name: Database profile to analyze
-	 - analysis_level: REQUIRED. Must be one of "basic", "detailed", "comprehensive".
-	   - BASIC: Quick overview for initial exploration
-	   - DETAILED: Comprehensive schema for query construction
-	   - COMPREHENSIVE: Deep business context with AI insights
-
-Optional parameters:
-	 - database_name: Specific database (uses profile default if empty)
-	 - include_tables: Specific tables to analyze (all if empty)
-	 - exclude_tables: Tables to exclude from analysis
-	 - sample_size: Rows to sample per table (default: 10)
-	 - include_queries: Generate query suggestions (default: true)
-
-AI agents MUST specify analysis_level. Example:
-{"profile_name":"analytics_db","analysis_level":"detailed","database_name":"analytics_db"}`})
-	log.JSONLog("debug", "Registered MCP tool", map[string]interface{}{"name": "analyze-schema", "description": "Comprehensive schema analysis"})
-
-	// Add version/author info tool
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name: "mcp-info",
-		Description: `Show MCP provider version and author.
-Example:
-{}`,
-	}, s.handleMCPInfo)
-	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "mcp-info", Description: `Show MCP provider version and author.
-Example:
-{}`})
-	log.JSONLog("debug", "Registered MCP tool", map[string]interface{}{"name": "mcp-info", "description": "Show MCP provider version and author"})
-
-	// Register Smart Query Builder Tool
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name: "smart-query-builder",
-		Description: `Generate optimized SQL from high-level intent and schema analysis.
-Input: profile_name, intent (natural language), optional database_name/table_name(s).
-Returns: generated SQL, explanation, and any errors.
-Example:
-{"profile_name":"some-profile-name","intent":"attendance dashboard"}`,
-	}, s.handleSmartQueryBuilder)
-	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "smart-query-builder", Description: `Generate optimized SQL from high-level intent and schema analysis.
-Input: profile_name, intent (natural language), optional database_name/table_name(s).
-Returns: generated SQL, explanation, and any errors.
-Example:
-{"profile_name":"some-profile-name","intent":"attendance dashboard"}`})
-	log.JSONLog("debug", "Registered MCP tool", map[string]interface{}{"name": "smart-query-builder", "description": "Generate SQL from intent"})
-
-	// --- Serve docs/ folder at /docs endpoint for LLM auto-discovery ---
-	go func() {
-		// Documentation HTTP handler moved to main.go for embedded docs support
-	}()
+	// Ensure tools are registered (constructor normally does this)
+	if len(s.toolsRegistry) == 0 {
+		s.registerAllTools()
+	}
 	log.JSONLog("info", "MCP server (SDK) running on stdio", nil)
-
-	// Register the discover-joins MCP tool
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name: "discover-joins",
-		Description: `Discover joinable relationships (foreign keys) between tables and suggest JOIN SQL.
-Input: profile_name (required), tables (optional).
-Returns: list of join suggestions and summary.
-Example:
-{"profile_name":"analytics_db","tables":["orders","customers"]}`,
-	}, s.handleDiscoverJoins)
-	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "discover-joins", Description: `Discover joinable relationships (foreign keys) between tables and suggest JOIN SQL.
-Input: profile_name (required), tables (optional).
-Returns: list of join suggestions and summary.
-Example:
-{"profile_name":"analytics_db","tables":["orders","customers"]}`})
-	log.JSONLog("debug", "Registered MCP tool", map[string]interface{}{"name": "discover-joins", "description": "Discover joinable relationships"})
-
-	// Register the sample-data MCP tool
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name: "sample-data",
-		Description: `Fetch sample rows from a table to help AI/agents infer data types, formats, and value ranges.
-Input: profile_name (required), table_name (required), database_name (optional), sample_size (optional, default: 3).
-Returns: sample rows with column names and values.
-Example:
-{"profile_name":"analytics_db","table_name":"users","sample_size":5}`,
-	}, s.handleSampleData)
-	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "sample-data", Description: `Fetch sample rows from a table to help AI/agents infer data types, formats, and value ranges.
-Input: profile_name (required), table_name (required), database_name (optional), sample_size (optional, default: 3).
-Returns: sample rows with column names and values.
-Example:
-{"profile_name":"analytics_db","table_name":"users","sample_size":5}`})
-	log.JSONLog("debug", "Registered MCP tool", map[string]interface{}{"name": "sample-data", "description": "Fetch sample rows from table"})
-
-	// Register the list-tools MCP tool
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name: "list-tools",
-		Description: `List all available MCP tools and their descriptions.
-Example:
-{}`,
-	}, s.handleListTools)
-	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: "list-tools", Description: `List all available MCP tools and their descriptions.
-Example:
-{}`})
-	log.JSONLog("debug", "Registered MCP tool", map[string]interface{}{"name": "list-tools", "description": "List all tools"})
-
 	return s.server.Run(context.Background(), mcp.NewStdioTransport())
 }
 
@@ -628,7 +491,7 @@ func (s *MCPServer) handleDiscoverJoins(
 	}
 
 	// 2. Connect to DB
-	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, prof.DatabaseName)
+	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, prof.DatabaseName, prof.SSLMode)
 	conn, err := db.OpenConnectionWithPool(prof.DBType, dsn, cfg.MaxPoolSize)
 	if err != nil {
 		log.JSONLog("error", "Failed to connect to database", map[string]interface{}{"error": err})
@@ -693,20 +556,20 @@ func (s *MCPServer) handleDiscoverJoins(
 			if err != nil {
 				return nil, err
 			}
-			defer rows.Close()
 			for rows.Next() {
 				var name string
 				if err := rows.Scan(&name); err == nil {
 					tables = append(tables, name)
 				}
 			}
+			rows.Close()
 		}
 		for _, tbl := range tables {
 			rows, err := conn.Query(fmt.Sprintf("PRAGMA foreign_key_list('%s')", tbl))
 			if err != nil {
+				log.JSONLog("warn", "Failed to query SQLite foreign keys", map[string]interface{}{"table": tbl, "error": err})
 				continue
 			}
-			defer rows.Close()
 			for rows.Next() {
 				var id, seq int
 				var table, from, to, onUpdate, onDelete, match string
@@ -721,8 +584,11 @@ func (s *MCPServer) handleDiscoverJoins(
 							SuggestedJoinSQL: fmt.Sprintf("SELECT * FROM %s JOIN %s ON %s.%s = %s.%s", tbl, table, tbl, from, table, to),
 						})
 					}
+				} else {
+					log.JSONLog("warn", "Failed to scan SQLite foreign key row", map[string]interface{}{"table": tbl, "error": err.Error()})
 				}
 			}
+			rows.Close()
 		}
 	} else {
 		var rows *sql.Rows
@@ -801,6 +667,7 @@ type ConfigureProfileParams struct {
 	Password     string `json:"password,omitempty"`
 	DatabaseName string `json:"database_name"`
 	Readonly     bool   `json:"readonly"`
+	SSLMode      string `json:"sslmode,omitempty"`
 }
 
 type ListProfilesResult struct {
@@ -977,7 +844,7 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, session *mcp.Se
 	}
 
 	// 2. Fetch all table names
-	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, prof.DatabaseName)
+	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, prof.DatabaseName, prof.SSLMode)
 	conn, err := db.OpenConnectionWithPool(prof.DBType, dsn, cfg.MaxPoolSize)
 	if err != nil {
 		log.JSONLog("error", "Failed to open database connection", map[string]interface{}{"profile": p.ProfileName, "error": err})
@@ -1038,11 +905,15 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, session *mcp.Se
 				var name, tableType string
 				if err := rows.Scan(&name, &tableType); err == nil {
 					tables = append(tables, name)
+				} else {
+					log.JSONLog("warn", "Failed to scan table name", map[string]interface{}{"db_type": prof.DBType, "error": err.Error(), "operation": "smart_query_builder_list_tables"})
 				}
 			} else {
 				var name string
 				if err := rows.Scan(&name); err == nil {
 					tables = append(tables, name)
+				} else {
+					log.JSONLog("warn", "Failed to scan table name", map[string]interface{}{"db_type": prof.DBType, "error": err.Error(), "operation": "smart_query_builder_list_tables"})
 				}
 			}
 		}
@@ -1130,15 +1001,20 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, session *mcp.Se
 				var field, typ, null, key, def, extra string
 				if err := rows.Scan(&field, &typ, &null, &key, &def, &extra); err == nil {
 					colName = field
+				} else {
+					log.JSONLog("warn", "Failed to scan column metadata", map[string]interface{}{"table": table, "error": err.Error(), "db_type": prof.DBType, "operation": "smart_query_builder_columns"})
+					continue
 				}
 			case "postgres":
 				if err := rows.Scan(&colName); err != nil {
+					log.JSONLog("warn", "Failed to scan PostgreSQL column name", map[string]interface{}{"table": table, "error": err.Error(), "operation": "smart_query_builder_columns"})
 					continue
 				}
 			case "sqlite":
 				var cid int
 				var typ, notnull, dflt_value, pk interface{}
 				if err := rows.Scan(&cid, &colName, &typ, &notnull, &dflt_value, &pk); err != nil {
+					log.JSONLog("warn", "Failed to scan SQLite column metadata", map[string]interface{}{"table": table, "error": err.Error(), "operation": "smart_query_builder_columns"})
 					continue
 				}
 			}
@@ -1204,12 +1080,16 @@ func (s *MCPServer) handleConfigureProfile(ctx context.Context, session *mcp.Ser
 	if (p.DBType == "mysql" || p.DBType == "mariadb") && p.DatabaseName == "" {
 		p.DatabaseName = "mysql"
 	}
+	// Default sslmode to "require" for Postgres if empty (secure default)
+	if p.DBType == "postgres" && p.SSLMode == "" {
+		p.SSLMode = "require"
+	}
 	// Validate required fields
 	if p.ProfileName == "" || p.DBType == "" || p.DatabaseName == "" {
 		structErr := NewStructuredError(
 			ErrorCodeMissingParameter,
 			"Missing required parameters",
-			"profile_name, db_type, and database_name are required",
+			"All of profile_name, db_type, and database_name are required",
 		).WithSuggestions(
 			ErrorSuggestion{
 				Action:      "Provide all required parameters",
@@ -1225,6 +1105,21 @@ func (s *MCPServer) handleConfigureProfile(ctx context.Context, session *mcp.Ser
 			},
 		}, nil
 	}
+
+	// Ensure AES key (auto-generate secure key if missing or invalid length)
+	if cfg.AESKey == "" || len(cfg.AESKey) != 32 {
+		keyBytes := make([]byte, 24) // Base64(24 bytes) == 32 chars, no padding
+		if _, genErr := rand.Read(keyBytes); genErr == nil {
+			cfg.AESKey = base64.StdEncoding.EncodeToString(keyBytes)
+			log.JSONLog("info", "Generated new AES key for configuration", map[string]interface{}{
+				"config_path": s.ConfigPath,
+				"length":      len(cfg.AESKey),
+			})
+		} else {
+			log.JSONLog("error", "Failed to generate AES key", map[string]interface{}{"error": genErr.Error()})
+		}
+	}
+
 	// Update or add profile
 	found := false
 	for i := range cfg.Profiles {
@@ -1238,6 +1133,7 @@ func (s *MCPServer) handleConfigureProfile(ctx context.Context, session *mcp.Ser
 				Password:     p.Password,
 				DatabaseName: p.DatabaseName,
 				Readonly:     p.Readonly,
+				SSLMode:      p.SSLMode,
 			}
 			found = true
 			break
@@ -1253,6 +1149,7 @@ func (s *MCPServer) handleConfigureProfile(ctx context.Context, session *mcp.Ser
 			Password:     p.Password,
 			DatabaseName: p.DatabaseName,
 			Readonly:     p.Readonly,
+			SSLMode:      p.SSLMode,
 		})
 	}
 	// Save config
@@ -1368,45 +1265,132 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, session *mcp.ServerSes
 		log.JSONLog("error", "Profile not found", map[string]interface{}{"profile_name": p.ProfileName})
 		return nil, fmt.Errorf("profile not found")
 	}
-	// Enhanced read-only enforcement
+	// Strengthened read-only enforcement (supports WITH CTEs, blocks multi-statement & dangerous verbs)
 	if prof.Readonly {
-		sqlNorm := strings.TrimSpace(p.SQL)
-		sqlNorm = strings.ToLower(sqlNorm)
-		// Remove leading SQL comments
-		for strings.HasPrefix(sqlNorm, "--") || strings.HasPrefix(sqlNorm, "/*") {
-			if strings.HasPrefix(sqlNorm, "--") {
-				if idx := strings.Index(sqlNorm, "\n"); idx != -1 {
-					sqlNorm = strings.TrimSpace(sqlNorm[idx+1:])
+		origSQL := p.SQL
+		sqlNorm := strings.TrimSpace(origSQL)
+
+		// Strip leading comments (simple approach)
+		for {
+			trimmed := strings.TrimSpace(sqlNorm)
+			switch {
+			case strings.HasPrefix(trimmed, "--"):
+				if idx := strings.Index(trimmed, "\n"); idx != -1 {
+					sqlNorm = trimmed[idx+1:]
 				} else {
 					sqlNorm = ""
 				}
-			} else if strings.HasPrefix(sqlNorm, "/*") {
-				if idx := strings.Index(sqlNorm, "*/"); idx != -1 {
-					sqlNorm = strings.TrimSpace(sqlNorm[idx+2:])
+			case strings.HasPrefix(trimmed, "/*"):
+				if idx := strings.Index(trimmed, "*/"); idx != -1 {
+					sqlNorm = trimmed[idx+2:]
 				} else {
 					sqlNorm = ""
 				}
+			default:
+				sqlNorm = trimmed
+				goto comments_done
 			}
 		}
-		// Allow only safe statements
-		allowed := false
-		for _, prefix := range []string{"select", "show", "describe", "explain", "pragma"} {
-			if strings.HasPrefix(sqlNorm, prefix) {
-				allowed = true
-				break
+	comments_done:
+		// Sanitize out single-quoted strings to reduce false positives for verbs inside literals
+		sanitize := func(s string) string {
+			var b strings.Builder
+			inSingle := false
+			for i := 0; i < len(s); i++ {
+				ch := s[i]
+				if ch == '\'' {
+					inSingle = !inSingle
+					b.WriteByte(' ') // mask quote
+					continue
+				}
+				if inSingle {
+					b.WriteByte(' ') // mask string content
+				} else {
+					// lower for uniform scanning
+					b.WriteByte(byte(unicode.ToLower(rune(ch))))
+				}
+			}
+			return b.String()
+		}
+		sanitized := sanitize(sqlNorm)
+
+		// Multi-statement detection (ignore trailing semicolon)
+		statements := []string{}
+		for _, part := range strings.Split(sanitized, ";") {
+			pt := strings.TrimSpace(part)
+			if pt != "" {
+				statements = append(statements, pt)
 			}
 		}
-		if !allowed {
-			log.JSONLog("warn", "Blocked unsafe SQL on readonly profile", map[string]interface{}{"profile_name": p.ProfileName, "sql": p.SQL})
+		if len(statements) > 1 {
+			log.JSONLog("warn", "Blocked multi-statement query on readonly profile", map[string]interface{}{
+				"profile_name": p.ProfileName,
+				"statements":   len(statements),
+			})
 			structErr := NewStructuredError(
 				ErrorCodeSQLExecutionError,
 				"Read-only profile restriction",
-				"Write or unsafe operations are not allowed on readonly profiles",
+				"Multiple statements are not allowed on readonly profiles",
+			).WithSuggestions(
+				ErrorSuggestion{
+					Action:      "Send a single read-only statement",
+					Description: "Combine logic into one SELECT/SHOW/DESCRIBE/EXPLAIN/PRAGMA",
+					Example:     "SELECT * FROM table_name",
+				},
+			).WithContext("profile_name", p.ProfileName).
+				WithContext("query", origSQL)
+			return &mcp.CallToolResultFor[any]{
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: structErr.ToJSON()},
+				},
+			}, fmt.Errorf("blocked by readonly profile")
+		}
+
+		// Allowed starting tokens (WITH allowed; must resolve to SELECT/EXPLAIN/SHOW/DESCRIBE/PRAGMA)
+		allowedStarters := []string{"select", "show", "describe", "explain", "pragma", "with"}
+		isAllowedStart := false
+		for _, a := range allowedStarters {
+			if strings.HasPrefix(strings.TrimLeft(sanitized, "("), a) { // allow leading parenthesis
+				isAllowedStart = true
+				break
+			}
+		}
+
+		// WITH queries are allowed; read-only safety is still enforced by disallowed verb scan below.
+
+		// Disallowed verbs (word boundaries)
+		disallowed := []string{
+			"insert", "update", "delete", "alter", "create", "drop", "truncate",
+			"grant", "revoke", "replace", "merge", "call", "do", "attach", "detach", "vacuum",
+		}
+		disallowedHit := ""
+		for _, dv := range disallowed {
+			re := regexp.MustCompile(`\b` + dv + `\b`)
+			if re.MatchString(sanitized) {
+				disallowedHit = dv
+				break
+			}
+		}
+
+		if !isAllowedStart || disallowedHit != "" {
+			reason := "Write or unsafe operations are not allowed on readonly profiles"
+			if disallowedHit != "" {
+				reason = fmt.Sprintf("Detected disallowed verb '%s' in query for readonly profile", disallowedHit)
+			}
+			log.JSONLog("warn", "Blocked unsafe SQL on readonly profile", map[string]interface{}{
+				"profile_name": p.ProfileName,
+				"sql":          origSQL,
+				"reason":       reason,
+			})
+			structErr := NewStructuredError(
+				ErrorCodeSQLExecutionError,
+				"Read-only profile restriction",
+				reason,
 			).WithSuggestions(
 				ErrorSuggestion{
 					Action:      "Use read-only queries",
-					Description: "Only SELECT, SHOW, DESCRIBE, EXPLAIN, and PRAGMA queries are allowed",
-					Example:     "SELECT * FROM table_name",
+					Description: "Only single SELECT (or WITH ... SELECT), SHOW, DESCRIBE, EXPLAIN, PRAGMA queries are allowed",
+					Example:     "WITH recent AS (SELECT * FROM orders LIMIT 10) SELECT * FROM recent;",
 				},
 				ErrorSuggestion{
 					Action:      "Use a different profile",
@@ -1414,13 +1398,11 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, session *mcp.ServerSes
 				},
 			).WithContextMap(map[string]interface{}{
 				"profile_name": p.ProfileName,
-				"query":        p.SQL,
+				"query":        origSQL,
 			})
 			return &mcp.CallToolResultFor[any]{
 				Content: []mcp.Content{
-					&mcp.TextContent{
-						Text: structErr.ToJSON(),
-					},
+					&mcp.TextContent{Text: structErr.ToJSON()},
 				},
 			}, fmt.Errorf("blocked by readonly profile")
 		}
@@ -1431,7 +1413,7 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, session *mcp.ServerSes
 		dbName = p.DatabaseName
 	}
 	// Build DSN and connect
-	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, dbName)
+	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, dbName, prof.SSLMode)
 	conn, err := db.OpenConnectionWithPool(prof.DBType, dsn, cfg.MaxPoolSize)
 	if err != nil {
 		log.JSONLog("error", "Failed to connect to database", map[string]interface{}{"error": err})
@@ -1735,7 +1717,7 @@ func (s *MCPServer) handleListTables(ctx context.Context, session *mcp.ServerSes
 	if p.DatabaseName != "" {
 		dbName = p.DatabaseName
 	}
-	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, dbName)
+	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, dbName, prof.SSLMode)
 	conn, err := db.OpenConnectionWithPool(prof.DBType, dsn, cfg.MaxPoolSize)
 	if err != nil {
 		log.JSONLog("error", "Failed to open database connection", map[string]interface{}{"profile": p.ProfileName, "error": err})
@@ -1864,7 +1846,7 @@ func (s *MCPServer) handleDescribeTable(ctx context.Context, session *mcp.Server
 		structErr := NewStructuredError(
 			ErrorCodeMissingParameter,
 			"Missing required parameters",
-			"Both database_name and table_name must be provided",
+			"Both database_name and table_name are required",
 		).WithSuggestions(
 			ErrorSuggestion{
 				Action:      "Provide all required parameters",
@@ -1880,7 +1862,7 @@ func (s *MCPServer) handleDescribeTable(ctx context.Context, session *mcp.Server
 			},
 		}, nil
 	}
-	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, p.DatabaseName)
+	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, p.DatabaseName, prof.SSLMode)
 	conn, err := db.OpenConnectionWithPool(prof.DBType, dsn, cfg.MaxPoolSize)
 	if err != nil {
 		log.JSONLog("error", "Failed to connect to database", map[string]interface{}{"error": err})
@@ -2195,7 +2177,7 @@ func (s *MCPServer) handleListDatabases(ctx context.Context, session *mcp.Server
 			},
 		}, nil
 	}
-	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, prof.DatabaseName)
+	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, prof.DatabaseName, prof.SSLMode)
 	conn, err := db.OpenConnectionWithPool(prof.DBType, dsn, cfg.MaxPoolSize)
 	if err != nil {
 		log.JSONLog("error", "Failed to connect to database", map[string]interface{}{"error": err})
@@ -2308,7 +2290,7 @@ func (s *MCPServer) handleSampleData(
 		structErr := NewStructuredError(
 			ErrorCodeMissingParameter,
 			"Missing required parameters",
-			"Both profile_name, database_name, and table_name are required",
+			"All of profile_name, database_name, and table_name are required",
 		).WithSuggestions(
 			ErrorSuggestion{
 				Action:      "Provide all required parameters",
@@ -2378,7 +2360,7 @@ func (s *MCPServer) handleSampleData(
 	}
 
 	// 3. Connect to database
-	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, dbName)
+	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, dbName, prof.SSLMode)
 	conn, err := db.OpenConnectionWithPool(prof.DBType, dsn, cfg.MaxPoolSize)
 	if err != nil {
 		log.JSONLog("error", "Failed to connect for sample data", map[string]interface{}{"error": err.Error(), "profile": p.ProfileName})
@@ -2601,7 +2583,7 @@ func (s *MCPServer) handleAnalyzeSchema(
 	}
 
 	// 2. Connect to database
-	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, dbName)
+	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, dbName, prof.SSLMode)
 	conn, err := db.OpenConnectionWithPool(prof.DBType, dsn, cfg.MaxPoolSize)
 	if err != nil {
 		log.JSONLog("error", "Failed to connect to database", map[string]interface{}{"error": err})
@@ -2657,11 +2639,15 @@ func (s *MCPServer) handleAnalyzeSchema(
 				var name, tableType string
 				if err := rows.Scan(&name, &tableType); err == nil {
 					tables = append(tables, name)
+				} else {
+					log.JSONLog("warn", "Failed to scan table name during analysis", map[string]interface{}{"db_type": prof.DBType, "error": err.Error(), "operation": "analyze_schema_list_tables"})
 				}
 			} else {
 				var name string
 				if err := rows.Scan(&name); err == nil {
 					tables = append(tables, name)
+				} else {
+					log.JSONLog("warn", "Failed to scan table name during analysis", map[string]interface{}{"db_type": prof.DBType, "error": err.Error(), "operation": "analyze_schema_list_tables"})
 				}
 			}
 		}
@@ -2713,7 +2699,20 @@ func (s *MCPServer) handleAnalyzeSchema(
 		case "mysql", "mariadb":
 			colQuery = fmt.Sprintf("SHOW COLUMNS FROM `%s`", tbl)
 		case "postgres":
-			colQuery = fmt.Sprintf("SELECT column_name FROM information_schema.columns WHERE table_name = '%s' AND table_schema = 'public'", tbl)
+			// Enriched PostgreSQL metadata query (includes nullability, default, constraint type)
+			colQuery = fmt.Sprintf(`SELECT
+				c.column_name,
+				c.data_type,
+				c.is_nullable,
+				c.column_default,
+				COALESCE(tc.constraint_type,'') as constraint_type
+			FROM information_schema.columns c
+			LEFT JOIN information_schema.key_column_usage kcu
+			  ON kcu.table_name = c.table_name AND kcu.table_schema = c.table_schema AND kcu.column_name = c.column_name
+			LEFT JOIN information_schema.table_constraints tc
+			  ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+			WHERE c.table_name = '%s' AND c.table_schema='public'
+			ORDER BY c.ordinal_position`, tbl)
 		case "sqlite":
 			colQuery = fmt.Sprintf("PRAGMA table_info('%s')", tbl)
 		default:
@@ -2721,62 +2720,88 @@ func (s *MCPServer) handleAnalyzeSchema(
 		}
 		rows, err := conn.Query(colQuery)
 		if err != nil {
+			log.JSONLog("warn", "Failed to query column metadata", map[string]interface{}{"table": tbl, "error": err.Error(), "db_type": prof.DBType})
 			continue
 		}
-		defer rows.Close()
 		for rows.Next() {
-			var colName string
 			switch prof.DBType {
 			case "mysql", "mariadb":
 				var field, typ, null, key, def, extra string
-				if err := rows.Scan(&field, &typ, &null, &key, &def, &extra); err == nil {
-					colName = field
-					columns = append(columns, SchemaColumnInfo{
-						ColumnName:   field,
-						DataType:     typ,
-						IsNullable:   null == "YES",
-						IsPrimaryKey: key == "PRI",
-						Unique:       key == "UNI",
-						Indexed:      key == "MUL",
-						DefaultValue: def,
-						Description:  extra,
-					})
-					if key == "PRI" {
-						keyCols.PrimaryKey = field
-					}
-					if key == "MUL" {
-						keyCols.IndexedColumns = append(keyCols.IndexedColumns, field)
-					}
-					if key == "UNI" {
-						keyCols.UniqueColumns = append(keyCols.UniqueColumns, field)
-					}
+				if err := rows.Scan(&field, &typ, &null, &key, &def, &extra); err != nil {
+					log.JSONLog("warn", "Scan column metadata failed", map[string]interface{}{"table": tbl, "error": err.Error(), "db_type": prof.DBType})
+					continue
+				}
+				colInfo := SchemaColumnInfo{
+					ColumnName:   field,
+					DataType:     typ,
+					IsNullable:   null == "YES",
+					IsPrimaryKey: key == "PRI",
+					Unique:       key == "UNI",
+					Indexed:      key == "MUL",
+					DefaultValue: def,
+					Description:  extra,
+				}
+				columns = append(columns, colInfo)
+				if key == "PRI" {
+					keyCols.PrimaryKey = field
+				}
+				if key == "MUL" {
+					keyCols.IndexedColumns = append(keyCols.IndexedColumns, field)
+				}
+				if key == "UNI" {
+					keyCols.UniqueColumns = append(keyCols.UniqueColumns, field)
 				}
 			case "postgres":
-				if err := rows.Scan(&colName); err == nil {
-					columns = append(columns, SchemaColumnInfo{
-						ColumnName: colName,
-						DataType:   "", // Could fetch type with more queries
-					})
+				var columnName, dataType, isNullable string
+				var defaultVal sql.NullString
+				var constraintType string
+				if err := rows.Scan(&columnName, &dataType, &isNullable, &defaultVal, &constraintType); err != nil {
+					log.JSONLog("warn", "Scan PostgreSQL column metadata failed", map[string]interface{}{"table": tbl, "error": err.Error()})
+					continue
 				}
+				colInfo := SchemaColumnInfo{
+					ColumnName: columnName,
+					DataType:   dataType,
+					IsNullable: isNullable == "YES",
+				}
+				if defaultVal.Valid {
+					colInfo.DefaultValue = defaultVal.String
+				}
+				switch constraintType {
+				case "PRIMARY KEY":
+					colInfo.IsPrimaryKey = true
+					keyCols.PrimaryKey = columnName
+				case "UNIQUE":
+					colInfo.Unique = true
+					keyCols.UniqueColumns = append(keyCols.UniqueColumns, columnName)
+				case "FOREIGN KEY":
+					colInfo.IsForeignKey = true
+					keyCols.ForeignKeys = append(keyCols.ForeignKeys, columnName)
+				}
+				columns = append(columns, colInfo)
 			case "sqlite":
 				var cid int
-				var typ string
-				var notnull, pk interface{}
-				var dflt_value interface{}
-				if err := rows.Scan(&cid, &colName, &typ, &notnull, &dflt_value, &pk); err == nil {
-					columns = append(columns, SchemaColumnInfo{
-						ColumnName:   colName,
-						DataType:     typ,
-						IsNullable:   notnull == 0,
-						IsPrimaryKey: pk == 1,
-						DefaultValue: dflt_value,
-					})
-					if pk == 1 {
-						keyCols.PrimaryKey = colName
-					}
+				var name, typ string
+				var notnull, pk int
+				var dflt interface{}
+				if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+					log.JSONLog("warn", "Scan SQLite column metadata failed", map[string]interface{}{"table": tbl, "error": err.Error()})
+					continue
+				}
+				colInfo := SchemaColumnInfo{
+					ColumnName:   name,
+					DataType:     typ,
+					IsNullable:   notnull == 0,
+					IsPrimaryKey: pk == 1,
+					DefaultValue: dflt,
+				}
+				columns = append(columns, colInfo)
+				if pk == 1 {
+					keyCols.PrimaryKey = name
 				}
 			}
 		}
+		rows.Close()
 		totalColumns += len(columns)
 		relationshipCandidates[tbl] = TableInfo{
 			ColumnCount: len(columns),
@@ -2816,9 +2841,16 @@ func (s *MCPServer) handleAnalyzeSchema(
 						}
 					}
 					sampleRows = append(sampleRows, rowMap)
+				} else {
+					log.JSONLog("warn", "Failed to scan sample row during analysis", map[string]interface{}{"table": tbl, "error": err.Error()})
 				}
 			}
+			if err := sampleRowsRaw.Err(); err != nil {
+				log.JSONLog("warn", "Iteration error while reading sample rows during analysis", map[string]interface{}{"table": tbl, "error": err.Error()})
+			}
 			sampleRowsRaw.Close()
+		} else {
+			log.JSONLog("warn", "Failed to fetch sample rows during analysis", map[string]interface{}{"table": tbl, "error": err.Error(), "query": sampleQuery})
 		}
 		sampleDataMap[tbl] = sampleRows
 		tableSchemas[tbl] = TableInfo{
@@ -2831,6 +2863,8 @@ func (s *MCPServer) handleAnalyzeSchema(
 
 	// 5. Relationship discovery
 	relGraph := s.mapSemanticRelationships(relationshipCandidates, nil)
+	// Build visual graph representation immediately for inclusion in result payload
+	relGraphVisual := s.buildRelationshipGraph(relGraph)
 
 	// 6. Business context inference (comprehensive only)
 	var businessCtx *BusinessContext
@@ -2849,6 +2883,7 @@ func (s *MCPServer) handleAnalyzeSchema(
 		// 1. Data pattern analysis for each table
 		for tbl, schema := range tableSchemas {
 			tableSample := sampleDataMap[tbl]
+			// Copy existing schema
 			tableSchemas[tbl] = TableInfo{
 				ColumnCount:  schema.ColumnCount,
 				KeyColumns:   schema.KeyColumns,
@@ -2858,7 +2893,19 @@ func (s *MCPServer) handleAnalyzeSchema(
 			patterns := s.analyzeDataPatterns(tbl, tableSample, schema.Columns)
 			for i, col := range schema.Columns {
 				if i < len(patterns) {
-					tableSchemas[tbl].DataPatterns[col.ColumnName] = patterns[i]
+					dp := patterns[i]
+					tableSchemas[tbl].DataPatterns[col.ColumnName] = dp
+					// Propagate pattern metrics onto column structure for downstream quality metrics
+					for ci := range tableSchemas[tbl].Columns {
+						if tableSchemas[tbl].Columns[ci].ColumnName == col.ColumnName {
+							tableSchemas[tbl].Columns[ci].PatternType = dp.PatternType
+							tableSchemas[tbl].Columns[ci].ValidationRegex = dp.ValidationRegex
+							tableSchemas[tbl].Columns[ci].Uniqueness = dp.Uniqueness
+							tableSchemas[tbl].Columns[ci].NullPercentage = dp.NullPercentage
+							tableSchemas[tbl].Columns[ci].Distribution = dp.Distribution
+							break
+						}
+					}
 				}
 			}
 		}
@@ -2875,8 +2922,6 @@ func (s *MCPServer) handleAnalyzeSchema(
 				}
 			}
 		}
-		// 3. Build relationship graph for AI consumption
-		_ = s.buildRelationshipGraph(relGraph) // Build for future use or logging, but do not assign
 	}
 
 	// 7. Query suggestions (comprehensive only)
@@ -2968,13 +3013,14 @@ func (s *MCPServer) handleAnalyzeSchema(
 			BusinessModelInsights:   []string{},
 			Summary:                 fmt.Sprintf("Analyzed %d tables and %d columns.", len(filteredTables), totalColumns),
 		},
-		TableCatalog:       tableCatalog,
-		TableSchemas:       tableSchemas,
-		RelationshipGraph:  relGraph,
-		BusinessContext:    BusinessContext{},
-		AIQuerySuggestions: aiQuerySuggestions,
-		DataQualityMetrics: dataQualityMetrics,
-		QuickInsights:      []string{fmt.Sprintf("Schema analysis completed for %d tables.", len(filteredTables))},
+		TableCatalog:            tableCatalog,
+		TableSchemas:            tableSchemas,
+		RelationshipGraph:       relGraph,
+		RelationshipGraphVisual: relGraphVisual,
+		BusinessContext:         BusinessContext{},
+		AIQuerySuggestions:      aiQuerySuggestions,
+		DataQualityMetrics:      dataQualityMetrics,
+		QuickInsights:           []string{fmt.Sprintf("Schema analysis completed for %d tables.", len(filteredTables))},
 	}
 
 	if businessCtx != nil {
@@ -3010,24 +3056,70 @@ func (s *MCPServer) inferBusinessContext(tableSchemas map[string]TableInfo) *Bus
 		tableNames = append(tableNames, name)
 		tables = append(tables, t)
 	}
+
 	domain, confidence := s.detectDomain(tableNames)
 	naming := s.analyzeNamingConventions(tables)
 	entities := s.identifyEntityTypes(tableNames)
-	// Compose BusinessContext struct
+
+	// Defensive extraction helpers
+	getString := func(m map[string]interface{}, key, def string) string {
+		if v, ok := m[key]; ok {
+			if s, ok2 := v.(string); ok2 {
+				return s
+			}
+		}
+		return def
+	}
+	getFloat := func(m map[string]interface{}, key string, def float64) float64 {
+		if v, ok := m[key]; ok {
+			switch tv := v.(type) {
+			case float64:
+				return tv
+			case float32:
+				return float64(tv)
+			case int:
+				return float64(tv)
+			case int64:
+				return float64(tv)
+			}
+		}
+		return def
+	}
+	getStringSlice := func(m map[string]interface{}, key string) []string {
+		if v, ok := m[key]; ok {
+			switch arr := v.(type) {
+			case []string:
+				return arr
+			case []interface{}:
+				var out []string
+				for _, iv := range arr {
+					out = append(out, fmt.Sprintf("%v", iv))
+				}
+				return out
+			}
+		}
+		return []string{}
+	}
+
+	pattern := getString(naming, "main_case", "unknown")
+	consistencyScore := getFloat(naming, "consistency", 0.0)
+	fkPattern := getString(naming, "fk_pattern", "unknown")
+	auditCols := getStringSlice(naming, "timestampCols")
+
 	return &BusinessContext{
 		DomainIndicators: map[string]float64{domain: confidence},
 		NamingConventions: NamingConventions{
-			Pattern:           naming["main_case"].(string),
-			ConsistencyScore:  naming["consistency"].(float64),
-			ForeignKeyPattern: naming["fk_pattern"].(string),
-			AuditColumns:      naming["timestampCols"].([]string),
+			Pattern:           pattern,
+			ConsistencyScore:  consistencyScore,
+			ForeignKeyPattern: fkPattern,
+			AuditColumns:      auditCols,
 		},
 		EntityRelationships: EntityRelationships{
 			CentralEntities:      entities,
-			RelationshipDensity:  0.0, // Placeholder, can be computed from relationships
+			RelationshipDensity:  0.0, // Placeholder
 			MaxRelationshipDepth: 0,   // Placeholder
 		},
-		DataPatterns: map[string]DataPattern{}, // Placeholder, can be extended
+		DataPatterns: map[string]DataPattern{}, // Placeholder
 	}
 }
 
@@ -3072,6 +3164,12 @@ func (s *MCPServer) analyzeNamingConventions(tables []TableInfo) map[string]inte
 	prefixes := map[string]int{}
 	suffixes := map[string]int{}
 	timestampCols := []string{}
+
+	// FK pattern detection
+	fkSuffix := 0
+	fkPrefix := 0
+	fkTotal := 0
+
 	for _, t := range tables {
 		for _, col := range t.Columns {
 			name := col.ColumnName
@@ -3087,17 +3185,63 @@ func (s *MCPServer) analyzeNamingConventions(tables []TableInfo) map[string]inte
 				prefixes[parts[0]]++
 				suffixes[parts[len(parts)-1]]++
 			}
+			// Audit / timestamp style columns
 			if strings.HasSuffix(name, "created_at") || strings.HasSuffix(name, "updated_at") ||
 				strings.HasSuffix(name, "timestamp") || strings.HasSuffix(name, "created") || strings.HasSuffix(name, "modified") {
 				timestampCols = append(timestampCols, name)
 			}
+			// Foreign key style detection
+			if strings.HasSuffix(name, "_id") && len(name) > 3 {
+				fkSuffix++
+				fkTotal++
+			} else if strings.HasPrefix(name, "id_") && len(name) > 3 {
+				fkPrefix++
+				fkTotal++
+			}
 		}
 	}
+
+	// Determine dominant case & consistency
+	totalCaseCount := cases["snake_case"] + cases["camelCase"] + cases["PascalCase"]
+	mainCase := "unknown"
+	consistency := 0.0
+	if totalCaseCount > 0 {
+		// find max
+		type kv struct {
+			k string
+			v int
+		}
+		var top kv
+		for k, v := range cases {
+			if v > top.v {
+				top = kv{k, v}
+			}
+		}
+		mainCase = top.k
+		consistency = float64(top.v) / float64(totalCaseCount)
+	}
+
+	// Foreign key naming pattern classification
+	fkPattern := "none"
+	if fkTotal > 0 {
+		switch {
+		case fkSuffix > 0 && fkPrefix > 0:
+			fkPattern = "mixed"
+		case fkSuffix > 0:
+			fkPattern = "suffix"
+		case fkPrefix > 0:
+			fkPattern = "prefix"
+		}
+	}
+
 	return map[string]interface{}{
 		"cases":         cases,
 		"prefixes":      prefixes,
 		"suffixes":      suffixes,
 		"timestampCols": timestampCols,
+		"main_case":     mainCase,
+		"consistency":   consistency,
+		"fk_pattern":    fkPattern,
 	}
 }
 
@@ -3237,7 +3381,7 @@ func (s *MCPServer) detectColumnPattern(tableName string, columnName string, val
 	// Distribution type
 	distType := dist["distribution"].(string)
 	// Enhanced logging for tableName and columnName
-	fmt.Printf("[PatternAnalysis] Table: %s, Column: %s, PatternType: %s\n", tableName, columnName, patternType)
+	log.JSONLog("debug", "Pattern analysis", map[string]interface{}{"table": tableName, "column": columnName, "patternType": patternType})
 	return &DataPattern{
 		PatternType:     patternType,
 		ValidationRegex: validationRegex,
@@ -3407,6 +3551,12 @@ func (s *MCPServer) generateDataQualityMetrics(
 		businessRuleCompliance := float64(businessRuleCompliant) / float64(total)
 		overall := (completeness + uniqueness + validity + consistency + temporalConsistency + businessRuleCompliance) / 6.0
 
+		// Cap issues slice length to avoid large payloads and memory growth
+		if len(issues) > maxQualityIssuesPerColumn {
+			truncated := issues[:maxQualityIssuesPerColumn]
+			truncated = append(truncated, fmt.Sprintf("... %d more issues truncated", len(issues)-maxQualityIssuesPerColumn))
+			issues = truncated
+		}
 		metrics[col.ColumnName] = QualityMetrics{
 			Completeness:           completeness,
 			Uniqueness:             uniqueness,

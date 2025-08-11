@@ -1317,3 +1317,264 @@ func BenchmarkHandleAnalyzeSchema(b *testing.B) {
 		_, _ = server.handleAnalyzeSchema(ctx, session, params)
 	}
 }
+
+// --- Additional Tests: Idempotent registration, business context, readonly enforcement edge cases, pattern integration & issue cap, decryption error path, Postgres constraint mapping presence, relationship graph inclusion ---
+//
+// NOTE: These tests extend coverage for outstanding items in reminder #17.
+//
+// 1. Tool duplication prevention
+// 2. Business context inference on empty schema (panic safety)
+// 3. Read-only enforcement: multi-statement block & WITH CTE allowance
+// 4. Data pattern propagation + quality issue cap truncation
+// 5. Decryption error path (invalid AES key length)
+// 6. Postgres constraint mapping (query definition presence)
+// 7. Relationship graph inclusion (semantic implicit relationship)
+//
+// Each test is self-contained and uses existing helpers where possible.
+
+func TestRegisterAllTools_Idempotent(t *testing.T) {
+	server := NewMCPServerWithConfig("nonexistent.yaml")
+	initial := len(server.toolsRegistry)
+	// Call again; should not add duplicates
+	server.registerAllTools()
+	if len(server.toolsRegistry) != initial {
+		t.Fatalf("Expected toolsRegistry size %d after re-registration, got %d", initial, len(server.toolsRegistry))
+	}
+}
+
+func TestInferBusinessContextEmpty(t *testing.T) {
+	server := NewMCPServerWithConfig("nonexistent.yaml")
+	ctx := server.inferBusinessContext(map[string]TableInfo{})
+	if ctx == nil {
+		t.Fatalf("Expected non-nil BusinessContext")
+	}
+	if len(ctx.DomainIndicators) == 0 {
+		t.Errorf("Expected DomainIndicators to contain at least 'unknown'")
+	}
+	if _, ok := ctx.DomainIndicators["unknown"]; !ok {
+		t.Errorf("Expected 'unknown' domain indicator for empty schema")
+	}
+}
+
+func TestReadonlyEnforcement_MultiStatementBlocked(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	// Mark sqlite profile readonly
+	cfg, _ := config.LoadConfig(testConfig)
+	for i := range cfg.Profiles {
+		if cfg.Profiles[i].ProfileName == "testsqlite" {
+			cfg.Profiles[i].Readonly = true
+		}
+	}
+	_ = config.SaveConfig(testConfig, cfg)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+	session := &mcp.ServerSession{}
+
+	params := &mcp.CallToolParamsFor[ExecuteSQLParams]{
+		Arguments: ExecuteSQLParams{
+			ProfileName:  "testsqlite",
+			DatabaseName: ":memory:",
+			SQL:          "SELECT 1; SELECT 2;",
+		},
+	}
+	_, err := server.handleExecuteSQL(ctx, session, params)
+	if err == nil {
+		t.Fatalf("Expected multi-statement block error on readonly profile")
+	}
+}
+
+func TestReadonlyEnforcement_WithCTEAllowed(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	// Create profile readonly AFTER creating an in-memory table (optional)
+	cfg, _ := config.LoadConfig(testConfig)
+	for i := range cfg.Profiles {
+		if cfg.Profiles[i].ProfileName == "testsqlite" {
+			cfg.Profiles[i].Readonly = true
+		}
+	}
+	_ = config.SaveConfig(testConfig, cfg)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+	session := &mcp.ServerSession{}
+
+	params := &mcp.CallToolParamsFor[ExecuteSQLParams]{
+		Arguments: ExecuteSQLParams{
+			ProfileName:  "testsqlite",
+			DatabaseName: ":memory:",
+			SQL:          "WITH cte AS (SELECT 1 AS a) SELECT a FROM cte",
+		},
+	}
+	// Should NOT error (read-only safe)
+	_, err := server.handleExecuteSQL(ctx, session, params)
+	if err != nil {
+		t.Fatalf("Expected WITH CTE SELECT to be allowed, got error: %v", err)
+	}
+}
+
+func TestAnalyzeSchema_PatternPropagationAndIssueCap(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+	session := &mcp.ServerSession{}
+
+	// Create users & orders tables to generate implicit relationship and pattern-rich email column
+	createUsers := []string{
+		"CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT)",
+	}
+	createOrders := []string{
+		"CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER)",
+	}
+	for _, sqlStmt := range append(createUsers, createOrders...) {
+		_, err := server.handleExecuteSQL(ctx, session, &mcp.CallToolParamsFor[ExecuteSQLParams]{Arguments: ExecuteSQLParams{
+			ProfileName:  "testsqlite",
+			DatabaseName: ":memory:",
+			SQL:          sqlStmt,
+		}})
+		if err != nil {
+			t.Fatalf("Failed to create table (%s): %v", sqlStmt, err)
+		}
+	}
+
+	// Insert 23 rows: 12 valid emails, 11 invalid (to exceed issue cap of 10)
+	validEmails := []string{
+		"alice@example.com", "bob@example.com", "carol@example.com", "dave@example.com",
+		"eve@example.com", "frank@example.com", "grace@example.com", "heidi@example.com",
+		"ivan@example.com", "judy@example.com", "mallory@example.com", "trent@example.com",
+	}
+	invalidEmails := []string{
+		"not-an-email", "missing-at-symbol.com", "user@.com", "user@domain",
+		"@@doubleat.com", "bad@@example.com", "user@domain,com", "space in@email.com",
+		"user@domain.c", "user@domain.toolongtld", "invalid@",
+	}
+	allEmails := append(validEmails, invalidEmails...)
+	for _, e := range allEmails {
+		_, err := server.handleExecuteSQL(ctx, session, &mcp.CallToolParamsFor[ExecuteSQLParams]{Arguments: ExecuteSQLParams{
+			ProfileName:  "testsqlite",
+			DatabaseName: ":memory:",
+			SQL:          "INSERT INTO users (email) VALUES (?)",
+			Params:       []interface{}{e},
+		}})
+		if err != nil {
+			t.Fatalf("Failed to insert email '%s': %v", e, err)
+		}
+	}
+
+	// Run comprehensive analyze-schema with sufficient sample size
+	params := &mcp.CallToolParamsFor[AnalyzeSchemaParams]{Arguments: AnalyzeSchemaParams{
+		ProfileName:   "testsqlite",
+		DatabaseName:  ":memory:",
+		AnalysisLevel: AnalysisLevelComprehensive,
+		SampleSize:    30,
+	}}
+	res, err := server.handleAnalyzeSchema(ctx, session, params)
+	if err != nil {
+		t.Fatalf("analyze-schema error: %v", err)
+	}
+	if res == nil || len(res.Content) == 0 {
+		t.Fatalf("Empty analyze-schema result content")
+	}
+	textContent, ok := res.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("Expected TextContent, got %T", res.Content[0])
+	}
+
+	var result AnalyzeSchemaResult
+	if err := json.Unmarshal([]byte(textContent.Text), &result); err != nil {
+		t.Fatalf("Failed to unmarshal AnalyzeSchemaResult: %v", err)
+	}
+
+	// Relationship graph inclusion
+	if (len(result.RelationshipGraph.SemanticRelationships) + len(result.RelationshipGraph.ForeignKeys)) == 0 {
+		t.Errorf("Expected at least one relationship (implicit naming) in RelationshipGraph")
+	}
+	if result.RelationshipGraphVisual == nil {
+		t.Errorf("Expected RelationshipGraphVisual to be present")
+	}
+
+	// Pattern propagation: users.email column should have PatternType 'email'
+	usersSchema, okTbl := result.TableSchemas["users"]
+	if !okTbl {
+		t.Fatalf("Expected users table schema in result")
+	}
+	var emailCol *SchemaColumnInfo
+	for i := range usersSchema.Columns {
+		if usersSchema.Columns[i].ColumnName == "email" {
+			emailCol = &usersSchema.Columns[i]
+			break
+		}
+	}
+	if emailCol == nil {
+		t.Fatalf("users.email column not found in schema")
+	}
+	if emailCol.PatternType != "email" {
+		t.Errorf("Expected PatternType 'email', got '%s'", emailCol.PatternType)
+	}
+
+	// Issue cap enforcement for users.email data quality metrics
+	qm, okQM := result.DataQualityMetrics["users.email"]
+	if !okQM {
+		t.Fatalf("Expected quality metrics for users.email")
+	}
+	if len(qm.Issues) == 0 {
+		t.Fatalf("Expected issues for invalid email rows")
+	}
+	if len(qm.Issues) > 11 { // 10 + truncation message
+		t.Errorf("Expected issues length <=11 (10 + truncation), got %d", len(qm.Issues))
+	}
+	if len(qm.Issues) == 11 {
+		last := qm.Issues[len(qm.Issues)-1]
+		if !strings.Contains(last, "more issues truncated") {
+			t.Errorf("Expected truncation indicator in last issue, got: %s", last)
+		}
+	}
+}
+
+func TestDecryptionErrorPath_InvalidAESKeyLength(t *testing.T) {
+	// Create a config with invalid AES key length (<32) to trigger fast-fail in LoadConfig
+	path := "bad_aes_config.yaml"
+	defer os.Remove(path)
+	content := `aes_key: "short-key-123456789"
+max_pool_size: 5
+profiles:
+  - profile_name: "badp"
+    db_type: "sqlite"
+    database_name: ":memory:"
+    password: "plaintext"`
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+	_, err := config.LoadConfig(path)
+	if err == nil {
+		t.Fatalf("Expected decryption/AES key error, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid AES key length") {
+		t.Errorf("Expected invalid AES key length error, got: %v", err)
+	}
+}
+
+func TestPostgresConstraintMappingQueryDefinition(t *testing.T) {
+	// Static verification that CASE mapping for PRI/UNI/MUL exists in server.go (proxy for mapping presence)
+	data, err := os.ReadFile("internal/mcp/server.go")
+	if err != nil {
+		t.Fatalf("Failed to read server.go: %v", err)
+	}
+	src := string(data)
+	requiredSnippets := []string{
+		"WHEN tc.constraint_type = 'PRIMARY KEY' THEN 'PRI'",
+		"WHEN tc.constraint_type = 'UNIQUE' THEN 'UNI'",
+		"WHEN tc.constraint_type = 'FOREIGN KEY' THEN 'MUL'",
+	}
+	for _, snip := range requiredSnippets {
+		if !strings.Contains(src, snip) {
+			t.Errorf("Expected Postgres constraint mapping snippet missing: %s", snip)
+		}
+	}
+}

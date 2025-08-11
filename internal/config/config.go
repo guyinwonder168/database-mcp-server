@@ -15,6 +15,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+var ErrDecryptionFailed = errors.New("decrypt password failed")
+
 type Profile struct {
 	ProfileName  string `yaml:"profile_name"`
 	DBType       string `yaml:"db_type"`
@@ -24,6 +26,7 @@ type Profile struct {
 	Password     string `yaml:"password"`
 	DatabaseName string `yaml:"database_name"`
 	Readonly     bool   `yaml:"readonly"`
+	SSLMode      string `yaml:"sslmode,omitempty"` // Postgres SSL mode (disable, require, verify-ca, verify-full)
 }
 
 type Config struct {
@@ -43,14 +46,18 @@ func LoadConfig(path string) (*Config, error) {
 	if err := decoder.Decode(&cfg); err != nil {
 		return nil, err
 	}
-	// Decrypt passwords
+	// Decrypt passwords (fail fast on any decryption error for security clarity)
 	key := cfg.AESKey
+	if key != "" && len(key) != 32 {
+		return nil, fmt.Errorf("invalid AES key length (%d) - must be 32: %w", len(key), ErrDecryptionFailed)
+	}
 	for i := range cfg.Profiles {
 		if key != "" && cfg.Profiles[i].Password != "" {
-			plain, err := decryptAESGCM(cfg.Profiles[i].Password, key)
-			if err == nil {
-				cfg.Profiles[i].Password = plain
+			plain, derr := decryptAESGCM(cfg.Profiles[i].Password, key)
+			if derr != nil {
+				return nil, fmt.Errorf("decrypt password for profile '%s': %w: %v", cfg.Profiles[i].ProfileName, ErrDecryptionFailed, derr)
 			}
+			cfg.Profiles[i].Password = plain
 		}
 	}
 	return &cfg, nil
