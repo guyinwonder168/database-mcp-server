@@ -21,6 +21,10 @@ Thumbs.db
 
 # Logs
 *.log
+log/
+
+# MCP server binary
+mcp-server
 
 # Configs and secrets
 config.yaml
