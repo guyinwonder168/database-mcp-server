@@ -1,6 +1,7 @@
 <!--
 Author: guyinwonder
 Project created using OpenAI GPT-4.1 via VSCode Kilo code AI code assistant extension.
+Update created using OpenAI GPT-5.1-codex-max via Codex
 Version v1.0.1
 -->
 
@@ -885,6 +886,14 @@ mcp_providers:
 - **Schema Introspection Queries**: [`docs/schema-introspection-queries.md`](docs/schema-introspection-queries.md) - Database-specific queries
 - **Test Enhanced Schema**: [`docs/test-enhanced-schema.md`](docs/test-enhanced-schema.md) - Test schema documentation
 - **Implementation Roadmap**: [`docs/implementation-roadmap.md`](docs/implementation-roadmap.md) - Strategic development planning
+
+### GitHub Project Documentation
+- **Contributing Guidelines**: [`CONTRIBUTING.md`](CONTRIBUTING.md) - Development setup and contribution workflow
+- **Code of Conduct**: [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) - Community guidelines and behavior standards
+- **Security Policy**: [`SECURITY.md`](SECURITY.md) - Security practices and vulnerability reporting
+- **Issue Templates**: Bug reports and feature request templates in [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/)
+- **Pull Request Template**: [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) - Comprehensive PR checklist
+- **License**: [`LICENSE`](LICENSE) - MIT license for open source use
 
 ### Memory Bank Documentation
 The project includes a comprehensive memory bank system for AI assistants, located in `.kilocode/rules/memory-bank/`:
