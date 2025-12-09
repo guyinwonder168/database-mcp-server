@@ -31,13 +31,13 @@ AnalysisLevel is REQUIRED and must be one of:
 If AnalysisLevel is empty or invalid, validation will fail.
 */
 type AnalyzeSchemaParams struct {
-	ProfileName    string   `json:"profile_name"`              // Required: Database profile to analyze
-	DatabaseName   string   `json:"database_name,omitempty"`   // Optional: Specific database (uses profile default if empty)
-	AnalysisLevel  string   `json:"analysis_level"`            // REQUIRED: "basic", "detailed", "comprehensive"
-	IncludeTables  []string `json:"include_tables,omitempty"`  // Optional: Specific tables to analyze (all if empty)
-	ExcludeTables  []string `json:"exclude_tables,omitempty"`  // Optional: Tables to exclude from analysis
-	SampleSize     int      `json:"sample_size,omitempty"`     // Optional: Rows to sample per table (default: 10)
-	IncludeQueries bool     `json:"include_queries,omitempty"` // Optional: Generate query suggestions (default: true)
+	ProfileName    string   `json:"profile_name" jsonschema:"profile to analyze"`                                          // Required: Database profile to analyze
+	DatabaseName   string   `json:"database_name,omitempty" jsonschema:"optional database/schema; defaults to profile"`    // Optional: Specific database (uses profile default if empty)
+	AnalysisLevel  string   `jsonschema:"required analysis depth: basic | detailed | comprehensive" json:"analysis_level"` // REQUIRED: "basic", "detailed", "comprehensive"
+	IncludeTables  []string `json:"include_tables,omitempty" jsonschema:"limit analysis to these tables (optional)"`
+	ExcludeTables  []string `json:"exclude_tables,omitempty" jsonschema:"tables to skip (optional)"`
+	SampleSize     int      `json:"sample_size,omitempty" jsonschema:"rows to sample per table (default 10)"`
+	IncludeQueries bool     `json:"include_queries,omitempty" jsonschema:"generate query suggestions (default true)"` // Optional: Generate query suggestions (default: true)
 }
 
 // Validate checks that required fields are present and valid.

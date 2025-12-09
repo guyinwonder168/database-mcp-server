@@ -33,7 +33,7 @@ Provide a secure, stateless, and unified interface for accessing MySQL, MariaDB,
 - Relies on database-level permissions for access control
 
 ## Success Criteria
-- Seamless integration with Kilocode AI and other MCP-compatible systems
+- Seamless integration with Kilocode AI, Codex CLI, ClaudeCode and other MCP-compatible systems
 - Zero plaintext credential storage
 - Robust error handling with structured error responses
 - Easy setup process for non-technical users

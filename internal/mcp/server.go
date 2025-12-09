@@ -260,6 +260,7 @@ func NewMCPServerWithConfig(configPath string) *MCPServer {
 		errorAnalyzer: NewErrorAnalyzer(configPath),
 	}
 	mcpServer.registerAllTools()
+	mcpServer.registerResources()
 	return mcpServer
 }
 
@@ -447,6 +448,25 @@ func (s *MCPServer) registerAllTools() {
 	}
 }
 
+// registerResources registers non-tool MCP resources and templates for discovery.
+func (s *MCPServer) registerResources() {
+	// Static tools snapshot as a resource
+	s.server.AddResource(&mcp.Resource{
+		URI:         "tools://list",
+		Name:        "Registered MCP Tools",
+		Description: "All registered MCP tools with descriptions",
+		MIMEType:    "application/json",
+	}, s.resourceToolsHandler)
+
+	// Profile metadata (secrets redacted) via URI template
+	s.server.AddResourceTemplate(&mcp.ResourceTemplate{
+		URITemplate: "profile://{profile}",
+		Name:        "Database profile metadata",
+		Description: "Profile connection metadata without secrets",
+		MIMEType:    "application/json",
+	}, s.resourceProfileHandler)
+}
+
 // Start launches the MCP server, registers all tools, and starts listening for MCP requests.
 func (s *MCPServer) Start() error {
 	// Ensure tools are registered (constructor normally does this)
@@ -454,7 +474,12 @@ func (s *MCPServer) Start() error {
 		s.registerAllTools()
 	}
 	log.JSONLog("info", "MCP server (SDK) running on stdio", nil)
-	return s.server.Run(context.Background(), mcp.NewStdioTransport())
+	return s.server.Run(context.Background(), &mcp.StdioTransport{})
+}
+
+// Server returns the underlying MCP server instance (for alternate transports such as SSE).
+func (s *MCPServer) Server() *mcp.Server {
+	return s.server
 }
 
 /*
@@ -468,15 +493,15 @@ Output: DiscoverJoinsResult (list of join suggestions and summary)
 */
 func (s *MCPServer) handleDiscoverJoins(
 	ctx context.Context,
-	session *mcp.ServerSession,
-	params *mcp.CallToolParamsFor[DiscoverJoinsParams],
-) (*mcp.CallToolResultFor[any], error) {
-	p := params.Arguments
+	_ *mcp.CallToolRequest,
+	input DiscoverJoinsParams,
+) (*mcp.CallToolResult, any, error) {
+	p := input
 
 	// 1. Load config and profile
 	cfg, err := config.LoadConfig(s.ConfigPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var prof *config.Profile
 	for i := range cfg.Profiles {
@@ -487,7 +512,7 @@ func (s *MCPServer) handleDiscoverJoins(
 	}
 	if prof == nil {
 		log.JSONLog("error", "Profile not found", map[string]interface{}{"profile_name": p.ProfileName})
-		return nil, fmt.Errorf("profile not found")
+		return nil, nil, fmt.Errorf("profile not found")
 	}
 
 	// 2. Connect to DB
@@ -500,13 +525,13 @@ func (s *MCPServer) handleDiscoverJoins(
 			"operation":    "discover_joins",
 			"db_type":      prof.DBType,
 		})
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 	defer conn.Close()
 
@@ -537,7 +562,7 @@ func (s *MCPServer) handleDiscoverJoins(
 		// SQLite: need to PRAGMA foreign_key_list for each table
 		// Will handle below
 	default:
-		return nil, fmt.Errorf("unsupported db_type for join discovery")
+		return nil, nil, fmt.Errorf("unsupported db_type for join discovery")
 	}
 
 	joins := []JoinSuggestion{}
@@ -554,7 +579,7 @@ func (s *MCPServer) handleDiscoverJoins(
 		if len(tables) == 0 {
 			rows, err := conn.Query("SELECT name FROM sqlite_master WHERE type='table'")
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			for rows.Next() {
 				var name string
@@ -604,13 +629,13 @@ func (s *MCPServer) handleDiscoverJoins(
 				"operation":    "discover_joins",
 				"db_type":      prof.DBType,
 			})
-			return &mcp.CallToolResultFor[any]{
+			return &mcp.CallToolResult{
 				Content: []mcp.Content{
 					&mcp.TextContent{
 						Text: structErr.ToJSON(),
 					},
 				},
-			}, nil
+			}, nil, nil
 		}
 		defer rows.Close()
 		for rows.Next() {
@@ -636,38 +661,38 @@ func (s *MCPServer) handleDiscoverJoins(
 		Summary: summary,
 	}
 	b, _ := json.Marshal(result)
-	return &mcp.CallToolResultFor[any]{
+	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{
 				Text: string(b),
 			},
 		},
-	}, nil
+	}, nil, nil
 }
 
 // handleMCPInfo returns author and version information.
-func (s *MCPServer) handleMCPInfo(ctx context.Context, session *mcp.ServerSession, params *mcp.CallToolParamsFor[any]) (*mcp.CallToolResultFor[any], error) {
-	return &mcp.CallToolResultFor[any]{
+func (s *MCPServer) handleMCPInfo(ctx context.Context, _ *mcp.CallToolRequest, input any) (*mcp.CallToolResult, any, error) {
+	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{
 				Text: "Database MCP Provider\nAuthor: " + MCPAuthor + "\nVersion: " + MCPVersion + "\nCreated using OpenAI GPT-4.1 via VSCode Kilocode AI code assistant extension.",
 			},
 		},
-	}, nil
+	}, nil, nil
 }
 
 // --- MCP Handler Parameter Structs ---
 
 type ConfigureProfileParams struct {
-	ProfileName  string `json:"profile_name"`
-	DBType       string `json:"db_type"`
-	Host         string `json:"host,omitempty"`
-	Port         int    `json:"port,omitempty"`
-	Username     string `json:"username,omitempty"`
-	Password     string `json:"password,omitempty"`
-	DatabaseName string `json:"database_name"`
-	Readonly     bool   `json:"readonly"`
-	SSLMode      string `json:"sslmode,omitempty"`
+	ProfileName  string `json:"profile_name" jsonschema:"unique name for this database profile"`
+	DBType       string `json:"db_type" jsonschema:"database type: mysql | mariadb | postgres | sqlite"`
+	Host         string `json:"host,omitempty" jsonschema:"hostname or IP (not required for sqlite)"`
+	Port         int    `json:"port,omitempty" jsonschema:"TCP port number (not required for sqlite)"`
+	Username     string `json:"username,omitempty" jsonschema:"database username (not required for sqlite)"`
+	Password     string `json:"password,omitempty" jsonschema:"database password (not required for sqlite)"`
+	DatabaseName string `json:"database_name" jsonschema:"default database/schema name or sqlite file path"`
+	Readonly     bool   `json:"readonly" jsonschema:"when true, write operations are blocked"`
+	SSLMode      string `json:"sslmode,omitempty" jsonschema:"postgres only: disable | require | verify-ca | verify-full"`
 }
 
 type ListProfilesResult struct {
@@ -678,10 +703,10 @@ type ListProfilesResult struct {
 }
 
 type ExecuteSQLParams struct {
-	ProfileName  string        `json:"profile_name"`
-	SQL          string        `json:"sql"`
-	DatabaseName string        `json:"database_name"`
-	Params       []interface{} `json:"params,omitempty"`
+	ProfileName  string        `json:"profile_name" jsonschema:"profile to use for connection"`
+	SQL          string        `json:"sql" jsonschema:"SQL statement to execute"`
+	DatabaseName string        `json:"database_name" jsonschema:"target database/schema (sqlite uses file path)"`
+	Params       []interface{} `json:"params,omitempty" jsonschema:"positional parameters for prepared statement"`
 }
 
 type ExecuteSQLResult struct {
@@ -691,8 +716,8 @@ type ExecuteSQLResult struct {
 }
 
 type ListTablesParams struct {
-	ProfileName  string `json:"profile_name"`
-	DatabaseName string `json:"database_name"`
+	ProfileName  string `json:"profile_name" jsonschema:"profile to use for connection"`
+	DatabaseName string `json:"database_name" jsonschema:"database/schema to inspect"`
 }
 
 type ListTablesResult struct {
@@ -700,9 +725,9 @@ type ListTablesResult struct {
 }
 
 type DescribeTableParams struct {
-	ProfileName  string `json:"profile_name"`
-	DatabaseName string `json:"database_name"`
-	TableName    string `json:"table_name"`
+	ProfileName  string `json:"profile_name" jsonschema:"profile to use for connection"`
+	DatabaseName string `json:"database_name" jsonschema:"database/schema containing the table"`
+	TableName    string `json:"table_name" jsonschema:"table to describe"`
 }
 
 type DescribeTableResult struct {
@@ -727,10 +752,10 @@ type ColumnInfo struct {
 
 // --- Smart Query Builder Types ---
 type SmartQueryBuilderParams struct {
-	ProfileName  string   `json:"profile_name"`
-	Intent       string   `json:"intent"`
-	DatabaseName string   `json:"database_name,omitempty"`
-	TableNames   []string `json:"table_names,omitempty"`
+	ProfileName  string   `json:"profile_name" jsonschema:"profile to use for connection"`
+	Intent       string   `json:"intent" jsonschema:"natural-language intent to convert to SQL"`
+	DatabaseName string   `json:"database_name,omitempty" jsonschema:"optional database/schema context"`
+	TableNames   []string `json:"table_names,omitempty" jsonschema:"optional focus tables for SQL generation"`
 }
 
 type SmartQueryBuilderResult struct {
@@ -740,8 +765,8 @@ type SmartQueryBuilderResult struct {
 
 // --- End Smart Query Builder Types ---
 type DiscoverJoinsParams struct {
-	ProfileName string   `json:"profile_name"`
-	Tables      []string `json:"tables,omitempty"`
+	ProfileName string   `json:"profile_name" jsonschema:"profile to use for connection"`
+	Tables      []string `json:"tables,omitempty" jsonschema:"optional subset of tables to analyze for joins"`
 }
 
 type JoinSuggestion struct {
@@ -759,7 +784,7 @@ type DiscoverJoinsResult struct {
 }
 
 type ListDatabasesParams struct {
-	ProfileName string `json:"profile_name"`
+	ProfileName string `json:"profile_name" jsonschema:"profile to use for connection"`
 }
 
 type ListDatabasesResult struct {
@@ -768,10 +793,10 @@ type ListDatabasesResult struct {
 
 // --- Sample Data Types ---
 type SampleDataParams struct {
-	ProfileName  string `json:"profile_name"`
-	TableName    string `json:"table_name"`
-	DatabaseName string `json:"database_name"`
-	SampleSize   int    `json:"sample_size,omitempty"`
+	ProfileName  string `json:"profile_name" jsonschema:"profile to use for connection"`
+	TableName    string `json:"table_name" jsonschema:"table to sample"`
+	DatabaseName string `json:"database_name" jsonschema:"database/schema containing the table"`
+	SampleSize   int    `json:"sample_size,omitempty" jsonschema:"number of rows to return (default 3)"`
 }
 
 type SampleDataResult struct {
@@ -802,20 +827,81 @@ type ListToolsResult struct {
 
 func (s *MCPServer) handleListTools(
 	ctx context.Context,
-	session *mcp.ServerSession,
-	params *mcp.CallToolParamsFor[ListToolsParams],
-) (*mcp.CallToolResultFor[any], error) {
+	_ *mcp.CallToolRequest,
+	input ListToolsParams,
+) (*mcp.CallToolResult, any, error) {
 	result := ListToolsResult{
 		Tools: s.toolsRegistry,
 	}
 	b, err := json.Marshal(result)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return &mcp.CallToolResultFor[any]{
+	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{
 				Text: string(b),
+			},
+		},
+	}, nil, nil
+}
+
+// resourceToolsHandler returns the current tools registry as a resource.
+func (s *MCPServer) resourceToolsHandler(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+	b, err := json.Marshal(s.toolsRegistry)
+	if err != nil {
+		return nil, err
+	}
+	return &mcp.ReadResourceResult{
+		Contents: []*mcp.ResourceContents{
+			{
+				URI:      req.Params.URI,
+				MIMEType: "application/json",
+				Text:     string(b),
+			},
+		},
+	}, nil
+}
+
+// resourceProfileHandler returns profile metadata (with secrets removed) for the requested profile.
+func (s *MCPServer) resourceProfileHandler(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+	const prefix = "profile://"
+	if !strings.HasPrefix(req.Params.URI, prefix) {
+		return nil, fmt.Errorf("invalid profile resource uri: %s", req.Params.URI)
+	}
+	profileName := strings.TrimPrefix(req.Params.URI, prefix)
+	if profileName == "" {
+		return nil, fmt.Errorf("profile name missing in uri: %s", req.Params.URI)
+	}
+
+	cfg, err := config.LoadConfig(s.ConfigPath)
+	if err != nil {
+		return nil, err
+	}
+	var prof *config.Profile
+	for i := range cfg.Profiles {
+		if cfg.Profiles[i].ProfileName == profileName {
+			prof = &cfg.Profiles[i]
+			break
+		}
+	}
+	if prof == nil {
+		return nil, fmt.Errorf("profile not found: %s", profileName)
+	}
+	// Redact password
+	safe := *prof
+	safe.Password = ""
+
+	b, err := json.Marshal(safe)
+	if err != nil {
+		return nil, err
+	}
+	return &mcp.ReadResourceResult{
+		Contents: []*mcp.ResourceContents{
+			{
+				URI:      req.Params.URI,
+				MIMEType: "application/json",
+				Text:     string(b),
 			},
 		},
 	}, nil
@@ -824,13 +910,13 @@ func (s *MCPServer) handleListTools(
 // --- MCP Handler Implementations ---
 
 // handleSmartQueryBuilder generates SQL from high-level intent and schema.
-func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, session *mcp.ServerSession, params *mcp.CallToolParamsFor[SmartQueryBuilderParams]) (*mcp.CallToolResultFor[any], error) {
-	p := params.Arguments
+func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, _ *mcp.CallToolRequest, input SmartQueryBuilderParams) (*mcp.CallToolResult, any, error) {
+	p := input
 
 	// 1. Load config and profile
 	cfg, err := config.LoadConfig(s.ConfigPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var prof *config.Profile
 	for i := range cfg.Profiles {
@@ -840,7 +926,7 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, session *mcp.Se
 		}
 	}
 	if prof == nil {
-		return nil, fmt.Errorf("profile not found")
+		return nil, nil, fmt.Errorf("profile not found")
 	}
 
 	// 2. Fetch all table names
@@ -854,13 +940,13 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, session *mcp.Se
 			"operation":     "smart_query_builder",
 			"db_type":       prof.DBType,
 		})
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 	defer conn.Close()
 
@@ -875,7 +961,7 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, session *mcp.Se
 		case "sqlite":
 			query = "SELECT name FROM sqlite_master WHERE type='table'"
 		default:
-			return nil, fmt.Errorf("unsupported db_type")
+			return nil, nil, fmt.Errorf("unsupported db_type")
 		}
 		rows, err := conn.Query(query)
 		if err != nil {
@@ -891,13 +977,13 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, session *mcp.Se
 				"operation":     "list_tables",
 				"db_type":       prof.DBType,
 			})
-			return &mcp.CallToolResultFor[any]{
+			return &mcp.CallToolResult{
 				Content: []mcp.Content{
 					&mcp.TextContent{
 						Text: structErr.ToJSON(),
 					},
 				},
-			}, nil
+			}, nil, nil
 		}
 		defer rows.Close()
 		for rows.Next() {
@@ -967,13 +1053,13 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, session *mcp.Se
 		} else {
 			suggestion = "No tables found in the database."
 		}
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: fmt.Sprintf(`{"status":"error","error_code":"NO_TABLE_MATCH","message":"%s %s"}`, errMsg, suggestion),
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 	// Fetch columns for the selected table
 	var columns []string
@@ -987,11 +1073,11 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, session *mcp.Se
 		case "sqlite":
 			colQuery = fmt.Sprintf("PRAGMA table_info('%s')", table)
 		default:
-			return nil, fmt.Errorf("unsupported db_type")
+			return nil, nil, fmt.Errorf("unsupported db_type")
 		}
 		rows, err := conn.Query(colQuery)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		defer rows.Close()
 		for rows.Next() {
@@ -1035,13 +1121,13 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, session *mcp.Se
 		Explanation: explanation,
 	}
 	b, _ := json.Marshal(result)
-	return &mcp.CallToolResultFor[any]{
+	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{
 				Text: string(b),
 			},
 		},
-	}, nil
+	}, nil, nil
 }
 
 // Helper: Invoke smart-query-builder handler for query suggestion generation
@@ -1051,13 +1137,13 @@ func (s *MCPServer) generateQuerySuggestionViaSmartBuilder(
 	profileName, intent, dbName string,
 	tableNames []string,
 ) (*SmartQueryBuilderResult, error) {
-	params := &mcp.CallToolParamsFor[SmartQueryBuilderParams]{Arguments: SmartQueryBuilderParams{
+	params := SmartQueryBuilderParams{
 		ProfileName:  profileName,
 		Intent:       intent,
 		DatabaseName: dbName,
 		TableNames:   tableNames,
-	}}
-	result, err := s.handleSmartQueryBuilder(ctx, session, params)
+	}
+	result, _, err := s.handleSmartQueryBuilder(ctx, &mcp.CallToolRequest{Session: session}, params)
 	if err != nil || result == nil || len(result.Content) == 0 {
 		return nil, err
 	}
@@ -1067,7 +1153,7 @@ func (s *MCPServer) generateQuerySuggestionViaSmartBuilder(
 	}
 	return &sqbr, nil
 }
-func (s *MCPServer) handleConfigureProfile(ctx context.Context, session *mcp.ServerSession, params *mcp.CallToolParamsFor[ConfigureProfileParams]) (*mcp.CallToolResultFor[any], error) {
+func (s *MCPServer) handleConfigureProfile(ctx context.Context, _ *mcp.CallToolRequest, input ConfigureProfileParams) (*mcp.CallToolResult, any, error) {
 	// Load config, or create new if missing
 	cfg, err := config.LoadConfig(s.ConfigPath)
 	log.JSONLog("debug", "Loaded config for configure-profile", map[string]interface{}{"configPath": s.ConfigPath, "error": err})
@@ -1075,7 +1161,7 @@ func (s *MCPServer) handleConfigureProfile(ctx context.Context, session *mcp.Ser
 		log.JSONLog("warn", "Failed to load config, creating new config", map[string]interface{}{"error": err.Error()})
 		cfg = &config.Config{}
 	}
-	p := params.Arguments
+	p := input
 	// Default database_name to "mysql" for MySQL/MariaDB if empty
 	if (p.DBType == "mysql" || p.DBType == "mariadb") && p.DatabaseName == "" {
 		p.DatabaseName = "mysql"
@@ -1097,13 +1183,13 @@ func (s *MCPServer) handleConfigureProfile(ctx context.Context, session *mcp.Ser
 				Example:     `{"profile_name": "mydb", "db_type": "mysql", "database_name": "mydb"}`,
 			},
 		)
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 
 	// Ensure AES key (auto-generate secure key if missing or invalid length)
@@ -1158,33 +1244,33 @@ func (s *MCPServer) handleConfigureProfile(ctx context.Context, session *mcp.Ser
 			"profile_name": p.ProfileName,
 			"operation":    "save_config",
 		})
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
-	return &mcp.CallToolResultFor[any]{
+	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{
 				Text: "Profile configured successfully.",
 			},
 		},
-	}, nil
+	}, nil, nil
 }
 
-func (s *MCPServer) handleListProfiles(ctx context.Context, session *mcp.ServerSession, params *mcp.CallToolParamsFor[any]) (*mcp.CallToolResultFor[any], error) {
+func (s *MCPServer) handleListProfiles(ctx context.Context, _ *mcp.CallToolRequest, input any) (*mcp.CallToolResult, any, error) {
 	cfg, err := config.LoadConfig(s.ConfigPath)
 	if err != nil || len(cfg.Profiles) == 0 {
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: "No database profiles configured. Please use the 'configure-profile' tool to add a profile.",
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 	result := ListProfilesResult{}
 	for _, p := range cfg.Profiles {
@@ -1198,18 +1284,18 @@ func (s *MCPServer) handleListProfiles(ctx context.Context, session *mcp.ServerS
 	}
 	b, err := json.Marshal(result)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return &mcp.CallToolResultFor[any]{
+	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{
 				Text: string(b),
 			},
 		},
-	}, nil
+	}, nil, nil
 }
 
-func (s *MCPServer) handleExecuteSQL(ctx context.Context, session *mcp.ServerSession, params *mcp.CallToolParamsFor[ExecuteSQLParams]) (*mcp.CallToolResultFor[any], error) {
+func (s *MCPServer) handleExecuteSQL(ctx context.Context, _ *mcp.CallToolRequest, input ExecuteSQLParams) (*mcp.CallToolResult, any, error) {
 	cfg, err := config.LoadConfig(s.ConfigPath)
 	if err != nil || len(cfg.Profiles) == 0 {
 		log.JSONLog("error", "No database profiles configured", map[string]interface{}{"error": err})
@@ -1224,15 +1310,15 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, session *mcp.ServerSes
 				Example:     `{"profile_name": "mydb", "db_type": "mysql", "host": "localhost", "port": 3306, "username": "user", "password": "pass", "database_name": "mydb"}`,
 			},
 		)
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
-	p := params.Arguments
+	p := input
 	// Validate required parameters
 	if p.ProfileName == "" || p.DatabaseName == "" {
 		structErr := NewStructuredError(
@@ -1246,13 +1332,13 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, session *mcp.ServerSes
 				Example:     `{"profile_name": "mydb", "database_name": "mydb", "sql": "SELECT 1"}`,
 			},
 		)
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 	var prof *config.Profile
 	for i := range cfg.Profiles {
@@ -1263,7 +1349,7 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, session *mcp.ServerSes
 	}
 	if prof == nil {
 		log.JSONLog("error", "Profile not found", map[string]interface{}{"profile_name": p.ProfileName})
-		return nil, fmt.Errorf("profile not found")
+		return nil, nil, fmt.Errorf("profile not found")
 	}
 	// Strengthened read-only enforcement (supports WITH CTEs, blocks multi-statement & dangerous verbs)
 	if prof.Readonly {
@@ -1339,11 +1425,11 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, session *mcp.ServerSes
 				},
 			).WithContext("profile_name", p.ProfileName).
 				WithContext("query", origSQL)
-			return &mcp.CallToolResultFor[any]{
+			return &mcp.CallToolResult{
 				Content: []mcp.Content{
 					&mcp.TextContent{Text: structErr.ToJSON()},
 				},
-			}, fmt.Errorf("blocked by readonly profile")
+			}, nil, fmt.Errorf("blocked by readonly profile")
 		}
 
 		// Allowed starting tokens (WITH allowed; must resolve to SELECT/EXPLAIN/SHOW/DESCRIBE/PRAGMA)
@@ -1400,11 +1486,11 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, session *mcp.ServerSes
 				"profile_name": p.ProfileName,
 				"query":        origSQL,
 			})
-			return &mcp.CallToolResultFor[any]{
+			return &mcp.CallToolResult{
 				Content: []mcp.Content{
 					&mcp.TextContent{Text: structErr.ToJSON()},
 				},
-			}, fmt.Errorf("blocked by readonly profile")
+			}, nil, fmt.Errorf("blocked by readonly profile")
 		}
 	}
 	// Use requested database if provided, else profile default
@@ -1423,13 +1509,13 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, session *mcp.ServerSes
 			"db_type":      prof.DBType,
 			"database":     dbName,
 		})
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 	defer conn.Close()
 	// For MySQL/MariaDB, optionally switch database if needed
@@ -1440,13 +1526,13 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, session *mcp.ServerSes
 				"operation":    "switch_database",
 				"database":     p.DatabaseName,
 			})
-			return &mcp.CallToolResultFor[any]{
+			return &mcp.CallToolResult{
 				Content: []mcp.Content{
 					&mcp.TextContent{
 						Text: structErr.ToJSON(),
 					},
 				},
-			}, nil
+			}, nil, nil
 		}
 	}
 	// Try query with parameters
@@ -1461,13 +1547,13 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, session *mcp.ServerSes
 				"operation":    "prepare_statement",
 				"db_type":      prof.DBType,
 			})
-			return &mcp.CallToolResultFor[any]{
+			return &mcp.CallToolResult{
 				Content: []mcp.Content{
 					&mcp.TextContent{
 						Text: structErr.ToJSON(),
 					},
 				},
-			}, nil
+			}, nil, nil
 		}
 		defer stmt.Close()
 		rows, err = stmt.Query(p.Params...)
@@ -1479,13 +1565,13 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, session *mcp.ServerSes
 				"operation":    "prepared_query",
 				"db_type":      prof.DBType,
 			})
-			return &mcp.CallToolResultFor[any]{
+			return &mcp.CallToolResult{
 				Content: []mcp.Content{
 					&mcp.TextContent{
 						Text: structErr.ToJSON(),
 					},
 				},
-			}, nil
+			}, nil, nil
 		}
 	} else {
 		rows, err = conn.Query(p.SQL)
@@ -1534,7 +1620,7 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, session *mcp.ServerSes
 				ptrs[i] = &row[i]
 			}
 			if err := rows.Scan(ptrs...); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			// Convert []byte to correct type for each column
 			for i, v := range row {
@@ -1564,7 +1650,7 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, session *mcp.ServerSes
 			}
 			results = append(results, row)
 		}
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(mustJSONMarshal(ExecuteSQLResult{
@@ -1573,14 +1659,14 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, session *mcp.ServerSes
 					})),
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 	// If not a query, try Exec
 	var res sql.Result
 	if len(p.Params) > 0 {
 		stmt, err := conn.Prepare(p.SQL)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		defer stmt.Close()
 		res, err = stmt.Exec(p.Params...)
@@ -1592,13 +1678,13 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, session *mcp.ServerSes
 				"operation":    "prepared_exec",
 				"db_type":      prof.DBType,
 			})
-			return &mcp.CallToolResultFor[any]{
+			return &mcp.CallToolResult{
 				Content: []mcp.Content{
 					&mcp.TextContent{
 						Text: structErr.ToJSON(),
 					},
 				},
-			}, nil
+			}, nil, nil
 		}
 	} else {
 		res, err = conn.Exec(p.SQL)
@@ -1613,16 +1699,16 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, session *mcp.ServerSes
 			"db_type":       prof.DBType,
 			"database_name": dbName,
 		})
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 	affected, _ := res.RowsAffected()
-	return &mcp.CallToolResultFor[any]{
+	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{
 				Text: string(mustJSONMarshal(ExecuteSQLResult{
@@ -1630,7 +1716,7 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, session *mcp.ServerSes
 				})),
 			},
 		},
-	}, nil
+	}, nil, nil
 }
 
 // mustJSONMarshal is a helper for panic-free JSON marshaling.
@@ -1639,7 +1725,7 @@ func mustJSONMarshal(v interface{}) []byte {
 	return b
 }
 
-func (s *MCPServer) handleListTables(ctx context.Context, session *mcp.ServerSession, params *mcp.CallToolParamsFor[ListTablesParams]) (*mcp.CallToolResultFor[any], error) {
+func (s *MCPServer) handleListTables(ctx context.Context, _ *mcp.CallToolRequest, input ListTablesParams) (*mcp.CallToolResult, any, error) {
 	cfg, err := config.LoadConfig(s.ConfigPath)
 	if err != nil {
 		structErr := NewStructuredError(
@@ -1652,15 +1738,15 @@ func (s *MCPServer) handleListTables(ctx context.Context, session *mcp.ServerSes
 				Description: "Run the server to create initial configuration",
 			},
 		)
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
-	p := params.Arguments
+	p := input
 	// Validate required parameters
 	if p.ProfileName == "" || p.DatabaseName == "" {
 		structErr := NewStructuredError(
@@ -1674,13 +1760,13 @@ func (s *MCPServer) handleListTables(ctx context.Context, session *mcp.ServerSes
 				Example:     `{"profile_name": "mydb", "database_name": "mydb"}`,
 			},
 		)
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 	var prof *config.Profile
 	for i := range cfg.Profiles {
@@ -1704,13 +1790,13 @@ func (s *MCPServer) handleListTables(ctx context.Context, session *mcp.ServerSes
 				Description: "List all available database profiles",
 			},
 		).WithContext("available_profiles", availableProfiles)
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 	// Use requested database if provided, else profile default
 	dbName := prof.DatabaseName
@@ -1726,13 +1812,13 @@ func (s *MCPServer) handleListTables(ctx context.Context, session *mcp.ServerSes
 			"operation":    "list_tables",
 			"db_type":      prof.DBType,
 		})
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 	defer conn.Close()
 	// For MySQL/MariaDB, optionally switch database if needed
@@ -1745,13 +1831,13 @@ func (s *MCPServer) handleListTables(ctx context.Context, session *mcp.ServerSes
 				"operation":     "switch_database",
 				"db_type":       prof.DBType,
 			})
-			return &mcp.CallToolResultFor[any]{
+			return &mcp.CallToolResult{
 				Content: []mcp.Content{
 					&mcp.TextContent{
 						Text: structErr.ToJSON(),
 					},
 				},
-			}, nil
+			}, nil, nil
 		}
 	}
 	var query string
@@ -1763,7 +1849,7 @@ func (s *MCPServer) handleListTables(ctx context.Context, session *mcp.ServerSes
 	case "sqlite":
 		query = "SELECT name FROM sqlite_master WHERE type='table'"
 	default:
-		return nil, fmt.Errorf("unsupported db_type")
+		return nil, nil, fmt.Errorf("unsupported db_type")
 	}
 	rows, err := conn.Query(query)
 	if err != nil {
@@ -1774,13 +1860,13 @@ func (s *MCPServer) handleListTables(ctx context.Context, session *mcp.ServerSes
 			"operation":     "list_tables",
 			"db_type":       prof.DBType,
 		})
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 	defer rows.Close()
 	var tables []string
@@ -1788,28 +1874,28 @@ func (s *MCPServer) handleListTables(ctx context.Context, session *mcp.ServerSes
 		if prof.DBType == "mysql" || prof.DBType == "mariadb" {
 			var name, tableType string
 			if err := rows.Scan(&name, &tableType); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			tables = append(tables, name)
 		} else {
 			var name string
 			if err := rows.Scan(&name); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			tables = append(tables, name)
 		}
 	}
 	result := ListTablesResult{Tables: tables}
-	return &mcp.CallToolResultFor[any]{
+	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{
 				Text: string(mustJSONMarshal(result)),
 			},
 		},
-	}, nil
+	}, nil, nil
 }
 
-func (s *MCPServer) handleDescribeTable(ctx context.Context, session *mcp.ServerSession, params *mcp.CallToolParamsFor[DescribeTableParams]) (*mcp.CallToolResultFor[any], error) {
+func (s *MCPServer) handleDescribeTable(ctx context.Context, _ *mcp.CallToolRequest, input DescribeTableParams) (*mcp.CallToolResult, any, error) {
 	cfg, err := config.LoadConfig(s.ConfigPath)
 	if err != nil {
 		structErr := NewStructuredError(
@@ -1822,15 +1908,15 @@ func (s *MCPServer) handleDescribeTable(ctx context.Context, session *mcp.Server
 				Description: "Run the server to create initial configuration",
 			},
 		)
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
-	p := params.Arguments
+	p := input
 	var prof *config.Profile
 	for i := range cfg.Profiles {
 		if cfg.Profiles[i].ProfileName == p.ProfileName {
@@ -1839,7 +1925,7 @@ func (s *MCPServer) handleDescribeTable(ctx context.Context, session *mcp.Server
 		}
 	}
 	if prof == nil {
-		return nil, fmt.Errorf("profile not found")
+		return nil, nil, fmt.Errorf("profile not found")
 	}
 	// Always require both database name and table name from user
 	if p.DatabaseName == "" || p.TableName == "" {
@@ -1854,13 +1940,13 @@ func (s *MCPServer) handleDescribeTable(ctx context.Context, session *mcp.Server
 				Example:     `{"profile_name": "mydb", "database_name": "mydb", "table_name": "users"}`,
 			},
 		)
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, p.DatabaseName, prof.SSLMode)
 	conn, err := db.OpenConnectionWithPool(prof.DBType, dsn, cfg.MaxPoolSize)
@@ -1873,13 +1959,13 @@ func (s *MCPServer) handleDescribeTable(ctx context.Context, session *mcp.Server
 			"operation":     "describe_table",
 			"db_type":       prof.DBType,
 		})
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 	defer conn.Close()
 
@@ -1916,13 +2002,13 @@ func (s *MCPServer) handleDescribeTable(ctx context.Context, session *mcp.Server
 				"operation":     "describe_table",
 				"db_type":       prof.DBType,
 			})
-			return &mcp.CallToolResultFor[any]{
+			return &mcp.CallToolResult{
 				Content: []mcp.Content{
 					&mcp.TextContent{
 						Text: structErr.ToJSON(),
 					},
 				},
-			}, nil
+			}, nil, nil
 		}
 		defer rows.Close()
 
@@ -1932,7 +2018,7 @@ func (s *MCPServer) handleDescribeTable(ctx context.Context, session *mcp.Server
 			var maxLength, precision, scale sql.NullInt64
 
 			if err := rows.Scan(&name, &typ, &nullable, &keyType, &defaultVal, &comment, &extra, &characterSet, &collation, &maxLength, &precision, &scale); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 
 			col := ColumnInfo{
@@ -2010,13 +2096,13 @@ func (s *MCPServer) handleDescribeTable(ctx context.Context, session *mcp.Server
 				"operation":     "describe_table",
 				"db_type":       prof.DBType,
 			})
-			return &mcp.CallToolResultFor[any]{
+			return &mcp.CallToolResult{
 				Content: []mcp.Content{
 					&mcp.TextContent{
 						Text: structErr.ToJSON(),
 					},
 				},
-			}, nil
+			}, nil, nil
 		}
 		defer rows.Close()
 
@@ -2026,7 +2112,7 @@ func (s *MCPServer) handleDescribeTable(ctx context.Context, session *mcp.Server
 			var maxLength, precision, scale sql.NullInt64
 
 			if err := rows.Scan(&name, &typ, &nullable, &defaultVal, &comment, &maxLength, &precision, &scale, &keyType); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 
 			col := ColumnInfo{
@@ -2068,13 +2154,13 @@ func (s *MCPServer) handleDescribeTable(ctx context.Context, session *mcp.Server
 				"operation":    "list_databases",
 				"db_type":      prof.DBType,
 			})
-			return &mcp.CallToolResultFor[any]{
+			return &mcp.CallToolResult{
 				Content: []mcp.Content{
 					&mcp.TextContent{
 						Text: structErr.ToJSON(),
 					},
 				},
-			}, nil
+			}, nil, nil
 		}
 		defer rows.Close()
 
@@ -2084,7 +2170,7 @@ func (s *MCPServer) handleDescribeTable(ctx context.Context, session *mcp.Server
 			var dflt sql.NullString
 
 			if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk, &hidden); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 
 			col := ColumnInfo{
@@ -2109,20 +2195,20 @@ func (s *MCPServer) handleDescribeTable(ctx context.Context, session *mcp.Server
 		}
 
 	default:
-		return nil, fmt.Errorf("unsupported db_type")
+		return nil, nil, fmt.Errorf("unsupported db_type")
 	}
 
 	result := DescribeTableResult{Columns: columns}
-	return &mcp.CallToolResultFor[any]{
+	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{
 				Text: string(mustJSONMarshal(result)),
 			},
 		},
-	}, nil
+	}, nil, nil
 }
 
-func (s *MCPServer) handleListDatabases(ctx context.Context, session *mcp.ServerSession, params *mcp.CallToolParamsFor[ListDatabasesParams]) (*mcp.CallToolResultFor[any], error) {
+func (s *MCPServer) handleListDatabases(ctx context.Context, _ *mcp.CallToolRequest, input ListDatabasesParams) (*mcp.CallToolResult, any, error) {
 	cfg, err := config.LoadConfig(s.ConfigPath)
 	if err != nil {
 		log.JSONLog("error", "Failed to load configuration", map[string]interface{}{"error": err})
@@ -2136,15 +2222,15 @@ func (s *MCPServer) handleListDatabases(ctx context.Context, session *mcp.Server
 				Description: "Run the server to create initial configuration",
 			},
 		)
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
-	p := params.Arguments
+	p := input
 	var prof *config.Profile
 	for i := range cfg.Profiles {
 		if cfg.Profiles[i].ProfileName == p.ProfileName {
@@ -2169,13 +2255,13 @@ func (s *MCPServer) handleListDatabases(ctx context.Context, session *mcp.Server
 				Example:     fmt.Sprintf(`{"profile_name": "%s", "db_type": "mysql", ...}`, p.ProfileName),
 			},
 		)
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, prof.DatabaseName, prof.SSLMode)
 	conn, err := db.OpenConnectionWithPool(prof.DBType, dsn, cfg.MaxPoolSize)
@@ -2186,13 +2272,13 @@ func (s *MCPServer) handleListDatabases(ctx context.Context, session *mcp.Server
 			"operation":    "list_databases",
 			"db_type":      prof.DBType,
 		})
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 	defer conn.Close()
 	var query string
@@ -2202,7 +2288,7 @@ func (s *MCPServer) handleListDatabases(ctx context.Context, session *mcp.Server
 	case "postgres":
 		query = "SELECT datname FROM pg_database WHERE datistemplate = false"
 	case "sqlite":
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(mustJSONMarshal(ListDatabasesResult{
@@ -2210,31 +2296,31 @@ func (s *MCPServer) handleListDatabases(ctx context.Context, session *mcp.Server
 					})),
 				},
 			},
-		}, nil
+		}, nil, nil
 	default:
-		return nil, fmt.Errorf("unsupported db_type")
+		return nil, nil, fmt.Errorf("unsupported db_type")
 	}
 	rows, err := conn.Query(query)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer rows.Close()
 	var dbs []string
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		dbs = append(dbs, name)
 	}
 	result := ListDatabasesResult{Databases: dbs}
-	return &mcp.CallToolResultFor[any]{
+	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{
 				Text: string(mustJSONMarshal(result)),
 			},
 		},
-	}, nil
+	}, nil, nil
 }
 
 /*
@@ -2248,10 +2334,10 @@ Output: SampleDataResult (sample rows with column names and metadata)
 */
 func (s *MCPServer) handleSampleData(
 	ctx context.Context,
-	session *mcp.ServerSession,
-	params *mcp.CallToolParamsFor[SampleDataParams],
-) (*mcp.CallToolResultFor[any], error) {
-	p := params.Arguments
+	_ *mcp.CallToolRequest,
+	input SampleDataParams,
+) (*mcp.CallToolResult, any, error) {
+	p := input
 
 	// Input validation
 	var prof *config.Profile
@@ -2276,13 +2362,13 @@ func (s *MCPServer) handleSampleData(
 					fmt.Sprintf("Unsupported database type: %s", prof.DBType),
 					"Sample data is only supported for MySQL, MariaDB, PostgreSQL, and SQLite",
 				).WithContext("supported_types", []string{"mysql", "mariadb", "postgres", "sqlite"})
-				return &mcp.CallToolResultFor[any]{
+				return &mcp.CallToolResult{
 					Content: []mcp.Content{
 						&mcp.TextContent{
 							Text: structErr.ToJSON(),
 						},
 					},
-				}, fmt.Errorf("unsupported db_type for sample data")
+				}, nil, fmt.Errorf("unsupported db_type for sample data")
 			}
 		}
 	}
@@ -2298,13 +2384,13 @@ func (s *MCPServer) handleSampleData(
 				Example:     `{"profile_name": "mydb", "database_name": "mydb", "table_name": "users", "sample_size": 5}`,
 			},
 		)
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, fmt.Errorf("missing required parameters")
+		}, nil, fmt.Errorf("missing required parameters")
 	}
 
 	// Set default sample size if not provided
@@ -2331,13 +2417,13 @@ func (s *MCPServer) handleSampleData(
 					Description: "Run the server to create initial configuration",
 				},
 			)
-			return &mcp.CallToolResultFor[any]{
+			return &mcp.CallToolResult{
 				Content: []mcp.Content{
 					&mcp.TextContent{
 						Text: structErr.ToJSON(),
 					},
 				},
-			}, nil
+			}, nil, nil
 		}
 	}
 	if prof == nil {
@@ -2350,7 +2436,7 @@ func (s *MCPServer) handleSampleData(
 	}
 	if prof == nil {
 		log.JSONLog("error", "Profile not found for sample data", map[string]interface{}{"profile_name": p.ProfileName})
-		return nil, fmt.Errorf("profile not found")
+		return nil, nil, fmt.Errorf("profile not found")
 	}
 
 	// 2. Determine database name
@@ -2370,13 +2456,13 @@ func (s *MCPServer) handleSampleData(
 			"db_type":       prof.DBType,
 			"database_name": dbName,
 		})
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 	defer conn.Close()
 
@@ -2390,13 +2476,13 @@ func (s *MCPServer) handleSampleData(
 				"operation":     "switch_database",
 				"db_type":       prof.DBType,
 			})
-			return &mcp.CallToolResultFor[any]{
+			return &mcp.CallToolResult{
 				Content: []mcp.Content{
 					&mcp.TextContent{
 						Text: structErr.ToJSON(),
 					},
 				},
-			}, nil
+			}, nil, nil
 		}
 	}
 
@@ -2416,13 +2502,13 @@ func (s *MCPServer) handleSampleData(
 			fmt.Sprintf("Unsupported database type: %s", prof.DBType),
 			"Sample data is only supported for MySQL, MariaDB, PostgreSQL, and SQLite",
 		).WithContext("supported_types", []string{"mysql", "mariadb", "postgres", "sqlite"})
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, fmt.Errorf("unsupported db_type for sample data")
+		}, nil, fmt.Errorf("unsupported db_type for sample data")
 	}
 
 	// 6. Execute sample query
@@ -2438,13 +2524,13 @@ func (s *MCPServer) handleSampleData(
 			"db_type":       prof.DBType,
 			"query":         sampleQuery,
 		})
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 	defer rows.Close()
 
@@ -2452,7 +2538,7 @@ func (s *MCPServer) handleSampleData(
 	columns, err := rows.Columns()
 	if err != nil {
 		log.JSONLog("error", "Failed to get column names for sample data", map[string]interface{}{"table": p.TableName, "error": err.Error()})
-		return nil, err
+		return nil, nil, err
 	}
 
 	// 8. Fetch sample rows
@@ -2465,7 +2551,7 @@ func (s *MCPServer) handleSampleData(
 		}
 		if err := rows.Scan(ptrs...); err != nil {
 			log.JSONLog("error", "Failed to scan sample data row", map[string]interface{}{"table": p.TableName, "error": err.Error()})
-			return nil, err
+			return nil, nil, err
 		}
 
 		// Convert []byte to strings for better JSON representation
@@ -2480,7 +2566,7 @@ func (s *MCPServer) handleSampleData(
 	// 9. Check for iteration errors
 	if err := rows.Err(); err != nil {
 		log.JSONLog("error", "Error during sample data iteration", map[string]interface{}{"table": p.TableName, "error": err.Error()})
-		return nil, err
+		return nil, nil, err
 	}
 
 	// 10. Build result
@@ -2502,23 +2588,23 @@ func (s *MCPServer) handleSampleData(
 	})
 
 	b, _ := json.Marshal(result)
-	return &mcp.CallToolResultFor[any]{
+	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{
 				Text: string(b),
 			},
 		},
-	}, nil
+	}, nil, nil
 }
 
 // handleAnalyzeSchema implements the MCP handler for comprehensive schema analysis.
 func (s *MCPServer) handleAnalyzeSchema(
 	ctx context.Context,
-	session *mcp.ServerSession,
-	params *mcp.CallToolParamsFor[AnalyzeSchemaParams],
-) (*mcp.CallToolResultFor[any], error) {
+	_ *mcp.CallToolRequest,
+	input AnalyzeSchemaParams,
+) (*mcp.CallToolResult, any, error) {
 	startTime := time.Now()
-	p := params.Arguments
+	p := input
 	if err := p.Validate(); err != nil {
 		structErr := NewStructuredError(
 			ErrorCodeMissingParameter,
@@ -2531,13 +2617,13 @@ func (s *MCPServer) handleAnalyzeSchema(
 				Example:     `{"profile_name": "analytics_db", "analysis_level": "detailed"}`,
 			},
 		)
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, fmt.Errorf("missing or invalid analysis_level")
+		}, nil, fmt.Errorf("missing or invalid analysis_level")
 	}
 
 	// 1. Load config and profile
@@ -2548,13 +2634,13 @@ func (s *MCPServer) handleAnalyzeSchema(
 			"Failed to load configuration",
 			err.Error(),
 		)
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, err
+		}, nil, err
 	}
 	var prof *config.Profile
 	for i := range cfg.Profiles {
@@ -2569,13 +2655,13 @@ func (s *MCPServer) handleAnalyzeSchema(
 			fmt.Sprintf("Profile '%s' not found", p.ProfileName),
 			"The specified database profile does not exist",
 		)
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, fmt.Errorf("profile not found")
+		}, nil, fmt.Errorf("profile not found")
 	}
 	dbName := prof.DatabaseName
 	if p.DatabaseName != "" {
@@ -2592,13 +2678,13 @@ func (s *MCPServer) handleAnalyzeSchema(
 			"operation":    "analyze_schema",
 			"db_type":      prof.DBType,
 		})
-		return &mcp.CallToolResultFor[any]{
+		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: structErr.ToJSON(),
 				},
 			},
-		}, err
+		}, nil, err
 	}
 	defer conn.Close()
 
@@ -2614,7 +2700,7 @@ func (s *MCPServer) handleAnalyzeSchema(
 		case "sqlite":
 			query = "SELECT name FROM sqlite_master WHERE type='table'"
 		default:
-			return nil, fmt.Errorf("unsupported db_type")
+			return nil, nil, fmt.Errorf("unsupported db_type")
 		}
 		rows, err := conn.Query(query)
 		if err != nil {
@@ -2625,13 +2711,13 @@ func (s *MCPServer) handleAnalyzeSchema(
 				"operation":     "list_tables",
 				"db_type":       prof.DBType,
 			})
-			return &mcp.CallToolResultFor[any]{
+			return &mcp.CallToolResult{
 				Content: []mcp.Content{
 					&mcp.TextContent{
 						Text: structErr.ToJSON(),
 					},
 				},
-			}, err
+			}, nil, err
 		}
 		defer rows.Close()
 		for rows.Next() {
@@ -2929,7 +3015,7 @@ func (s *MCPServer) handleAnalyzeSchema(
 	if p.AnalysisLevel == AnalysisLevelComprehensive && p.IncludeQueries {
 		// Example: Generate one suggestion per table
 		for _, tbl := range filteredTables {
-			suggestion, err := s.generateQuerySuggestionViaSmartBuilder(ctx, session, p.ProfileName, fmt.Sprintf("Show all rows in %s", tbl), dbName, []string{tbl})
+			suggestion, err := s.generateQuerySuggestionViaSmartBuilder(ctx, nil, p.ProfileName, fmt.Sprintf("Show all rows in %s", tbl), dbName, []string{tbl})
 			if err == nil && suggestion != nil {
 				aiQuerySuggestions.DataExploration = append(aiQuerySuggestions.DataExploration, QuerySuggestion{
 					Category:   "exploration",
@@ -3035,15 +3121,15 @@ func (s *MCPServer) handleAnalyzeSchema(
 	b, err := json.Marshal(result)
 	if err != nil {
 		log.JSONLog("error", "Failed to serialize AnalyzeSchemaResult", map[string]interface{}{"error": err.Error()})
-		return nil, err
+		return nil, nil, err
 	}
-	return &mcp.CallToolResultFor[any]{
+	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{
 				Text: string(b),
 			},
 		},
-	}, nil
+	}, nil, nil
 }
 
 // Business Context Inference Helpers

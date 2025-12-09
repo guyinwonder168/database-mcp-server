@@ -29,8 +29,15 @@ func Init(logFile string) error {
 	if err != nil {
 		return err
 	}
-	multi := io.MultiWriter(os.Stdout, rotator)
-	Logger = log.New(multi, "", 0)
+
+	// MCP servers communicate over stdout; avoid corrupting stdio by default.
+	// Enable stdout logging only if explicitly requested.
+	var writer io.Writer = rotator
+	if v := os.Getenv("MCP_LOG_TO_STDOUT"); strings.EqualFold(v, "true") {
+		writer = io.MultiWriter(os.Stdout, rotator)
+	}
+
+	Logger = log.New(writer, "", 0)
 	return nil
 }
 

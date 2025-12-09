@@ -7,8 +7,11 @@ package main
 import (
 	"database-mcp-provider/internal/log"
 	"database-mcp-provider/internal/mcp"
+	"net/http"
 	"os"
 	"path/filepath"
+
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func main() {
@@ -72,6 +75,21 @@ func main() {
 	// Start MCP server
 	log.JSONLog("debug", "About to initialize MCP server", nil)
 	server := mcp.NewMCPServerWithConfig(configPath)
+
+	// Optional SSE transport (HTTP) for MCP.
+	if sseAddr := os.Getenv("MCP_SSE_ADDR"); sseAddr != "" {
+		go func() {
+			handler := mcpsdk.NewSSEHandler(func(_ *http.Request) *mcpsdk.Server {
+				return server.Server()
+			}, nil)
+			log.JSONLog("info", "Starting MCP SSE server", map[string]interface{}{"addr": sseAddr})
+			if err := http.ListenAndServe(sseAddr, handler); err != nil {
+				log.JSONLog("fatal", "Failed to start MCP SSE server", map[string]interface{}{"error": err.Error(), "addr": sseAddr})
+				os.Exit(1)
+			}
+		}()
+	}
+
 	log.JSONLog("debug", "MCP server instance created, starting server...", map[string]interface{}{"configPath": configPath})
 	if err := server.Start(); err != nil {
 		log.JSONLog("fatal", "Failed to start MCP server", map[string]interface{}{"error": err.Error()})

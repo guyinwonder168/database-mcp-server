@@ -3,15 +3,16 @@
 ## Core Technologies
 
 ### Programming Language
-- **Go (Golang)** - Version 1.23.0+
+- **Go (Golang)** - Version 1.25.5
   - Chosen for performance, strong typing, and excellent concurrency support
-  - Toolchain: go1.24.0
+  - Toolchain: go1.25.5 (gvm default; 1.25.4 removed)
 
 ### MCP Framework
-- **Official Go MCP SDK** (github.com/modelcontextprotocol/go-sdk v0.2.0)
+- **Official Go MCP SDK** (github.com/modelcontextprotocol/go-sdk v1.1.0)
   - Model Context Protocol implementation
   - Stdio transport for local communication
   - JSON-RPC protocol support
+  - Upgraded from v0.2.0 to fix critical tools/list bug preventing tool discovery
 
 ### Database Drivers
 - **MySQL/MariaDB**: github.com/go-sql-driver/mysql v1.9.3
@@ -20,15 +21,21 @@
 - All use standard `database/sql` interface
 
 ### Supporting Libraries
-- **YAML Configuration**: gopkg.in/yaml.v3
-- **Log Rotation**: github.com/lestrrat-go/file-rotatelogs v2.4.0
+- **YAML Configuration**: gopkg.in/yaml.v3 v3.0.1
+- **Log Rotation**: github.com/lestrrat-go/file-rotatelogs v2.4.0+incompatible
 - **Encryption**: Standard library crypto/aes for AES-GCM
+- **Additional Dependencies**:
+  - filippo.io/edwards25519 v1.1.0 // indirect
+  - github.com/jonboulle/clockwork v0.5.0 // indirect
+  - github.com/lestrrat-go/strftime v1.1.1 // indirect
+  - github.com/pkg/errors v0.9.1 // indirect
+  - github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 
 ## Development Setup
 
 ### Prerequisites
 ```bash
-# Go 1.23.0 or higher
+# Go 1.25.5
 go version
 
 # Git for version control
@@ -72,7 +79,12 @@ go test ./...
 
 ### Environment Variables
 - **DB_MCP_AES_KEY**: Optional, overrides config file AES key
+- **MCP_LOG_TO_STDOUT**: Set to `true` to mirror logs to stdout (defaults to file-only to keep MCP stdio clean)
+- Live DB smoke tests:
+  - Postgres: `DB_MCP_IT_PG_HOST`, `DB_MCP_IT_PG_PORT`, `DB_MCP_IT_PG_USER`, `DB_MCP_IT_PG_PASS`, `DB_MCP_IT_PG_DB`, `DB_MCP_IT_PG_SSLMODE`
+  - MySQL/MariaDB: `DB_MCP_IT_MYSQL_HOST`, `DB_MCP_IT_MYSQL_PORT`, `DB_MCP_IT_MYSQL_USER`, `DB_MCP_IT_MYSQL_PASS`, `DB_MCP_IT_MYSQL_DB`
 - Standard database environment variables respected by drivers
+- **MCP_SSE_ADDR**: Optional; set to host:port (e.g., `:8080`) to serve MCP over HTTP/SSE alongside stdio. Example: `MCP_SSE_ADDR=":8080" ./mcp-server`
 
 ## Technical Constraints
 
@@ -126,6 +138,7 @@ go test ./...
 2. Configure appropriate pool sizes
 3. Set up log rotation and monitoring
 4. Use systemd or similar for process management
+5. Optional SSE transport: set `MCP_SSE_ADDR` (e.g., `:8080`) to serve MCP over HTTP/SSE alongside stdio.
 
 ### Integration with Kilocode AI
 ```yaml
@@ -144,6 +157,7 @@ mcp_providers:
 - Format: Structured JSON
 - Rotation: 500KB file size limit
 - Retention: 7 days
+- Stdout logging disabled by default; enable via `MCP_LOG_TO_STDOUT=true` to mirror logs (kept off to avoid MCP stdio contamination)
 
 ### Debug Commands
 ```bash

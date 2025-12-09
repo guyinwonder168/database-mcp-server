@@ -41,10 +41,15 @@ The Database MCP Server follows a layered architecture pattern with clear separa
   - Registers all MCP tools/actions (12 total, fully documented in README)
   - Routes requests to appropriate handlers
   - Uses official Go MCP SDK
+  - Enhanced error handling with structured error responses and actionable suggestions
+  - Registers MCP resources:
+    - `tools://list` (JSON snapshot of tools registry)
+    - `profile://{profile}` (profile metadata, secrets redacted)
+  - Optional SSE transport: when `MCP_SSE_ADDR` is set, `cmd/server/main.go` starts `mcpsdk.NewSSEHandler` HTTP server alongside stdio.
   - Handler methods:
     - handleConfigureProfile
     - handleListProfiles
-    - handleExecuteSQL
+    - handleExecuteSQL (with enhanced read-only enforcement and CTE support)
     - handleListTables
     - handleDescribeTable
     - handleListDatabases
@@ -53,7 +58,29 @@ The Database MCP Server follows a layered architecture pattern with clear separa
     - handleListTools
     - handleDeleteProfile
     - handleUpdateProfile
-    - handleAnalyzeSchema (new: supports BASIC, DETAILED, COMPREHENSIVE analysis, business context inference, data quality metrics, relationship discovery, Smart Query Builder integration)
+    - handleAnalyzeSchema (comprehensive analysis with business context inference, data quality metrics, relationship discovery)
+    - handleSmartQueryBuilder (natural language intent processing)
+    - handleDiscoverJoins (foreign key and semantic relationship detection)
+  - Resource handlers:
+    - resourceToolsHandler
+    - resourceProfileHandler
+- **analyze_schema_types.go**: Type system for schema analysis
+  - Comprehensive type definitions for all analysis levels
+  - Business context inference structures
+  - Data quality metrics and pattern recognition
+  - Relationship graph visualization
+  - AI query suggestions integration
+- **errors.go**: Structured error handling system
+  - Error codes and categorization
+  - Actionable suggestions for recovery
+  - Context-aware error messages
+- **server_test.go**: Comprehensive unit tests
+  - Test coverage for all MCP tools
+  - Schema analysis validation tests
+- **tools_list_integration_test.go**: MCP tool discovery regression tests
+  - Prevents future tools/list bugs
+  - Verifies all 12 tools are discoverable by MCP clients
+  - Tests capabilities advertisement and tool registry functionality
 
 #### Configuration Management (internal/config/)
 - **config.go**: Profile and configuration management
@@ -73,8 +100,8 @@ The Database MCP Server follows a layered architecture pattern with clear separa
 #### Logging (internal/log/)
 - **logger.go**: Structured JSON logging
   - File rotation (500KB limit)
-  - Multi-output (stdout + file)
   - JSON format with timestamps
+  - Stdout logging disabled by default to avoid MCP stdio contamination; enable via `MCP_LOG_TO_STDOUT=true`
 
 ## Data Flow
 
@@ -122,6 +149,19 @@ database-mcp-provider/
 ├── cmd/
 │   └── server/
 │       └── main.go           # Entry point
+├── docs/                      # Comprehensive documentation suite
+│   ├── README.md              # Main documentation
+│   ├── prd.md                # Product Requirements Document
+│   ├── prd-analysis-report.md # PRD analysis with AI perspective
+│   ├── technical-specifications.md # Technical architecture details
+│   ├── api-documentation.md # API documentation
+│   ├── mcp-openapi.yaml      # OpenAPI specification
+│   ├── mcp-examples.md       # MCP usage examples
+│   ├── schema-introspection-queries.md # Database-specific queries
+│   ├── smart-query-builder-implementation-plan.md # Query builder design
+│   ├── analyze-schema-design.md # Schema analysis architecture
+│   ├── test-enhanced-schema.md # Test schema documentation
+│   └── implementation-status.md # Implementation tracking
 ├── internal/
 │   ├── config/
 │   │   ├── config.go         # Configuration management
@@ -132,10 +172,14 @@ database-mcp-provider/
 │   │   └── logger.go         # Logging infrastructure
 │   └── mcp/
 │       ├── analyze_schema_types.go # Analyze-schema type system
-│       ├── server.go              # MCP server core (analyze-schema handler)
-│       ├── server_test.go         # Unit tests (analyze-schema tests)
-├── go.mod                    # Go module definition
+│       ├── server.go              # MCP server core (all handlers + resources)
+│       ├── errors.go             # Structured error handling
+│       ├── server_test.go         # Comprehensive unit tests
+│       ├── tools_list_integration_test.go # tools/list regression tests
+│       └── integration_live_test.go       # Live Postgres/MySQL smoke tests (env-driven)
+├── go.mod                    # Go module definition (Go 1.25.5 toolchain)
 ├── go.sum                    # Dependency lock file
+├── CHANGELOG.md              # Release notes (v1.0.1 includes MCP tool fix, error payload docs, live DB smoke)
 ├── config.yaml              # Runtime configuration (generated)
 └── mcp-provider.log         # Runtime logs (generated)
 ```
@@ -155,3 +199,4 @@ database-mcp-provider/
 - All 12 MCP tools are fully documented in README.md, including analyze-schema configuration and usage for all supported databases.
 - Enhanced schema introspection, schema analysis, and structured error handling are implemented and documented.
 - Configuration cleanup ensures only relevant fields are present, improving security and maintainability.
+- MCP tool detection fix implemented: Upgraded to Go SDK v1.1.0 to resolve critical tools/list bug, with comprehensive regression tests to prevent future issues.

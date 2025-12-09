@@ -1,12 +1,12 @@
 <!--
 Author: guyinwonder
 Project created using OpenAI GPT-4.1 via VSCode Kilo code AI code assistant extension.
-Version v1.0.0
+Version v1.0.1
 -->
 
 # Database MCP Server
 
-A production-ready Model Context Protocol (MCP) provider for SQL databases, written in Go by guyinwonder. Supports MySQL, MariaDB, PostgreSQL, and SQLite. Features robust connection pooling, secure AES-GCM credential storage, structured JSON logging, comprehensive schema introspection, and a full suite of 12 MCP tools.
+A production-ready Model Context Protocol (MCP) provider for SQL databases, written in Go by guyinwonder. Supports MySQL, MariaDB, PostgreSQL, and SQLite. Features robust connection pooling, secure AES-GCM credential storage, structured JSON logging, comprehensive schema introspection, and a full suite of 12 MCP tools. Built and tested with Go 1.25.5.
 
 ---
 
@@ -123,6 +123,110 @@ The server will respond with a JSON object containing the results.
 - Refer to [`docs/mcp-openapi.yaml`](docs/mcp-openapi.yaml) for detailed schemas and examples.
 
 ---
+
+## Development (Go 1.25.5)
+
+- Run all tests: `go test ./...`
+- MCP tool discovery regression note: The project uses `github.com/modelcontextprotocol/go-sdk v1.1.0`, which fixes the earlier `tools/list` rejection during session initialization (v0.2.0 regression). The guard test `internal/mcp/tools_list_integration_test.go` ensures all registered tools are returned by `ListTools`; downgrades will fail this test.
+- Optional live DB integration tests: set env vars and run `go test ./internal/mcp -run TestLive -count=1`
+  - Postgres: `DB_MCP_IT_PG_HOST`, `DB_MCP_IT_PG_PORT`, `DB_MCP_IT_PG_USER`, `DB_MCP_IT_PG_PASS`, `DB_MCP_IT_PG_DB`, `DB_MCP_IT_PG_SSLMODE` (e.g., disable for local containers)
+  - MySQL/MariaDB: `DB_MCP_IT_MYSQL_HOST`, `DB_MCP_IT_MYSQL_PORT`, `DB_MCP_IT_MYSQL_USER`, `DB_MCP_IT_MYSQL_PASS`, `DB_MCP_IT_MYSQL_DB`
+- Logging to stdout is disabled by default to avoid corrupting MCP stdio. To mirror logs to stdout, set `MCP_LOG_TO_STDOUT=true` when starting the server.
+- Optional HTTP/SSE transport: set `MCP_SSE_ADDR` (e.g., `:8080`) to expose the MCP server over SSE in addition to stdio. Example:
+  ```bash
+  MCP_SSE_ADDR=":8080" ./mcp-server
+  ```
+  - Claude Desktop: add an MCP provider pointing to `http://localhost:8080` with transport `sse` (Claude auto-detects SSE when endpoint responds with SSE).
+  - Codex CLI: set `MCP_SSE_ADDR` as above and add/update the provider entry to point at the HTTP endpoint if Codex supports SSE; otherwise keep stdio (default).
+  - Kilocode: prefers stdio; leave `MCP_SSE_ADDR` unset unless testing SSE—Kilocode auto-uses the process command.
+
+## Troubleshooting & Recovery
+
+- **Invalid credentials**  
+  - Symptoms: MCP calls such as `execute-sql` or `list-databases` return a structured error whose `message` includes the driver detail (e.g., MySQL “access denied for user”, Postgres “password authentication failed”).  
+  - Fix: inspect the profile via `list-profiles` or `profile://{profile_name}` resource; rerun `configure-profile` with the corrected username/password/sslmode. For CI or local containers, ensure `DB_MCP_IT_*` env vars match the running DB.
+  - Example structured error payload (MySQL bad password):
+    ```json
+    {
+      "status": "error",
+      "error_code": "CONNECTION_FAILED",
+      "message": "Database connection failed",
+      "details": "Access denied for user 'root'@'127.0.0.1' (using password: YES)",
+      "suggestions": [
+        {"action": "Check database server", "description": "Verify the database server is running and accessible"},
+        {"action": "Verify connection details", "description": "Check host, port, username, and password in the profile configuration"},
+        {"action": "Check network connectivity", "description": "Ensure there are no firewall or network issues blocking the connection"}
+      ],
+      "context": {
+        "profile_name": "mysql_live",
+        "db_type": "mysql",
+        "operation": "connect",
+        "database": "project"
+      }
+    }
+    ```
+
+- **Network drop / host unreachable**  
+  - Symptoms: errors like “connection refused”, “EOF”, or “context deadline exceeded” when the DB container is stopped, the port is blocked, or DNS/host is wrong.  
+  - Fix: confirm the DB process is up and listening (e.g., `podman ps`, `nc -z host port`), then rerun the MCP action; the server will open a fresh connection on each request. Set `MCP_LOG_TO_STDOUT=true` to surface the original driver error while debugging.
+  - Example structured error payload (Postgres host down):
+    ```json
+    {
+      "status": "error",
+      "error_code": "CONNECTION_FAILED",
+      "message": "Database connection failed",
+      "details": "dial tcp 127.0.0.1:54320: connect: connection refused",
+      "suggestions": [
+        {"action": "Check database server", "description": "Verify the database server is running and accessible"},
+        {"action": "Verify connection details", "description": "Check host, port, username, and password in the profile configuration"},
+        {"action": "Check network connectivity", "description": "Ensure there are no firewall or network issues blocking the connection"}
+      ],
+      "context": {
+        "profile_name": "pg_live",
+        "db_type": "postgres",
+        "operation": "connect",
+        "database": "project"
+      }
+    }
+    ```
+
+- **Read-only enforcement**  
+  - Symptoms: any write (`INSERT/UPDATE/DELETE/DDL`) on a profile with `readonly: true` returns the MCP error “profile is read-only” before the statement is sent to the database.  
+  - Fix: perform writes via a non-readonly profile or flip `readonly: false` using `configure-profile`; verify with `list-profiles` or `profile://{profile_name}`. The guard path is covered by `TestHandleExecuteSQL_ParamAndReadonly`.
+  - Example structured error payload (INSERT on readonly profile):
+    ```json
+    {
+      "status": "error",
+      "error_code": "SQL_EXECUTION_ERROR",
+      "message": "Read-only profile restriction",
+      "details": "Detected disallowed verb 'insert' in query for readonly profile",
+      "suggestions": [
+        {"action": "Use read-only queries", "description": "Only single SELECT/SHOW/DESCRIBE/EXPLAIN/PRAGMA queries are allowed", "example": "SELECT * FROM users LIMIT 50"},
+        {"action": "Use a different profile", "description": "Switch to a profile that allows write operations"}
+      ],
+      "context": {
+        "profile_name": "readonly_profile",
+        "query": "INSERT INTO users(name) VALUES('alice')"
+      }
+    }
+    ```
+
+### MCP Resources
+
+The server now exposes MCP resources (in addition to tools):
+
+- `tools://list` — JSON array of all registered tools and descriptions.
+- `profile://{profile_name}` — JSON metadata for a profile with secrets redacted.
+
+Access these via your MCP client’s Resources panel (Codex/Kilocode). Tools remain the primary interaction surface; resources provide quick, read-only inspection.
+
+## Release & Packaging
+
+- Build release binary: `go build -o mcp-server ./cmd/server`
+- Smoke run (stdout logging enabled): `MCP_LOG_TO_STDOUT=true ./mcp-server`
+- Live DB smoke tests (podman/local): `DB_MCP_IT_PG_HOST=127.0.0.1 DB_MCP_IT_PG_PORT=54320 DB_MCP_IT_PG_USER=root DB_MCP_IT_PG_PASS=12345678 DB_MCP_IT_PG_DB=project DB_MCP_IT_MYSQL_HOST=127.0.0.1 DB_MCP_IT_MYSQL_PORT=33006 DB_MCP_IT_MYSQL_USER=root DB_MCP_IT_MYSQL_PASS='#12345678' DB_MCP_IT_MYSQL_DB=project go test ./internal/mcp -run Live -count=1`
+- Update changelog (`CHANGELOG.md`) for the new version before tagging.
+- Suggested tag for this release: `v1.0.1` (fixes MCP tool detection, adds structured error payload examples, and verifies live MySQL/Postgres connectivity).
 
 ## Comprehensive Configuration Examples
 
@@ -797,3 +901,20 @@ go test ./...
 ## License
 
 MIT
+
+## Enhancement Planning
+
+**Current Development Status**: The Database MCP Server is production-ready with a comprehensive enhancement roadmap in progress.
+
+**Implementation Phases**:
+- **Phase 1** (Next 60 Days): Query optimization, validation, and enhanced NLP
+- **Phase 2** (60-90 Days): Data lineage and business intelligence
+- **Phase 3** (90+ Days): Schema evolution, advanced profiling, and multi-database federation
+
+**Planning Documents**:
+- [Implementation Roadmap](docs/implementation-roadmap.md) - Strategic overview
+- [Project Plan](../project-plan/roadmap.md) - Comprehensive implementation strategy
+- [Vertical Slices](../project-plan/vertical-slices.md) - Detailed phase breakdowns
+- [Architecture Validation](../project-plan/architecture-validation.md) - Technical compatibility analysis
+
+**Ready for immediate enhancement development while maintaining production stability.**
