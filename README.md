@@ -872,9 +872,37 @@ mcp_providers:
 
 ## Documentation
 
+### Core Documentation
 - All MCP actions and usage examples are documented in [`docs/mcp-openapi.yaml`](docs/mcp-openapi.yaml).
 - The `list-tools` MCP action provides a machine-readable list of all available tools/actions.
 - No HTTP endpoints or web server are provided; all communication is via stdio MCP protocol.
+
+### Comprehensive Documentation Suite
+- **API Documentation**: [`docs/api-documentation.md`](docs/api-documentation.md) - Detailed API specifications and examples
+- **Implementation Status**: [`docs/implementation-status.md`](docs/implementation-status.md) - Current implementation tracking
+- **Technical Specifications**: [`docs/technical-specifications.md`](docs/technical-specifications.md) - Architecture and design details
+- **PRD Analysis**: [`docs/prd.md`](docs/prd.md) - Product requirements analysis with AI perspective
+- **Schema Introspection Queries**: [`docs/schema-introspection-queries.md`](docs/schema-introspection-queries.md) - Database-specific queries
+- **Test Enhanced Schema**: [`docs/test-enhanced-schema.md`](docs/test-enhanced-schema.md) - Test schema documentation
+- **Implementation Roadmap**: [`docs/implementation-roadmap.md`](docs/implementation-roadmap.md) - Strategic development planning
+
+### Memory Bank Documentation
+The project includes a comprehensive memory bank system for AI assistants, located in `.kilocode/rules/memory-bank/`:
+- **Architecture**: [`memory-bank/architecture.md`](.kilocode/rules/memory-bank/architecture.md) - System architecture and component relationships
+- **Brief**: [`memory-bank/brief.md`](.kilocode/rules/memory-bank/brief.md) - Project overview and requirements
+- **Context**: [`memory-bank/context.md`](.kilocode/rules/memory-bank/context.md) - Current state and recent changes
+- **Product**: [`memory-bank/product.md`](.kilocode/rules/memory-bank/product.md) - Problem statement and solution overview
+- **Tech**: [`memory-bank/tech.md`](.kilocode/rules/memory-bank/tech.md) - Technology stack and development setup
+
+### Project Planning
+- **Roadmap**: [`project-plan/roadmap.md`](project-plan/roadmap.md) - Comprehensive implementation strategy
+- **Vertical Slices**: [`project-plan/vertical-slices.md`](project-plan/vertical-slices.md) - Phase-by-phase development breakdown
+- **Architecture Validation**: [`project-plan/architecture-validation.md`](project-plan/architecture-validation.md) - Technical compatibility analysis
+- **Implementation Tasks**: [`project-plan/implementation-tasks.md`](project-plan/implementation-tasks.md) - Detailed task tracking
+- **MCP Tool Detection Fix**: [`project-plan/mcp-tool-detection-fix.md`](project-plan/mcp-tool-detection-fix.md) - Critical bug fix documentation
+
+### Version History
+- **CHANGELOG**: [`CHANGELOG.md`](CHANGELOG.md) - Detailed release notes and version history
 
 ---
 
@@ -888,13 +916,23 @@ go test ./...
 
 ## Project Status
 
-- **Version:** v1.0.0
+- **Version:** v1.0.1
 - **Author:** guyinwonder
 - All 12 MCP tools are fully implemented and OpenAPI-aligned.
 - Enhanced schema introspection and sample data features.
 - AES-GCM encryption, connection pooling, and structured error handling are enforced.
 - Comprehensive unit and integration tests included.
 - Ready for production use.
+
+### Recent Enhancements (v1.0.1)
+- **Memory Bank System**: Added comprehensive AI assistant memory bank for project context preservation
+- **Documentation Suite**: Complete documentation overhaul with API specs, implementation status, and technical specifications
+- **Project Planning**: Detailed roadmap and implementation tracking documents
+- **Enhanced Testing**: Added integration tests and MCP tool discovery regression tests
+- **Improved Logging**: Better credential redaction and structured error handling
+- **MCP Resources**: Added `tools://list` and `profile://{profile}` resources for read-only inspection
+- **SSE Transport**: Optional HTTP/SSE transport support for additional client compatibility
+- **Git Configuration**: Improved .gitignore to exclude logs and build artifacts
 
 ---
 
