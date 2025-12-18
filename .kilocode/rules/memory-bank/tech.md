@@ -30,6 +30,7 @@
   - github.com/lestrrat-go/strftime v1.1.1 // indirect
   - github.com/pkg/errors v0.9.1 // indirect
   - github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
+  - github.com/blastrain/vitess-sqlparser v0.0.0-20201030050434-a139afbb1aba (SQL validation)
 
 ## Development Setup
 

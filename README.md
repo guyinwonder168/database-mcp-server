@@ -28,6 +28,8 @@ go build -o mcp-server ./cmd/server/main.go
 - 🔍 **Schema Introspection** - List tables/views, describe table schemas, list databases, and discover joins
 - 📊 **Sample Data Fetching** - Fetch sample rows to infer data formats and value ranges
 - 🔗 **Automated Join Discovery** - Suggest JOIN SQL for building complex queries
+- 🚦 **Query Optimization** - EXPLAIN-based analysis with findings and performance estimates
+- 🛡️ **Query Validation** - Syntax, logic, and security checks before execution
 - 🤖 **Smart Query Builder** - Generate SQL queries programmatically (integrated into analyze-schema AIQuerySuggestions)
 - 🔒 **Read-only Profiles** - Prevent write operations on selected profiles
 - 🔐 **Secure Credentials** - Passwords are encrypted at rest using AES-GCM (256-bit)
@@ -35,6 +37,7 @@ go build -o mcp-server ./cmd/server/main.go
 - 📝 **Structured Logging & Error Handling** - All actions and errors are logged as structured JSON; actionable error responses
 - 🛠️ **Tool Discovery** - `list-tools` MCP action returns a machine-readable list of all available tools/actions
 - 🔌 **Official MCP Protocol** - Communication via stdio (not HTTP server; JSON is exchanged over stdio via official Go MCP SDK)
+- 🧭 **Data Lineage** - Analyze upstream/downstream dependencies via `analyze-data-lineage`
 
 ## 🛠️ Supported MCP Tools
 
@@ -46,12 +49,15 @@ go build -o mcp-server ./cmd/server/main.go
 | `list-tables` | List tables in selected database |
 | `describe-table` | Describe comprehensive table schema with metadata |
 | `list-databases` | List accessible databases for profile |
-| `mcp-info` | Show provider version and author |
 | `smart-query-builder` | Generate SQL from high-level intent |
+| `optimize-query` | Run EXPLAIN, return plan, findings, and performance estimate |
+| `validate-query` | Validate SQL syntax and flag risky patterns before execution |
+| `analyze-data-lineage` | Trace FK-based upstream/downstream table dependencies |
 | `discover-joins` | Discover foreign key relationships and suggest JOINs |
 | `sample-data` | Fetch sample rows to infer data formats |
 | `list-tools` | List all available MCP tools and descriptions |
 | `analyze-schema` | Comprehensive schema analysis with AI query suggestions |
+| `mcp-info` | Show provider version and author |
 
 ## 📖 Documentation
 
@@ -177,6 +183,8 @@ Made with ❤️ by [guyinwonder](https://github.com/guyinwonder168)
 - `list-databases`
 - `mcp-info`
 - `smart-query-builder`
+- `optimize-query`
+- `validate-query`
 - `discover-joins`
 - `sample-data`
 - `list-tools`

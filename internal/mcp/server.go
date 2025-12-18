@@ -13,6 +13,9 @@ import (
 	"database-mcp-provider/internal/config"
 	"database-mcp-provider/internal/db"
 	"database-mcp-provider/internal/log"
+	ctxmgr "database-mcp-provider/internal/mcp/context"
+	"database-mcp-provider/internal/mcp/lineage"
+	"database-mcp-provider/internal/mcp/nlp"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -33,6 +36,7 @@ type MCPServer struct {
 	ConfigPath    string // <--- Add this field for testability
 	errorAnalyzer *ErrorAnalyzer
 	toolsRegistry []ToolInfo
+	contextMgr    *ctxmgr.Manager
 }
 
 const MCPVersion = "v1.0.0"
@@ -258,6 +262,7 @@ func NewMCPServerWithConfig(configPath string) *MCPServer {
 		server:        srv,
 		ConfigPath:    configPath,
 		errorAnalyzer: NewErrorAnalyzer(configPath),
+		contextMgr:    ctxmgr.NewManager(30*time.Minute, 20),
 	}
 	mcpServer.registerAllTools()
 	mcpServer.registerResources()
@@ -392,6 +397,48 @@ func (s *MCPServer) registerAllTools() {
   {"profile_name":"some-profile-name","intent":"attendance dashboard"}`,
 		}
 		mcp.AddTool(s.server, tool, s.handleSmartQueryBuilder)
+		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+	}
+
+	// optimize-query
+	{
+		tool := &mcp.Tool{
+			Name: "optimize-query",
+			Description: `Run EXPLAIN and return optimization findings for a SQL statement.
+  Input: profile_name (required), database_name (required), sql (required), params (optional).
+  Returns: execution plan, detected issues (missing indexes, inefficient joins), and estimated improvement range.
+  Example:
+  {"profile_name":"analytics_db","database_name":"analytics_db","sql":"SELECT * FROM orders WHERE customer_id = ?","params":[123]}`,
+		}
+		mcp.AddTool(s.server, tool, s.handleOptimizeQuery)
+		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+	}
+
+	// validate-query
+	{
+		tool := &mcp.Tool{
+			Name: "validate-query",
+			Description: `Validate SQL syntax and detect risky patterns without executing the statement.
+  Input: profile_name (required), sql (required), database_name (optional), params (optional).
+  Returns: validation issues (syntax, logic, security) and pass/fail summary.
+  Example:
+  {"profile_name":"analytics_db","sql":"SELECT * FROM users WHERE id = ?","params":[123]}`,
+		}
+		mcp.AddTool(s.server, tool, s.handleValidateQuery)
+		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+	}
+
+	// analyze-data-lineage
+	{
+		tool := &mcp.Tool{
+			Name: "analyze-data-lineage",
+			Description: `Trace data dependencies for a table using foreign key relationships.
+  Input: profile_name (required), table_name (required), database_name (optional), scope (optional: upstream|downstream|both).
+  Returns: upstream/downstream tables and dependency edges.
+  Example:
+  {"profile_name":"analytics_db","table_name":"orders","scope":"both"}`,
+		}
+		mcp.AddTool(s.server, tool, s.handleAnalyzeDataLineage)
 		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
 	}
 
@@ -763,6 +810,38 @@ type SmartQueryBuilderResult struct {
 	Explanation string `json:"explanation"`
 }
 
+// --- Validate Query Types ---
+type ValidateQueryParams struct {
+	ProfileName  string        `json:"profile_name" jsonschema:"profile to use for connection"`
+	DatabaseName string        `json:"database_name,omitempty" jsonschema:"optional database/schema context"`
+	SQL          string        `json:"sql" jsonschema:"SQL statement to validate"`
+	Params       []interface{} `json:"params,omitempty" jsonschema:"positional parameters for prepared statement (metadata only)"`
+}
+
+type ValidateQueryResult struct {
+	IsValid  bool              `json:"is_valid"`
+	Issues   []ValidationIssue `json:"issues,omitempty"`
+	Summary  string            `json:"summary"`
+	SQL      string            `json:"sql"`
+	Profile  string            `json:"profile_name,omitempty"`
+	Database string            `json:"database_name,omitempty"`
+}
+
+// --- Optimize Query Types ---
+type OptimizeQueryParams struct {
+	ProfileName  string        `json:"profile_name" jsonschema:"profile to use for connection"`
+	DatabaseName string        `json:"database_name" jsonschema:"database/schema to use for EXPLAIN (sqlite uses file path)"`
+	SQL          string        `json:"sql" jsonschema:"SQL statement to analyze"`
+	Params       []interface{} `json:"params,omitempty" jsonschema:"positional parameters for prepared statement"`
+}
+
+type OptimizeQueryResult struct {
+	Plan       *ExplainPlan          `json:"plan"`
+	Findings   []OptimizationFinding `json:"findings,omitempty"`
+	Estimation PerformanceEstimation `json:"estimation"`
+	Summary    string                `json:"summary"`
+}
+
 // --- End Smart Query Builder Types ---
 type DiscoverJoinsParams struct {
 	ProfileName string   `json:"profile_name" jsonschema:"profile to use for connection"`
@@ -818,6 +897,25 @@ type ListToolsParams struct {
 type ToolInfo struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
+}
+
+// --- Lineage Types ---
+type AnalyzeDataLineageParams struct {
+	ProfileName  string   `json:"profile_name" jsonschema:"profile to use for connection"`
+	DatabaseName string   `json:"database_name,omitempty" jsonschema:"database/schema to use (sqlite uses file path)"`
+	TableName    string   `json:"table_name" jsonschema:"target table for lineage"`
+	Scope        string   `json:"scope,omitempty" jsonschema:"upstream|downstream|both (default both)"`
+	Tables       []string `json:"tables,omitempty" jsonschema:"optional subset of tables to include"`
+}
+
+type AnalyzeDataLineageResult struct {
+	Upstream   []string            `json:"upstream,omitempty"`
+	Downstream []string            `json:"downstream,omitempty"`
+	Edges      []lineage.Edge      `json:"edges,omitempty"`
+	Summary    string              `json:"summary"`
+	Scope      string              `json:"scope"`
+	Target     string              `json:"target"`
+	Graph      map[string][]string `json:"graph,omitempty"`
 }
 
 // ListToolsResult represents the response from the list-tools action
@@ -926,8 +1024,25 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, _ *mcp.CallTool
 		}
 	}
 	if prof == nil {
-		return nil, nil, fmt.Errorf("profile not found")
+		structErr := NewStructuredError(
+			ErrorCodeProfileNotFound,
+			"Profile not found",
+			"profile_name does not exist; configure a profile before using smart-query-builder",
+		).WithSuggestions(
+			ErrorSuggestion{
+				Tool:        "configure-profile",
+				Description: "Create the profile with database connection info",
+				Example:     `{"profile_name":"mydb","db_type":"postgres","host":"localhost","port":5432,"username":"user","password":"pass","database_name":"mydb"}`,
+			},
+		).WithContext("profile_name", p.ProfileName)
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: structErr.ToJSON()}},
+		}, nil, fmt.Errorf("profile not found")
 	}
+
+	// 1b. Intent/entity extraction for context-aware behavior
+	intentResult := nlp.ClassifyIntent(p.Intent)
+	entityResult := nlp.ExtractEntities(p.Intent)
 
 	// 2. Fetch all table names
 	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, prof.DatabaseName, prof.SSLMode)
@@ -1118,8 +1233,12 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, _ *mcp.CallTool
 
 	result := SmartQueryBuilderResult{
 		SQL:         sql,
-		Explanation: explanation,
+		Explanation: fmt.Sprintf("%s Intent: %s (%.0f%%). Entities: tables=%v, cols=%v.", explanation, intentResult.Intent, intentResult.Confidence*100, entityResult.Tables, entityResult.Columns),
 	}
+
+	// Persist minimal context keyed by profile (session IDs not exposed in current SDK)
+	s.contextMgr.Append(p.ProfileName, "user", p.Intent)
+	s.contextMgr.Append(p.ProfileName, "assistant", result.SQL)
 	b, _ := json.Marshal(result)
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
@@ -1153,6 +1272,277 @@ func (s *MCPServer) generateQuerySuggestionViaSmartBuilder(
 	}
 	return &sqbr, nil
 }
+
+// handleOptimizeQuery runs EXPLAIN, applies optimization rules, and returns estimation.
+func (s *MCPServer) handleOptimizeQuery(ctx context.Context, _ *mcp.CallToolRequest, input OptimizeQueryParams) (*mcp.CallToolResult, any, error) {
+	p := input
+	if strings.TrimSpace(p.ProfileName) == "" || strings.TrimSpace(p.DatabaseName) == "" || strings.TrimSpace(p.SQL) == "" {
+		structErr := NewStructuredError(
+			ErrorCodeMissingParameter,
+			"Missing required parameters",
+			"profile_name, database_name, and sql are required for optimize-query",
+		).WithSuggestions(
+			ErrorSuggestion{
+				Action:      "Provide all required fields",
+				Description: "Include profile_name, database_name, and sql in the request",
+				Example:     `{"profile_name":"mydb","database_name":"mydb","sql":"SELECT 1"}`,
+			},
+		)
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: structErr.ToJSON()}},
+		}, nil, nil
+	}
+
+	cfg, err := config.LoadConfig(s.ConfigPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	var prof *config.Profile
+	for i := range cfg.Profiles {
+		if cfg.Profiles[i].ProfileName == p.ProfileName {
+			prof = &cfg.Profiles[i]
+			break
+		}
+	}
+	if prof == nil {
+		structErr := NewStructuredError(
+			ErrorCodeProfileNotFound,
+			"Profile not found",
+			"profile_name does not exist; configure a profile before using smart-query-builder",
+		).WithSuggestions(
+			ErrorSuggestion{
+				Tool:        "configure-profile",
+				Description: "Create the profile with database connection info",
+				Example:     `{"profile_name":"mydb","db_type":"postgres","host":"localhost","port":5432,"username":"user","password":"pass","database_name":"mydb"}`,
+			},
+		).WithContext("profile_name", p.ProfileName)
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: structErr.ToJSON()}},
+		}, nil, fmt.Errorf("profile not found")
+	}
+
+	// use a copy to allow database override without mutating config
+	profCopy := *prof
+	if p.DatabaseName != "" {
+		profCopy.DatabaseName = p.DatabaseName
+	}
+
+	expl, err := s.explainWithFindings(ctx, profCopy, cfg.MaxPoolSize, p.SQL, p.Params)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	result := OptimizeQueryResult{
+		Plan:       expl.Plan,
+		Findings:   expl.Findings,
+		Estimation: expl.Estimate,
+		Summary:    summarizeOptimization(expl),
+	}
+	b, _ := json.Marshal(result)
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: string(b)}},
+	}, nil, nil
+}
+
+func summarizeOptimization(expl *ExplainWithFindings) string {
+	if expl == nil {
+		return "No results."
+	}
+	imp := expl.Estimate.Improvement
+	if imp.UpperPercent == 0 {
+		return "No significant optimization opportunities detected."
+	}
+	return fmt.Sprintf(
+		"Potential improvement: %.0f-%.0f%% (confidence %.0f%%). Findings: %d.",
+		imp.LowerPercent, imp.UpperPercent, imp.Confidence*100, len(expl.Findings),
+	)
+}
+
+// handleValidateQuery validates SQL syntax and basic safety without executing it.
+func (s *MCPServer) handleValidateQuery(ctx context.Context, _ *mcp.CallToolRequest, input ValidateQueryParams) (*mcp.CallToolResult, any, error) {
+	p := input
+	if strings.TrimSpace(p.ProfileName) == "" || strings.TrimSpace(p.SQL) == "" {
+		structErr := NewStructuredError(
+			ErrorCodeMissingParameter,
+			"Missing required parameters",
+			"profile_name and sql are required for validate-query",
+		).WithSuggestions(
+			ErrorSuggestion{
+				Action:      "Provide profile_name and sql",
+				Description: "Include both profile_name and sql in the request payload",
+				Example:     `{"profile_name":"mydb","sql":"SELECT 1"}`,
+			},
+		)
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: structErr.ToJSON()}},
+		}, nil, nil
+	}
+
+	cfg, err := config.LoadConfig(s.ConfigPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	var prof *config.Profile
+	for i := range cfg.Profiles {
+		if cfg.Profiles[i].ProfileName == p.ProfileName {
+			prof = &cfg.Profiles[i]
+			break
+		}
+	}
+	if prof == nil {
+		structErr := NewStructuredError(
+			ErrorCodeProfileNotFound,
+			"Profile not found",
+			"profile_name does not exist; configure a profile before using validate-query",
+		).WithSuggestions(
+			ErrorSuggestion{
+				Tool:        "configure-profile",
+				Description: "Create the profile with database connection info",
+				Example:     `{"profile_name":"mydb","db_type":"postgres","host":"localhost","port":5432,"username":"user","password":"pass","database_name":"mydb"}`,
+			},
+		).WithContext("profile_name", p.ProfileName)
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: structErr.ToJSON()}},
+		}, nil, fmt.Errorf("profile not found")
+	}
+
+	result := validateSQL(p.SQL)
+	result.Profile = p.ProfileName
+	if p.DatabaseName != "" {
+		result.Database = p.DatabaseName
+	} else {
+		result.Database = prof.DatabaseName
+	}
+
+	b, _ := json.Marshal(result)
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: string(b)}},
+	}, nil, nil
+}
+
+// handleAnalyzeDataLineage computes upstream/downstream dependencies using FK relationships.
+func (s *MCPServer) handleAnalyzeDataLineage(ctx context.Context, _ *mcp.CallToolRequest, input AnalyzeDataLineageParams) (*mcp.CallToolResult, any, error) {
+	p := input
+	if strings.TrimSpace(p.ProfileName) == "" || strings.TrimSpace(p.TableName) == "" {
+		structErr := NewStructuredError(
+			ErrorCodeMissingParameter,
+			"Missing required parameters",
+			"profile_name and table_name are required for analyze-data-lineage",
+		)
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: structErr.ToJSON()}},
+		}, nil, nil
+	}
+
+	cfg, err := config.LoadConfig(s.ConfigPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	var prof *config.Profile
+	for i := range cfg.Profiles {
+		if cfg.Profiles[i].ProfileName == p.ProfileName {
+			prof = &cfg.Profiles[i]
+			break
+		}
+	}
+	if prof == nil {
+		return nil, nil, fmt.Errorf("profile not found")
+	}
+
+	// build FK edges via INFORMATION_SCHEMA / PRAGMA similar to discover-joins
+	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, prof.DatabaseName, prof.SSLMode)
+	conn, err := db.OpenConnectionWithPool(prof.DBType, dsn, cfg.MaxPoolSize)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer conn.Close()
+
+	var edges []lineage.Edge
+	switch prof.DBType {
+	case "mysql", "mariadb":
+		rows, err := conn.Query(`
+			SELECT TABLE_NAME, REFERENCED_TABLE_NAME
+			FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+			WHERE TABLE_SCHEMA = ? AND REFERENCED_TABLE_NAME IS NOT NULL
+		`, prof.DatabaseName)
+		if err != nil {
+			return nil, nil, err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var tbl, ref string
+			if err := rows.Scan(&tbl, &ref); err == nil {
+				edges = append(edges, lineage.Edge{From: tbl, To: ref})
+			}
+		}
+	case "postgres":
+		rows, err := conn.Query(`
+			SELECT
+				tc.table_name AS from_table,
+				ccu.table_name AS to_table
+			FROM information_schema.table_constraints AS tc
+			JOIN information_schema.key_column_usage AS kcu
+				ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+			JOIN information_schema.constraint_column_usage AS ccu
+				ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
+			WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = 'public'
+		`)
+		if err != nil {
+			return nil, nil, err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var from, to string
+			if err := rows.Scan(&from, &to); err == nil {
+				edges = append(edges, lineage.Edge{From: from, To: to})
+			}
+		}
+	case "sqlite":
+		// fetch tables
+		var tables []string
+		tRows, err := conn.Query("SELECT name FROM sqlite_master WHERE type='table'")
+		if err != nil {
+			return nil, nil, err
+		}
+		for tRows.Next() {
+			var name string
+			if err := tRows.Scan(&name); err == nil {
+				tables = append(tables, name)
+			}
+		}
+		tRows.Close()
+		for _, tbl := range tables {
+			rows, err := conn.Query(fmt.Sprintf("PRAGMA foreign_key_list('%s')", tbl))
+			if err != nil {
+				continue
+			}
+			for rows.Next() {
+				var id, seq int
+				var refTable, fromCol, toCol, onUpd, onDel, match string
+				if err := rows.Scan(&id, &seq, &refTable, &fromCol, &toCol, &onUpd, &onDel, &match); err == nil {
+					edges = append(edges, lineage.Edge{From: tbl, To: refTable})
+				}
+			}
+			rows.Close()
+		}
+	default:
+		return nil, nil, fmt.Errorf("unsupported db_type for lineage: %s", prof.DBType)
+	}
+
+	scope := p.Scope
+	if scope == "" {
+		scope = "both"
+	}
+	res := lineage.Analyze(p.TableName, edges, scope)
+	graph := lineage.BuildGraph(edges)
+	res.Graph = graph.Out
+
+	b, _ := json.Marshal(res)
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: string(b)}},
+	}, nil, nil
+}
+
 func (s *MCPServer) handleConfigureProfile(ctx context.Context, _ *mcp.CallToolRequest, input ConfigureProfileParams) (*mcp.CallToolResult, any, error) {
 	// Load config, or create new if missing
 	cfg, err := config.LoadConfig(s.ConfigPath)

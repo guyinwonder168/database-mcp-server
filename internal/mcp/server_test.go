@@ -367,6 +367,90 @@ func TestHandleSmartQueryBuilder(t *testing.T) {
 	}
 }
 
+func TestHandleOptimizeQuery(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+
+	// Missing params
+	_, _, err := server.handleOptimizeQuery(ctx, nil, OptimizeQueryParams{})
+	if err != nil {
+		t.Fatalf("optimize-query should return structured result, not error: %v", err)
+	}
+
+	// Nonexistent profile
+	_, _, err = server.handleOptimizeQuery(ctx, nil, OptimizeQueryParams{
+		ProfileName:  "does-not-exist",
+		DatabaseName: "db",
+		SQL:          "SELECT 1",
+	})
+	if err == nil {
+		t.Fatalf("expected error for missing profile")
+	}
+
+	// SQLite happy path (EXPLAIN QUERY PLAN SELECT 1)
+	res, _, err := server.handleOptimizeQuery(ctx, nil, OptimizeQueryParams{
+		ProfileName:  "testsqlite",
+		DatabaseName: testSQLiteDBPath,
+		SQL:          "SELECT 1",
+	})
+	if err != nil {
+		t.Fatalf("optimize-query sqlite path returned error: %v", err)
+	}
+	if res == nil || res.Content == nil {
+		t.Fatalf("optimize-query returned nil content")
+	}
+}
+
+func TestHandleValidateQuery(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+
+	// Missing profile
+	_, _, err := server.handleValidateQuery(ctx, nil, ValidateQueryParams{})
+	if err != nil {
+		t.Fatalf("expected structured result for missing params, got error: %v", err)
+	}
+
+	// Profile not found
+	_, _, err = server.handleValidateQuery(ctx, nil, ValidateQueryParams{
+		ProfileName: "missing",
+		SQL:         "SELECT 1",
+	})
+	if err == nil {
+		t.Fatalf("expected error for missing profile")
+	}
+
+	// Syntax error
+	res, _, err := server.handleValidateQuery(ctx, nil, ValidateQueryParams{
+		ProfileName: "testsqlite",
+		SQL:         "SELCT 1",
+	})
+	if err != nil {
+		t.Fatalf("validate-query returned error: %v", err)
+	}
+	if res == nil || len(res.Content) == 0 {
+		t.Fatalf("validate-query returned empty content")
+	}
+}
+
+func TestHandleAnalyzeDataLineage_ProfileMissing(t *testing.T) {
+	server := NewMCPServerWithConfig("nonexistent.yaml")
+	ctx := context.Background()
+	_, _, err := server.handleAnalyzeDataLineage(ctx, nil, AnalyzeDataLineageParams{
+		ProfileName: "missing",
+		TableName:   "users",
+	})
+	if err == nil {
+		t.Fatalf("expected error for missing profile")
+	}
+}
+
 // TestSmartQueryBuilderIntentParsing tests the intent parsing logic in isolation
 func TestSmartQueryBuilderIntentParsing(t *testing.T) {
 	// Test keyword extraction logic - simulating the parsing done in handleSmartQueryBuilder

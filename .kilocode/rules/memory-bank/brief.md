@@ -14,9 +14,10 @@ Provide a secure, stateless, and unified interface for accessing MySQL, MariaDB,
 3. **SQL Execution**: Execute arbitrary SQL queries with read-only enforcement option
 4. **Schema Introspection**: List tables/views, describe table schemas, list databases
 5. **Sample Data Fetching**: Fetch sample rows from tables to infer data formats.
-6. **Interactive Setup**: CLI-based configuration wizard for first-time setup
-7. **Analyze-Schema**: Advanced schema analysis MCP tool supporting BASIC, DETAILED, and COMPREHENSIVE levels, business context inference, data quality metrics, relationship discovery, Smart Query Builder integration
-8. **MCP Actions**: Full suite of 12 database operations exposed as MCP tools, all documented in README.md
+6. **Query Validation**: `validate-query` tool for syntax, logic, and injection pattern checks before execution.
+7. **Interactive Setup**: CLI-based configuration wizard for first-time setup
+8. **Analyze-Schema**: Advanced schema analysis MCP tool supporting BASIC, DETAILED, and COMPREHENSIVE levels, business context inference, data quality metrics, relationship discovery, Smart Query Builder integration
+9. **MCP Actions**: Full suite of MCP tools (including validate-query, optimize-query) are documented in README.md
 
 ### Non-Functional Requirements
 1. **Security**: AES-GCM encryption for stored passwords (32-char key)

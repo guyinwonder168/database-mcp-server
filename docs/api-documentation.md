@@ -585,7 +585,77 @@ Perform comprehensive schema analysis with business context inference.
 
 ---
 
-### 10. sample-data
+### 10. optimize-query
+
+Run EXPLAIN for a statement, apply optimization rules, and return a performance estimate.
+
+#### Parameters
+```json
+{
+  "profile_name": "string (required)",
+  "database_name": "string (required)",
+  "sql": "string (required)",
+  "params": ["any", "... optional"]
+}
+```
+
+#### Example Request
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "optimize-query",
+  "params": {
+    "profile_name": "analytics_db",
+    "database_name": "analytics_db",
+    "sql": "SELECT * FROM orders WHERE customer_id = ?",
+    "params": [123]
+  },
+  "id": "optimize_001"
+}
+```
+
+#### Success Response
+```json
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "plan": { "...": "normalized plan" },
+    "findings": [
+      {
+        "rule": "missing_index",
+        "severity": "warn",
+        "message": "Full table scan with filter detected; an index may be missing.",
+        "suggestion": "Add an index on the columns used in the filter for table orders"
+      }
+    ],
+    "estimation": {
+      "baseline_cost": 12.3,
+      "baseline_rows": 1200,
+      "confidence": 0.75,
+      "improvement": {
+        "lower_percent": 25,
+        "upper_percent": 60,
+        "confidence": 0.7,
+        "explanation": "Indexing filter/join columns typically yields large gains."
+      },
+      "suggestions": [
+        "Add an index on the columns used in the filter for table orders"
+      ]
+    },
+    "summary": "Potential improvement: 25-60% (confidence 70%). Findings: 1."
+  },
+  "id": "optimize_001"
+}
+```
+
+#### Error Responses
+- Missing required parameters
+- Profile not found
+- Database connection/driver errors
+
+---
+
+### 11. sample-data
 
 Fetch sample rows from a table for data inference.
 
@@ -642,7 +712,7 @@ Fetch sample rows from a table for data inference.
 
 ---
 
-### 11. discover-joins
+### 12. discover-joins
 
 Discover foreign key relationships and suggest JOIN operations.
 
@@ -709,7 +779,7 @@ Discover foreign key relationships and suggest JOIN operations.
 
 ---
 
-### 12. smart-query-builder
+### 13. smart-query-builder
 
 Generate SQL from natural language intent.
 
@@ -759,7 +829,7 @@ Generate SQL from natural language intent.
 
 ---
 
-### 13. list-tools
+### 14. list-tools
 
 List all available MCP tools with their specifications.
 
@@ -815,7 +885,7 @@ None
         }
       }
     ],
-    "total_count": 14
+    "total_count": 15
   },
   "id": "tools_001"
 }
@@ -823,7 +893,7 @@ None
 
 ---
 
-### 14. mcp-info
+### 15. mcp-info
 
 Get MCP server information and capabilities.
 
@@ -1025,106 +1095,25 @@ echo '{"method":"mcp-info"}' | ./mcp-server
 
 ## Future MCP Tools (Planned Enhancements)
 
-### 15. optimize-query
-
-Analyze SQL query performance and provide optimization suggestions.
-
-#### Parameters
-```json
-{
-  "profile_name": "string (required)",
-  "sql": "string (required)",
-  "analysis_level": "string (optional, default: 'detailed')",
-  "database_name": "string (optional)"
-}
-```
-
-#### Parameter Details
-- **profile_name**: Name of the profile to use for optimization
-- **sql**: SQL query to analyze and optimize
-- **analysis_level**: Depth of analysis - one of: `basic`, `detailed`, `comprehensive`
-- **database_name**: Override default database (for cross-database queries)
-
-#### Example Request
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "optimize-query",
-  "params": {
-    "profile_name": "production_db",
-    "sql": "SELECT u.*, COUNT(o.id) as order_count FROM users u LEFT JOIN orders o ON u.id = o.user_id GROUP BY u.id HAVING COUNT(o.id) > 10",
-    "analysis_level": "comprehensive"
-  },
-  "id": "optimize_001"
-}
-```
-
-#### Success Response
-```json
-{
-  "jsonrpc": "2.0",
-  "result": {
-    "status": "success",
-    "original_query": "SELECT u.*, COUNT(o.id) as order_count FROM users u LEFT JOIN orders o ON u.id = o.user_id GROUP BY u.id HAVING COUNT(o.id) > 10",
-    "execution_plan": {
-      "plan_type": "Hash Join",
-      "cost": 1250.5,
-      "rows_examined": 50000,
-      "join_order": "users LEFT JOIN orders"
-    },
-    "optimization_suggestions": [
-      {
-        "type": "index",
-        "description": "Add index on orders.user_id",
-        "impact": "High",
-        "estimated_improvement": "40-60%"
-      },
-      {
-        "type": "query_rewrite",
-        "description": "Consider using EXISTS instead of LEFT JOIN for filtering",
-        "impact": "Medium",
-        "estimated_improvement": "15-25%"
-      }
-    ],
-    "performance_impact": {
-      "estimated_improvement": "45%",
-      "confidence": "High",
-      "execution_time_reduction": "2.3s to 1.3s"
-    },
-    "alternative_queries": [
-      "SELECT u.id, u.name, u.email FROM users u WHERE EXISTS (SELECT 1 FROM orders o WHERE o.user_id = u.id AND o.total > 100) ORDER BY u.created_at DESC"
-    ]
-  },
-  "id": "optimize_001"
-}
-```
-
-#### Error Responses
-- `QUERY_TOO_COMPLEX`: Query too complex for comprehensive analysis
-- `ANALYSIS_TIMEOUT`: Optimization analysis exceeded time limit
-- `INVALID_ANALYSIS_LEVEL`: Unsupported analysis level
-
----
-
 ### 16. validate-query
 
-Validate SQL syntax and logic without execution.
+Validate SQL syntax, logic, and basic security patterns without execution.
 
 #### Parameters
 ```json
 {
   "profile_name": "string (required)",
+  "database_name": "string (optional)",
   "sql": "string (required)",
-  "validation_level": "string (optional, default: 'syntax')",
-  "database_name": "string (optional)"
+  "params": ["any", "... optional"]
 }
 ```
 
 #### Parameter Details
 - **profile_name**: Name of the profile to use for validation
-- **sql**: SQL query to validate
-- **validation_level**: Depth of validation - one of: `syntax`, `logic`, `performance`
-- **database_name**: Override default database
+- **database_name**: Override default database (optional)
+- **sql**: SQL query to validate (not executed)
+- **params**: Optional parameters for context (not executed)
 
 #### Example Request
 ```json
@@ -1133,8 +1122,7 @@ Validate SQL syntax and logic without execution.
   "method": "validate-query",
   "params": {
     "profile_name": "production_db",
-    "sql": "SELECT * FROM users WHERE name = 'John' AND email = 'john@example.com",
-    "validation_level": "comprehensive"
+    "sql": "SELECT * FROM users WHERE name = 'John' AND email = 'john@example.com'"
   },
   "id": "validate_001"
 }
@@ -1145,34 +1133,32 @@ Validate SQL syntax and logic without execution.
 {
   "jsonrpc": "2.0",
   "result": {
-    "status": "success",
-    "is_valid": true,
-    "validation_level": "comprehensive",
-    "syntax_analysis": {
-      "is_valid": true,
-      "parsed_structure": "SELECT with WHERE clause"
-    },
-    "logic_analysis": {
-      "is_valid": true,
-      "table_exists": true,
-      "columns_exist": ["name", "email"]
-    },
-    "performance_analysis": {
-      "risk_level": "Low",
-      "estimated_execution_time": "0.05s",
-      "suggestions": [
-        "Consider adding index on (name, email) for better performance"
-      ]
-    }
+    "is_valid": false,
+    "issues": [
+      {
+        "rule": "syntax_error",
+        "severity": "error",
+        "message": "SQL syntax error: syntax error at position 63 near '\"'",
+        "suggestion": "Review SQL syntax; ensure keywords and clauses are spelled correctly."
+      },
+      {
+        "rule": "tautology",
+        "severity": "warn",
+        "message": "Potential tautology detected (OR 1=1).",
+        "suggestion": "Use parameterized queries; avoid concatenating untrusted input."
+      }
+    ],
+    "summary": "Validation failed.",
+    "sql": "SELECT * FROM users WHERE name = 'John' AND email = 'john@example.com'",
+    "profile_name": "production_db"
   },
   "id": "validate_001"
 }
 ```
 
 #### Error Responses
-- `SYNTAX_ERROR`: SQL syntax error detected
-- `LOGIC_ERROR`: Logical inconsistency in query
-- `PERFORMANCE_RISK`: Potential performance issue identified
+- Missing required parameters
+- Profile not found
 
 ---
 
@@ -1494,18 +1480,16 @@ Execute queries across multiple database profiles with intelligent distributed e
 - `QUERY_TOO_COMPLEX`: Query too complex for federation
 
 ---
-
 ## Version History
 
 ### v1.0.0 (Current)
-- Initial release with all 14 MCP tools
+- Initial release with all 15 MCP tools (optimize-query included)
 - Support for MySQL, MariaDB, PostgreSQL, SQLite
 - AES-256-GCM credential encryption
 - Connection pooling and performance optimization
 - Comprehensive error handling and logging
 
 ### v1.1.0 (Planned - AI Enhancement Phase 1)
-- **Query Optimization**: `optimize-query` tool for performance analysis
 - **Query Validation**: `validate-query` tool for syntax and logic checking
 - **Enhanced NLP**: Context-aware `smart-query-builder` with multi-turn support
 - **Performance Improvements**: Advanced execution plan analysis
