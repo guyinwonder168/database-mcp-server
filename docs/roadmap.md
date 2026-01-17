@@ -19,7 +19,7 @@ This roadmap consolidates the strategic enhancement plan for the Database MCP Se
 | Query Optimization Insights | Complete | `optimize-query` MCP tool delivered |
 | Query Validation Framework | Complete | `validate-query` MCP tool delivered |
 | Data Lineage & Impact Analysis | Complete | `analyze-data-lineage` MCP tool delivered |
-| Enhanced Natural Language Processing | In Progress | Context-aware `smart-query-builder` improvements |
+| Enhanced Natural Language Processing | Partial | `smart-query-builder` NLP present; context wiring, config, multi-turn tests pending |
 | Business Intelligence Discovery | Planned | KPI/trend/anomaly discovery |
 | Schema Evolution Management | Planned | Change tracking + migration assistance |
 | Advanced Data Profiling | Planned | Enhanced `analyze-schema` profiling |

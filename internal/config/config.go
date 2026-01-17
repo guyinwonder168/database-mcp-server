@@ -29,10 +29,18 @@ type Profile struct {
 	SSLMode      string `yaml:"sslmode,omitempty"` // Postgres SSL mode (disable, require, verify-ca, verify-full)
 }
 
+type NLPConfig struct {
+	Enabled               *bool    `yaml:"enabled"`
+	ContextTimeout        string   `yaml:"context_timeout"`
+	MaxConversationLength int      `yaml:"max_conversation_length"`
+	BusinessDomains       []string `yaml:"business_domains,omitempty"`
+}
+
 type Config struct {
 	Profiles    []Profile `yaml:"profiles"`
 	MaxPoolSize int       `yaml:"max_pool_size"`
 	AESKey      string    `yaml:"aes_key"`
+	NLP         NLPConfig `yaml:"nlp,omitempty"`
 }
 
 func LoadConfig(path string) (*Config, error) {

@@ -91,3 +91,23 @@ func (m *Manager) pruneLocked() {
 		}
 	}
 }
+
+// SetTTL updates the TTL used for new conversations.
+func (m *Manager) SetTTL(ttl time.Duration) {
+	if ttl <= 0 {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ttl = ttl
+}
+
+// SetMaxRecent updates how many recent messages to keep.
+func (m *Manager) SetMaxRecent(maxRecent int) {
+	if maxRecent <= 0 {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.maxRecent = maxRecent
+}

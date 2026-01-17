@@ -22,10 +22,24 @@ var testSQLiteDBPath = filepath.Join(os.TempDir(), "mcp_test.sqlite")
 
 // Helper: create a test config file
 func setupTestConfig(t *testing.T) string {
+	return setupTestConfigWithNLP(t, config.NLPConfig{})
+}
+
+func setupTestConfigWithNLP(t *testing.T, nlp config.NLPConfig) string {
 	const testConfig = "test_config.yaml"
 	os.Remove(testConfig)
 	t.Cleanup(func() { os.Remove(testSQLiteDBPath) })
-	cfg := &config.Config{
+	cfg := baseTestConfig()
+	cfg.NLP = nlp
+	if err := config.SaveConfig(testConfig, cfg); err != nil {
+		t.Fatalf("Failed to save test config: %v", err)
+	}
+	os.Setenv("DB_MCP_AES_KEY", "12345678901234567890123456789012") // 32 bytes for test
+	return testConfig
+}
+
+func baseTestConfig() *config.Config {
+	return &config.Config{
 		Profiles: []config.Profile{
 			{
 				ProfileName:  "testpg",
@@ -46,11 +60,6 @@ func setupTestConfig(t *testing.T) string {
 		},
 		MaxPoolSize: 5,
 	}
-	if err := config.SaveConfig(testConfig, cfg); err != nil {
-		t.Fatalf("Failed to save test config: %v", err)
-	}
-	os.Setenv("DB_MCP_AES_KEY", "12345678901234567890123456789012") // 32 bytes for test
-	return testConfig
 }
 
 func TestHandleListProfiles(t *testing.T) {
@@ -365,6 +374,74 @@ func TestHandleSmartQueryBuilder(t *testing.T) {
 	if err != nil && err.Error() == "profile not found" {
 		t.Fatalf("Wrong error for empty intent test: %v", err)
 	}
+}
+
+func TestSmartQueryBuilderContextPersistence(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+
+	skip, err := createSmartBuilderTable(ctx, server, testSQLiteDBPath)
+	if skip {
+		t.Skipf("Skipping SQLite test due to driver issue: %v", err)
+	}
+	if err != nil {
+		t.Fatalf("Failed to create table for smart-query-builder: %v", err)
+	}
+
+	server.contextMgr.Append("testsqlite", "user", "previous intent")
+	server.contextMgr.Append("testsqlite", "assistant", "SELECT 1")
+
+	_, _, err = server.handleSmartQueryBuilder(ctx, nil, SmartQueryBuilderParams{
+		ProfileName:  "testsqlite",
+		Intent:       "seed intent",
+		DatabaseName: testSQLiteDBPath,
+		TableNames:   []string{"attendance"},
+	})
+	if err != nil {
+		t.Fatalf("Expected smart-query-builder success, got error: %v", err)
+	}
+
+	result, _, err := server.handleSmartQueryBuilder(ctx, nil, SmartQueryBuilderParams{
+		ProfileName:  "testsqlite",
+		Intent:       "new intent",
+		DatabaseName: testSQLiteDBPath,
+		TableNames:   []string{"attendance"},
+	})
+	if err != nil {
+		t.Fatalf("Expected smart-query-builder success, got error: %v", err)
+	}
+	if result == nil || len(result.Content) == 0 {
+		t.Fatalf("Expected smart-query-builder content")
+	}
+	content, ok := result.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("Expected TextContent, got %T", result.Content[0])
+	}
+	var payload SmartQueryBuilderResult
+	if err := json.Unmarshal([]byte(content.Text), &payload); err != nil {
+		t.Fatalf("Failed to unmarshal response: %v", err)
+	}
+	if strings.Contains(payload.Explanation, "previous intent") {
+		t.Fatalf("Did not expect explanation to include prior context when disabled")
+	}
+}
+
+func createSmartBuilderTable(ctx context.Context, server *MCPServer, dbPath string) (bool, error) {
+	_, _, err := server.handleExecuteSQL(ctx, nil, ExecuteSQLParams{
+		ProfileName:  "testsqlite",
+		DatabaseName: dbPath,
+		SQL:          "CREATE TABLE attendance (id INTEGER PRIMARY KEY, name TEXT)",
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "unknown driver") {
+			return true, err
+		}
+		return false, err
+	}
+	return false, nil
 }
 
 func TestHandleOptimizeQuery(t *testing.T) {
