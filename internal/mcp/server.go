@@ -1007,6 +1007,176 @@ func (s *MCPServer) resourceProfileHandler(ctx context.Context, req *mcp.ReadRes
 
 // --- MCP Handler Implementations ---
 
+func appendContextNote(explanation string, history []ctxmgr.Message) string {
+	contextNote := buildContextNote(history)
+	if contextNote == "" {
+		return explanation
+	}
+	return fmt.Sprintf("%s %s", explanation, contextNote)
+}
+
+func buildContextNote(history []ctxmgr.Message) string {
+	lastUser := lastMessageContent(history, "user")
+	lastAssistant := lastMessageContent(history, "assistant")
+	if lastUser == "" && lastAssistant == "" {
+		return ""
+	}
+	parts := make([]string, 0, 2)
+	if lastUser != "" {
+		parts = append(parts, fmt.Sprintf("last user intent: %s", lastUser))
+	}
+	if lastAssistant != "" {
+		parts = append(parts, fmt.Sprintf("last generated SQL: %s", lastAssistant))
+	}
+	return fmt.Sprintf("Context (%s).", strings.Join(parts, "; "))
+}
+
+func isContextEnabled(cfg config.NLPConfig) bool {
+	if cfg.Enabled == nil {
+		return true
+	}
+	return *cfg.Enabled
+}
+
+func applyContextSettings(manager *ctxmgr.Manager, cfg config.NLPConfig) {
+	if manager == nil {
+		return
+	}
+	if cfg.ContextTimeout != "" {
+		if ttl, err := time.ParseDuration(cfg.ContextTimeout); err == nil {
+			manager.SetTTL(ttl)
+		}
+	}
+	if cfg.MaxConversationLength > 0 {
+		manager.SetMaxRecent(cfg.MaxConversationLength)
+	}
+}
+
+func contextAwareIntent(intent string, history []ctxmgr.Message) string {
+	if len(history) == 0 {
+		return intent
+	}
+	lastUser := lastMessageContent(history, "user")
+	if lastUser == "" {
+		return intent
+	}
+	return fmt.Sprintf("%s %s", lastUser, intent)
+}
+
+func combineEntityHints(primary, history nlp.EntityExtractionResult) nlp.EntityExtractionResult {
+	result := nlp.EntityExtractionResult{}
+	result.Tables = appendUnique(result.Tables, primary.Tables)
+	result.Columns = appendUnique(result.Columns, primary.Columns)
+	result.Tables = appendUnique(result.Tables, history.Tables)
+	result.Columns = appendUnique(result.Columns, history.Columns)
+	return result
+}
+
+func historyIntent(history []ctxmgr.Message) string {
+	parts := make([]string, 0, len(history))
+	for _, msg := range history {
+		if msg.Role == "user" {
+			parts = append(parts, msg.Content)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+func selectTableForIntent(p SmartQueryBuilderParams, tables []string, contextEnabled bool, history []ctxmgr.Message, domains []string) string {
+	if len(p.TableNames) > 0 {
+		return p.TableNames[0]
+	}
+	if len(tables) == 0 {
+		return ""
+	}
+	intent := p.Intent
+	if contextEnabled {
+		intent = contextAwareIntent(p.Intent, history)
+	}
+	keywords := extractKeywords(intent)
+	if len(domains) > 0 {
+		keywords = append(keywords, domainKeywords(domains)...)
+	}
+	return matchTableByKeywords(tables, keywords)
+}
+
+func domainKeywords(domains []string) []string {
+	keywords := make([]string, 0, len(domains))
+	for _, domain := range domains {
+		keyword := strings.ToLower(strings.TrimSpace(domain))
+		if keyword == "" {
+			continue
+		}
+		keywords = append(keywords, keyword)
+	}
+	return keywords
+}
+
+func extractKeywords(intent string) []string {
+	words := strings.FieldsFunc(strings.ToLower(intent), func(r rune) bool {
+		return r == ' ' || r == ',' || r == '.' || r == '-' || r == '_'
+	})
+	stopwords := map[string]bool{
+		"the": true, "a": true, "an": true, "for": true, "to": true, "of": true, "and": true, "in": true, "on": true, "with": true, "by": true, "at": true, "from": true, "as": true, "is": true, "are": true, "was": true, "were": true, "be": true, "this": true, "that": true, "it": true, "dashboard": true,
+	}
+	var keywords []string
+	for _, w := range words {
+		if !stopwords[w] && len(w) > 2 {
+			keywords = append(keywords, w)
+		}
+	}
+	return keywords
+}
+
+func matchTableByKeywords(tables []string, keywords []string) string {
+	bestScore := 0
+	selected := ""
+	for _, t := range tables {
+		score := 0
+		tLower := strings.ToLower(t)
+		for _, k := range keywords {
+			if strings.Contains(tLower, k) {
+				score++
+			}
+		}
+		if score > bestScore {
+			bestScore = score
+			selected = t
+		}
+	}
+	if selected == "" {
+		return tables[0]
+	}
+	return selected
+}
+
+func appendUnique(target []string, values []string) []string {
+	for _, val := range values {
+		if !stringInSlice(target, val) {
+			target = append(target, val)
+		}
+	}
+	return target
+}
+
+func stringInSlice(values []string, val string) bool {
+	for _, v := range values {
+		if v == val {
+			return true
+		}
+	}
+	return false
+}
+
+func lastMessageContent(history []ctxmgr.Message, role string) string {
+	for i := len(history) - 1; i >= 0; i-- {
+		if history[i].Role == role {
+			return history[i].Content
+		}
+	}
+	return ""
+}
+
 // handleSmartQueryBuilder generates SQL from high-level intent and schema.
 func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, _ *mcp.CallToolRequest, input SmartQueryBuilderParams) (*mcp.CallToolResult, any, error) {
 	p := input
@@ -1040,9 +1210,23 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, _ *mcp.CallTool
 		}, nil, fmt.Errorf("profile not found")
 	}
 
-	// 1b. Intent/entity extraction for context-aware behavior
-	intentResult := nlp.ClassifyIntent(p.Intent)
+	contextEnabled := isContextEnabled(cfg.NLP)
+	applyContextSettings(s.contextMgr, cfg.NLP)
+
+	var history []ctxmgr.Message
+	if contextEnabled {
+		history = s.contextMgr.History(p.ProfileName)
+	}
+	intentForMatch := p.Intent
+	if contextEnabled {
+		intentForMatch = contextAwareIntent(p.Intent, history)
+	}
+	intentResult := nlp.ClassifyIntent(intentForMatch)
 	entityResult := nlp.ExtractEntities(p.Intent)
+	if contextEnabled {
+		historyEntities := nlp.ExtractEntities(historyIntent(history))
+		entityResult = combineEntityHints(entityResult, historyEntities)
+	}
 
 	// 2. Fetch all table names
 	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, prof.DatabaseName, prof.SSLMode)
@@ -1121,44 +1305,7 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, _ *mcp.CallTool
 	}
 
 	// 3. Parse intent and match to table names
-	table := ""
-	if len(p.TableNames) > 0 {
-		table = p.TableNames[0]
-	} else if len(tables) > 0 {
-		// Extract keywords from intent (simple split, lowercase, remove common stopwords)
-		intent := strings.ToLower(p.Intent)
-		words := strings.FieldsFunc(intent, func(r rune) bool {
-			return r == ' ' || r == ',' || r == '.' || r == '-' || r == '_'
-		})
-		stopwords := map[string]bool{
-			"the": true, "a": true, "an": true, "for": true, "to": true, "of": true, "and": true, "in": true, "on": true, "with": true, "by": true, "at": true, "from": true, "as": true, "is": true, "are": true, "was": true, "were": true, "be": true, "this": true, "that": true, "it": true, "dashboard": true,
-		}
-		var keywords []string
-		for _, w := range words {
-			if !stopwords[w] && len(w) > 2 {
-				keywords = append(keywords, w)
-			}
-		}
-		// Score tables by keyword substring match
-		bestScore := 0
-		for _, t := range tables {
-			score := 0
-			tLower := strings.ToLower(t)
-			for _, k := range keywords {
-				if strings.Contains(tLower, k) {
-					score++
-				}
-			}
-			if score > bestScore {
-				bestScore = score
-				table = t
-			}
-		}
-		// Fallback to first table if no match
-		if table == "" {
-			table = tables[0]
-		}
-	}
+	table := selectTableForIntent(p, tables, contextEnabled, history, cfg.NLP.BusinessDomains)
 
 	if table == "" {
 		errMsg := "No table found matching the intent for query generation."
@@ -1230,15 +1377,23 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, _ *mcp.CallTool
 	}
 	sql := fmt.Sprintf("SELECT %s FROM %s;", colList, table)
 	explanation := fmt.Sprintf("Selected table '%s' and columns [%s] based on keywords from intent '%s'.", table, colList, p.Intent)
+	if len(cfg.NLP.BusinessDomains) > 0 {
+		explanation = fmt.Sprintf("%s Business domains: %s.", explanation, strings.Join(cfg.NLP.BusinessDomains, ", "))
+	}
 
 	result := SmartQueryBuilderResult{
 		SQL:         sql,
 		Explanation: fmt.Sprintf("%s Intent: %s (%.0f%%). Entities: tables=%v, cols=%v.", explanation, intentResult.Intent, intentResult.Confidence*100, entityResult.Tables, entityResult.Columns),
 	}
+	if contextEnabled {
+		result.Explanation = appendContextNote(result.Explanation, history)
+	}
 
-	// Persist minimal context keyed by profile (session IDs not exposed in current SDK)
-	s.contextMgr.Append(p.ProfileName, "user", p.Intent)
-	s.contextMgr.Append(p.ProfileName, "assistant", result.SQL)
+	if contextEnabled {
+		// Persist minimal context keyed by profile (session IDs not exposed in current SDK)
+		s.contextMgr.Append(p.ProfileName, "user", p.Intent)
+		s.contextMgr.Append(p.ProfileName, "assistant", result.SQL)
+	}
 	b, _ := json.Marshal(result)
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
@@ -3536,6 +3691,7 @@ func (s *MCPServer) inferBusinessContext(tableSchemas map[string]TableInfo) *Bus
 	domain, confidence := s.detectDomain(tableNames)
 	naming := s.analyzeNamingConventions(tables)
 	entities := s.identifyEntityTypes(tableNames)
+	configuredDomains := loadConfiguredDomains(s.ConfigPath)
 
 	// Defensive extraction helpers
 	getString := func(m map[string]interface{}, key, def string) string {
@@ -3583,7 +3739,7 @@ func (s *MCPServer) inferBusinessContext(tableSchemas map[string]TableInfo) *Bus
 	auditCols := getStringSlice(naming, "timestampCols")
 
 	return &BusinessContext{
-		DomainIndicators: map[string]float64{domain: confidence},
+		DomainIndicators: mergeDomainIndicators(domain, confidence, configuredDomains),
 		NamingConventions: NamingConventions{
 			Pattern:           pattern,
 			ConsistencyScore:  consistencyScore,
@@ -3633,6 +3789,34 @@ func (s *MCPServer) detectDomain(tableNames []string) (string, float64) {
 		return "unknown", 0.0
 	}
 	return bestDomain, bestScore
+}
+
+func loadConfiguredDomains(configPath string) []string {
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		return nil
+	}
+	return cfg.NLP.BusinessDomains
+}
+
+func mergeDomainIndicators(domain string, confidence float64, configured []string) map[string]float64 {
+	indicators := map[string]float64{}
+	if domain != "" {
+		indicators[domain] = confidence
+	}
+	for _, cfgDomain := range configured {
+		key := strings.ToLower(strings.TrimSpace(cfgDomain))
+		if key == "" {
+			continue
+		}
+		if _, ok := indicators[key]; !ok {
+			indicators[key] = 1.0
+		}
+	}
+	if len(indicators) == 0 {
+		indicators["unknown"] = 0.0
+	}
+	return indicators
 }
 
 func (s *MCPServer) analyzeNamingConventions(tables []TableInfo) map[string]interface{} {

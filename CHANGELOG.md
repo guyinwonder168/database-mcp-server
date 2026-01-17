@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.0.3] - 2026-01-18
+
+### Added
+- NLP config options for smart-query-builder (context, domain hints).
+- Business domain hints and multi-turn context support in smart-query-builder.
+- Conversation context helpers and tests for smart-query-builder flows.
+
+### Changed
+- Context handling moved into dedicated conversation types.
+
 ## [v1.0.2] - 2026-01-17
 
 ### Added

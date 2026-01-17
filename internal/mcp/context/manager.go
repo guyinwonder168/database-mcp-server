@@ -5,30 +5,6 @@ import (
 	"time"
 )
 
-// Message represents a single conversational turn.
-type Message struct {
-	Role      string    `json:"role"`
-	Content   string    `json:"content"`
-	Timestamp time.Time `json:"timestamp"`
-}
-
-// Conversation holds ordered messages.
-type Conversation struct {
-	Messages []Message `json:"messages"`
-}
-
-func (c *Conversation) Add(role, content string) {
-	c.Messages = append(c.Messages, Message{
-		Role:      role,
-		Content:   content,
-		Timestamp: time.Now().UTC(),
-	})
-}
-
-func (c *Conversation) History() []Message {
-	return c.Messages
-}
-
 // Manager maintains per-session conversation history with TTL pruning.
 type Manager struct {
 	mu        sync.Mutex
@@ -90,4 +66,24 @@ func (m *Manager) pruneLocked() {
 			delete(m.expires, id)
 		}
 	}
+}
+
+// SetTTL updates the TTL used for new conversations.
+func (m *Manager) SetTTL(ttl time.Duration) {
+	if ttl <= 0 {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ttl = ttl
+}
+
+// SetMaxRecent updates how many recent messages to keep.
+func (m *Manager) SetMaxRecent(maxRecent int) {
+	if maxRecent <= 0 {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.maxRecent = maxRecent
 }

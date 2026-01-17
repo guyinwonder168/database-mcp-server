@@ -4,6 +4,15 @@ max_pool_size: 10
 # AES key for password encryption (must be exactly 32 characters)
 aes_key: "<your-32-char-aes-key>"
 
+nlp:
+  enabled: true
+  context_timeout: "1h"
+  max_conversation_length: 20
+  business_domains:
+    - ecommerce
+    - finance
+    - healthcare
+
 profiles:
   - profile_name: example_postgres
     db_type: postgres
