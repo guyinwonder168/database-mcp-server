@@ -228,7 +228,7 @@ The Database MCP Server provides a unified conversational API that allows AI age
 - **Phase 2** (Days 61-90): Business Intelligence capabilities
 - **Phase 3** (Days 91+): Advanced enterprise features
 
-See [Implementation Roadmap](implementation-roadmap.md) for detailed planning and [project-plan/](../project-plan/) for comprehensive implementation strategy.
+See [Enhancement Roadmap](roadmap.md) for consolidated planning and [planning history](history/project-plan-roadmap.md) for comprehensive implementation strategy.
 
 ### 9.3 Integration Enhancements
 - Additional transport protocols

@@ -68,7 +68,7 @@ go build -o mcp-server ./cmd/server/main.go
 - 📝 [**PRD Analysis**](docs/prd.md) - Product requirements analysis with AI perspective
 - 🔍 [**Schema Introspection Queries**](docs/schema-introspection-queries.md) - Database-specific queries
 - 🧪 [**Test Enhanced Schema**](docs/test-enhanced-schema.md) - Test schema documentation
-- 🗺️ [**Implementation Roadmap**](docs/implementation-roadmap.md) - Strategic development planning
+- 🗺️ [**Enhancement Roadmap**](docs/roadmap.md) - Strategic development planning
 
 ### Memory Bank Documentation
 The project includes a comprehensive memory bank system for AI assistants, located in `.kilocode/rules/memory-bank/`:
@@ -80,10 +80,10 @@ The project includes a comprehensive memory bank system for AI assistants, locat
 - 💻 [**Tech**](.kilocode/rules/memory-bank/tech.md) - Technology stack and development setup
 
 ### Project Planning
-- 🗺️ [**Roadmap**](project-plan/roadmap.md) - Comprehensive implementation strategy
-- 📊 [**Vertical Slices**](project-plan/vertical-slices.md) - Phase-by-phase development breakdown
+- 🗺️ [**Roadmap**](docs/roadmap.md) - Consolidated enhancement plan
+- 📊 [**Vertical Slices (History)**](docs/history/vertical-slices.md) - Phase-by-phase development breakdown
 - 🔍 [**Architecture Validation**](project-plan/architecture-validation.md) - Technical compatibility analysis
-- 📝 [**Implementation Tasks**](project-plan/implementation-tasks.md) - Detailed task tracking
+- 📝 [**Implementation Tasks (History)**](docs/history/implementation-tasks.md) - Detailed task tracking
 - 🐛 [**MCP Tool Detection Fix**](project-plan/mcp-tool-detection-fix.md) - Critical bug fix documentation
 
 ### Version History
@@ -148,9 +148,10 @@ MIT
 - **Phase 3** (90+ Days): Schema evolution, advanced profiling, and multi-database federation
 
 **Planning Documents**:
-- [Implementation Roadmap](docs/implementation-roadmap.md) - Strategic overview
-- [Project Plan](../project-plan/roadmap.md) - Comprehensive implementation strategy
-- [Vertical Slices](../project-plan/vertical-slices.md) - Detailed phase breakdowns
-- [Architecture Validation](../project-plan/architecture-validation.md) - Technical compatibility analysis
+- [Enhancement Roadmap](docs/roadmap.md) - Strategic overview
+- [Project Plan (History)](docs/history/project-plan-roadmap.md) - Comprehensive implementation strategy
+- [Vertical Slices (History)](docs/history/vertical-slices.md) - Detailed phase breakdowns
+- [Architecture Validation](project-plan/architecture-validation.md) - Technical compatibility analysis
 
 **Ready for immediate enhancement development while maintaining production stability.**
+

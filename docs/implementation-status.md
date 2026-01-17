@@ -266,10 +266,10 @@ This document tracks the current implementation status of all features and requi
 - **Slice 3.3**: Multi-Database Federation - `federated-query` MCP tool
 
 ### Detailed Planning Documents
-- **Implementation Roadmap**: [implementation-roadmap.md](implementation-roadmap.md)
-- **Project Plan**: [../project-plan/roadmap.md](../project-plan/roadmap.md)
-- **Vertical Slices**: [../project-plan/vertical-slices.md](../project-plan/vertical-slices.md)
-- **Implementation Tasks**: [../project-plan/implementation-tasks.md](../project-plan/implementation-tasks.md)
+- **Enhancement Roadmap**: [roadmap.md](roadmap.md)
+- **Project Plan (History)**: [history/project-plan-roadmap.md](history/project-plan-roadmap.md)
+- **Vertical Slices (History)**: [history/vertical-slices.md](history/vertical-slices.md)
+- **Implementation Tasks (History)**: [history/implementation-tasks.md](history/implementation-tasks.md)
 
 ### Traditional Roadmap Items
 #### Version 1.1 (Planned)

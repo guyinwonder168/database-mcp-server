@@ -20,10 +20,10 @@ This directory contains comprehensive documentation for the Database MCP Server 
 - **Audience**: Project managers, developers, QA teams
 - **Content**: Feature completion status, testing coverage, known issues
 
-#### [Implementation Roadmap](implementation-roadmap.md)
+#### [Enhancement Roadmap](roadmap.md)
 - **Purpose**: High-level strategic overview of planned enhancements
 - **Audience**: Product managers, stakeholders, development teams
-- **Content**: Enhancement phases, success metrics, timeline, strategic vision
+- **Content**: Enhancement phases, status, strategic vision
 
 ### Technical Documentation
 
@@ -76,17 +76,17 @@ This directory contains comprehensive documentation for the Database MCP Server 
 
 ### Planning and Roadmap Documents
 
-#### [Project Plan](../project-plan/roadmap.md)
+#### [Project Plan (History)](history/project-plan-roadmap.md)
 - **Purpose**: Comprehensive implementation plan based on PRD analysis
 - **Audience**: Development teams, project managers, architects
 - **Content**: Detailed enhancement roadmap, technical architecture, success metrics
 
-#### [Vertical Slices](../project-plan/vertical-slices.md)
+#### [Vertical Slices (History)](history/vertical-slices.md)
 - **Purpose**: Detailed vertical slice definitions for implementation phases
 - **Audience**: Developers, technical leads, QA teams
 - **Content**: Slice-by-slice breakdown, deliverables, success criteria, dependencies
 
-#### [Implementation Tasks](../project-plan/implementation-tasks.md)
+#### [Implementation Tasks (History)](history/implementation-tasks.md)
 - **Purpose**: Task-by-task breakdown for each vertical slice
 - **Audience**: Development team, project managers
 - **Content**: Detailed subtasks, time estimates, file modifications, acceptance criteria
@@ -96,22 +96,22 @@ This directory contains comprehensive documentation for the Database MCP Server 
 ### For Product Managers
 1. Start with [PRD](prd.md) to understand requirements
 2. Review [Implementation Status](implementation-status.md) for progress tracking
-3. Check [Implementation Roadmap](implementation-roadmap.md) for strategic direction
-4. Review [Project Plan](../project-plan/roadmap.md) for detailed implementation strategy
+3. Check [Enhancement Roadmap](roadmap.md) for strategic direction
+4. Review [Project Plan (History)](history/project-plan-roadmap.md) for detailed implementation strategy
 5. Check [Technical Specifications](technical-specifications.md) for feasibility
 
 ### For Developers
 1. Read [Technical Specifications](technical-specifications.md) for architecture
 2. Use [API Documentation](api-documentation.md) for integration
 3. Reference [System Architecture](../.kilocode/rules/memory-bank/architecture.md) for design patterns
-4. Review [Vertical Slices](../project-plan/vertical-slices.md) for implementation approach
-5. Use [Implementation Tasks](../project-plan/implementation-tasks.md) for detailed task breakdown
+4. Review [Vertical Slices (History)](history/vertical-slices.md) for implementation approach
+5. Use [Implementation Tasks (History)](history/implementation-tasks.md) for detailed task breakdown
 
 ### For Users/Integrators
 1. Start with [MCP Examples](mcp-examples.md) for quick start
 2. Use [API Documentation](api-documentation.md) for reference
 3. Check [Implementation Status](implementation-status.md) for feature availability
-4. Review [Implementation Roadmap](implementation-roadmap.md) for upcoming features
+4. Review [Enhancement Roadmap](roadmap.md) for upcoming features
 
 ### For QA Teams
 1. Review [Implementation Status](implementation-status.md) for test coverage
