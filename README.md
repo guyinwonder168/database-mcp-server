@@ -2,7 +2,7 @@
 
 [![Go](https://img.shields.io/badge/Go-1.25.5%2B-00ADD8?logo=Go&logoColor=white)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/Version-v1.0.2-blue.svg)](https://github.com/guyinwonder168/database-mcp-server/releases/tag/v1.0.2)
+[![Version](https://img.shields.io/badge/Version-v1.0.3-blue.svg)](https://github.com/guyinwonder168/database-mcp-server/releases/tag/v1.0.3)
 
 A production-ready Model Context Protocol (MCP) provider for SQL databases, written in Go by guyinwonder. Supports MySQL, MariaDB, PostgreSQL, and SQLite. Features robust connection pooling, secure AES-GCM credential storage, structured JSON logging, comprehensive schema introspection, and a full suite of 12 MCP tools. Built and tested with Go 1.25.5.
 
@@ -113,7 +113,7 @@ go test ./...
 
 ## 📊 Project Status
 
-- **Version:** v1.0.2
+- **Version:** v1.0.3
 - **Author:** guyinwonder
 - **Status:** Production Ready ✅
 - All 12 MCP tools are fully implemented and OpenAPI-aligned.
@@ -122,15 +122,10 @@ go test ./...
 - Comprehensive unit and integration tests included.
 - Ready for production use.
 
-### Recent Enhancements (v1.0.2)
-- **Memory Bank System**: Added comprehensive AI assistant memory bank for project context preservation
-- **Documentation Suite**: Complete documentation overhaul with API specs, implementation status, and technical specifications
-- **Project Planning**: Detailed roadmap and implementation tracking documents
-- **Enhanced Testing**: Added integration tests and MCP tool discovery regression tests
-- **Improved Logging**: Better credential redaction and structured error handling
-- **MCP Resources**: Added `tools://list` and `profile://{profile}` resources for read-only inspection
-- **SSE Transport**: Optional HTTP/SSE transport support for additional client compatibility
-- **Git Configuration**: Improved .gitignore to exclude logs and build artifacts
+### Recent Enhancements (v1.0.3)
+- **Smart Query Builder**: Added multi-turn context, domain hints, and configurable NLP settings
+- **Context Manager**: Dedicated conversation types and improved context persistence controls
+- **Testing Coverage**: Added smart-query-builder context, domain, and flow tests
 
 ---
 
