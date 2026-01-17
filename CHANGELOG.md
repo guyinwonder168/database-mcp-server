@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [v1.0.2] - 2026-01-17
 
 ### Added
 - `validate-query` MCP tool for pre-execution SQL syntax/logic/security checks.
