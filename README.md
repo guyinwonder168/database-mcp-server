@@ -2,7 +2,7 @@
 
 [![Go](https://img.shields.io/badge/Go-1.25.5%2B-00ADD8?logo=Go&logoColor=white)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/Version-v1.0.3-blue.svg)](https://github.com/guyinwonder168/database-mcp-server/releases/tag/v1.0.3)
+[![Version](https://img.shields.io/badge/Version-v1.0.3-blue.svg)](https://github.com/guyinwonder168/database-mcp-server/releases/tag/v1.0.3
 
 A production-ready Model Context Protocol (MCP) provider for SQL databases, written in Go by guyinwonder. Supports MySQL, MariaDB, PostgreSQL, and SQLite. Features robust connection pooling, secure AES-GCM credential storage, structured JSON logging, comprehensive schema introspection, and a full suite of 12 MCP tools. Built and tested with Go 1.25.5.
 
