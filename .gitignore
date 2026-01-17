@@ -8,6 +8,7 @@ bin/
 *.out
 
 # IDE/editor files
+.opencode
 .vscode/
 .idea/
 *.swp
@@ -35,5 +36,6 @@ pkg/config.yaml
 vendor/
 
 # MCP server build output
+pkg/
 pkg/mcp-server
 pkg/log/*.log.*

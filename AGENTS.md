@@ -3,7 +3,7 @@
 ## Project Structure & Module Organization
 - Entry point: `cmd/server/main.go` builds the MCP server binary.
 - Core logic lives in `internal/`: `mcp/` (tools, handlers, tests), `config/` (YAML loading & AES key handling), `db/` (drivers, pooling), `log/` (structured logging).
-- Shared utilities sit in `pkg/` (e.g., `pkg/log/`), docs in `docs/` (API, specs, roadmap), and planning notes in `project-plan/`. Logs rotate into `log/`.
+- Shared utilities sit in `pkg/` (e.g., `pkg/log/`); local testing artifacts may also live in `pkg/` and should not be committed unless intended. Docs in `docs/` (API, specs, roadmap) and planning notes in `project-plan/`. Logs rotate into `log/`.
 - AI memory-bank rules reside in `.kilocode/rules/`—avoid modifying unless you know the policy intent.
 
 ## Build, Test, and Development Commands
