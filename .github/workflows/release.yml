@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build binaries
+        run: |
+          GOOS=linux GOARCH=amd64 go build -o mcp-server-linux-amd64 ./cmd/server/main.go
+          GOOS=darwin GOARCH=amd64 go build -o mcp-server-darwin-amd64 ./cmd/server/main.go
+          GOOS=windows GOARCH=amd64 go build -o mcp-server-windows-amd64.exe ./cmd/server/main.go
+
+      - name: Create archives
+        run: |
+          tar -czf database-mcp-server_${{ github.ref_name }}_linux_amd64.tar.gz mcp-server-linux-amd64
+          tar -czf database-mcp-server_${{ github.ref_name }}_darwin_amd64.tar.gz mcp-server-darwin-amd64
+          zip -q database-mcp-server_${{ github.ref_name }}_windows_amd64.zip mcp-server-windows-amd64.exe
+
+      - name: Extract changelog notes
+        run: |
+          VERSION="${{ github.ref_name }}"
+          awk -v version="$VERSION" '
+            BEGIN { in_block=0 }
+            $0 ~ "^## \\[("version"|Unreleased)\\]" {
+              if (in_block) exit
+              if ($0 ~ "^## \\[("version")\\]") { in_block=1; next }
+            }
+            in_block { print }
+          ' CHANGELOG.md > release-notes.md
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            database-mcp-server_${{ github.ref_name }}_linux_amd64.tar.gz
+            database-mcp-server_${{ github.ref_name }}_darwin_amd64.tar.gz
+            database-mcp-server_${{ github.ref_name }}_windows_amd64.zip
+          body_path: release-notes.md
