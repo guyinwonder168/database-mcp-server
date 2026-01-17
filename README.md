@@ -82,9 +82,9 @@ The project includes a comprehensive memory bank system for AI assistants, locat
 ### Project Planning
 - 🗺️ [**Roadmap**](docs/roadmap.md) - Consolidated enhancement plan
 - 📊 [**Vertical Slices (History)**](docs/history/vertical-slices.md) - Phase-by-phase development breakdown
-- 🔍 [**Architecture Validation**](project-plan/architecture-validation.md) - Technical compatibility analysis
-- 📝 [**Implementation Tasks (History)**](docs/history/implementation-tasks.md) - Detailed task tracking
-- 🐛 [**MCP Tool Detection Fix**](project-plan/mcp-tool-detection-fix.md) - Critical bug fix documentation
+- 🔍 [**Architecture Validation (History)**](docs/history/architecture-validation.md) - Technical compatibility analysis
+- 🐛 [**MCP Tool Detection Fix (History)**](docs/history/mcp-tool-detection-fix.md) - Critical bug fix documentation
+
 
 ### Version History
 - 📋 [**CHANGELOG**](CHANGELOG.md) - Detailed release notes and version history
@@ -151,7 +151,7 @@ MIT
 - [Enhancement Roadmap](docs/roadmap.md) - Strategic overview
 - [Project Plan (History)](docs/history/project-plan-roadmap.md) - Comprehensive implementation strategy
 - [Vertical Slices (History)](docs/history/vertical-slices.md) - Detailed phase breakdowns
-- [Architecture Validation](project-plan/architecture-validation.md) - Technical compatibility analysis
+- [Architecture Validation (History)](docs/history/architecture-validation.md) - Technical compatibility analysis
 
 **Ready for immediate enhancement development while maintaining production stability.**
 
