@@ -6,8 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - `validate-query` MCP tool for pre-execution SQL syntax/logic/security checks.
+- `optimize-query` MCP tool for EXPLAIN-based findings and performance estimates.
+- `analyze-data-lineage` MCP tool for tracing table dependencies.
 - Vitess SQL parser dependency for validation.
+
+### Changed
 - Documentation updates: README, API docs, memory bank entries.
+- README Go badge URL fixed for proper rendering.
+- AGENTS guidance clarified for local testing artifacts in `pkg/`.
 
 ## [v1.0.1] - 2025-12-09
 
