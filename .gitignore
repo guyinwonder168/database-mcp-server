@@ -40,5 +40,3 @@ pkg/
 pkg/mcp-server
 pkg/log/*.log.*
 
-# Documentation history
-/docs/history/
