@@ -1,6 +1,6 @@
 # Database MCP Server
 
-[![Go](https://img.shields.io/badge/Go-1.25.5+-00ADD8E-blue.svg)](https://golang.org)
+[![Go](https://img.shields.io/badge/Go-1.25.5%2B-00ADD8?logo=Go&logoColor=white)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Version](https://img.shields.io/badge/Version-v1.0.1-blue.svg)](https://github.com/guyinwonder168/database-mcp-server/releases/tag/v1.0.1)
 
