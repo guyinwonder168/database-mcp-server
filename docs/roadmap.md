@@ -67,6 +67,6 @@ This roadmap consolidates the strategic enhancement plan for the Database MCP Se
 
 ## Related Planning Documents
 
-- Detailed project plan: `project-plan/roadmap.md`
-- Vertical slices: `project-plan/vertical-slices.md`
-- Implementation tasks: `project-plan/implementation-tasks.md`
+- Detailed project plan (history): `docs/history/project-plan-roadmap.md`
+- Vertical slices (history): `docs/history/vertical-slices.md`
+- Implementation tasks (history): `docs/history/implementation-tasks.md`
