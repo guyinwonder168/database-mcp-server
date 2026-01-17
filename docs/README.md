@@ -196,7 +196,8 @@ This directory contains comprehensive documentation for the Database MCP Server 
 - **Main Repository**: [Project GitHub Link]
 - **Memory Bank**: [Memory Bank Documentation](../.kilocode/rules/memory-bank/)
 - **Configuration**: [Configuration Examples](../internal/config/config_template.yaml)
-- **Project Planning**: [Enhancement Roadmap](../project-plan/)
+- **Project Planning**: [Enhancement Roadmap](roadmap.md)
+- **Planning History**: [docs/history](history/)
 
 ### External Resources
 - **MCP Protocol**: [Model Context Protocol Specification]
