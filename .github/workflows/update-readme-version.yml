@@ -1,0 +1,39 @@
+name: Update README Version
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Update README version
+        run: |
+          VERSION="${{ github.ref_name }}"
+          sed -i "s|https://img.shields.io/badge/Version-[^-]*-blue.svg|https://img.shields.io/badge/Version-${VERSION}-blue.svg|" README.md
+          sed -i "s|https://github.com/guyinwonder168/database-mcp-server/releases/tag/[^"]*|https://github.com/guyinwonder168/database-mcp-server/releases/tag/${VERSION}|" README.md
+          sed -i "s|\*\*Version:\*\* v[0-9.]*|**Version:** ${VERSION}|" README.md
+          sed -i "s|### Recent Enhancements (v[0-9.]+)|### Recent Enhancements (${VERSION})|" README.md
+
+      - name: Commit README changes
+        run: |
+          if git diff --quiet; then
+            echo "No README changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "docs: update README version for ${VERSION}"
+          git push origin main
