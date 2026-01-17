@@ -1082,7 +1082,7 @@ func historyIntent(history []ctxmgr.Message) string {
 	return strings.Join(parts, " ")
 }
 
-func selectTableForIntent(p SmartQueryBuilderParams, tables []string, contextEnabled bool, history []ctxmgr.Message) string {
+func selectTableForIntent(p SmartQueryBuilderParams, tables []string, contextEnabled bool, history []ctxmgr.Message, domains []string) string {
 	if len(p.TableNames) > 0 {
 		return p.TableNames[0]
 	}
@@ -1094,7 +1094,22 @@ func selectTableForIntent(p SmartQueryBuilderParams, tables []string, contextEna
 		intent = contextAwareIntent(p.Intent, history)
 	}
 	keywords := extractKeywords(intent)
+	if len(domains) > 0 {
+		keywords = append(keywords, domainKeywords(domains)...)
+	}
 	return matchTableByKeywords(tables, keywords)
+}
+
+func domainKeywords(domains []string) []string {
+	keywords := make([]string, 0, len(domains))
+	for _, domain := range domains {
+		keyword := strings.ToLower(strings.TrimSpace(domain))
+		if keyword == "" {
+			continue
+		}
+		keywords = append(keywords, keyword)
+	}
+	return keywords
 }
 
 func extractKeywords(intent string) []string {
@@ -1290,7 +1305,7 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, _ *mcp.CallTool
 	}
 
 	// 3. Parse intent and match to table names
-	table := selectTableForIntent(p, tables, contextEnabled, history)
+	table := selectTableForIntent(p, tables, contextEnabled, history, cfg.NLP.BusinessDomains)
 
 	if table == "" {
 		errMsg := "No table found matching the intent for query generation."
@@ -1362,6 +1377,9 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, _ *mcp.CallTool
 	}
 	sql := fmt.Sprintf("SELECT %s FROM %s;", colList, table)
 	explanation := fmt.Sprintf("Selected table '%s' and columns [%s] based on keywords from intent '%s'.", table, colList, p.Intent)
+	if len(cfg.NLP.BusinessDomains) > 0 {
+		explanation = fmt.Sprintf("%s Business domains: %s.", explanation, strings.Join(cfg.NLP.BusinessDomains, ", "))
+	}
 
 	result := SmartQueryBuilderResult{
 		SQL:         sql,
@@ -3673,6 +3691,7 @@ func (s *MCPServer) inferBusinessContext(tableSchemas map[string]TableInfo) *Bus
 	domain, confidence := s.detectDomain(tableNames)
 	naming := s.analyzeNamingConventions(tables)
 	entities := s.identifyEntityTypes(tableNames)
+	configuredDomains := loadConfiguredDomains(s.ConfigPath)
 
 	// Defensive extraction helpers
 	getString := func(m map[string]interface{}, key, def string) string {
@@ -3720,7 +3739,7 @@ func (s *MCPServer) inferBusinessContext(tableSchemas map[string]TableInfo) *Bus
 	auditCols := getStringSlice(naming, "timestampCols")
 
 	return &BusinessContext{
-		DomainIndicators: map[string]float64{domain: confidence},
+		DomainIndicators: mergeDomainIndicators(domain, confidence, configuredDomains),
 		NamingConventions: NamingConventions{
 			Pattern:           pattern,
 			ConsistencyScore:  consistencyScore,
@@ -3770,6 +3789,34 @@ func (s *MCPServer) detectDomain(tableNames []string) (string, float64) {
 		return "unknown", 0.0
 	}
 	return bestDomain, bestScore
+}
+
+func loadConfiguredDomains(configPath string) []string {
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		return nil
+	}
+	return cfg.NLP.BusinessDomains
+}
+
+func mergeDomainIndicators(domain string, confidence float64, configured []string) map[string]float64 {
+	indicators := map[string]float64{}
+	if domain != "" {
+		indicators[domain] = confidence
+	}
+	for _, cfgDomain := range configured {
+		key := strings.ToLower(strings.TrimSpace(cfgDomain))
+		if key == "" {
+			continue
+		}
+		if _, ok := indicators[key]; !ok {
+			indicators[key] = 1.0
+		}
+	}
+	if len(indicators) == 0 {
+		indicators["unknown"] = 0.0
+	}
+	return indicators
 }
 
 func (s *MCPServer) analyzeNamingConventions(tables []TableInfo) map[string]interface{} {

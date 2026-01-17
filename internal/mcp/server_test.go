@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"database-mcp-provider/internal/config"
+	ctxmgr "database-mcp-provider/internal/mcp/context"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
@@ -31,6 +32,9 @@ func setupTestConfigWithNLP(t *testing.T, nlp config.NLPConfig) string {
 	t.Cleanup(func() { os.Remove(testSQLiteDBPath) })
 	cfg := baseTestConfig()
 	cfg.NLP = nlp
+	if cfg.NLP.BusinessDomains == nil {
+		cfg.NLP.BusinessDomains = []string{}
+	}
 	if err := config.SaveConfig(testConfig, cfg); err != nil {
 		t.Fatalf("Failed to save test config: %v", err)
 	}
@@ -377,7 +381,7 @@ func TestHandleSmartQueryBuilder(t *testing.T) {
 }
 
 func TestSmartQueryBuilderContextPersistence(t *testing.T) {
-	testConfig := setupTestConfig(t)
+	testConfig := setupTestConfigWithNLP(t, config.NLPConfig{Enabled: boolPtr(true)})
 	defer os.Remove(testConfig)
 
 	server := NewMCPServerWithConfig(testConfig)
@@ -424,9 +428,13 @@ func TestSmartQueryBuilderContextPersistence(t *testing.T) {
 	if err := json.Unmarshal([]byte(content.Text), &payload); err != nil {
 		t.Fatalf("Failed to unmarshal response: %v", err)
 	}
-	if strings.Contains(payload.Explanation, "previous intent") {
-		t.Fatalf("Did not expect explanation to include prior context when disabled")
+	if !strings.Contains(payload.Explanation, "seed intent") {
+		t.Fatalf("Expected explanation to include latest prior intent when enabled")
 	}
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }
 
 func createSmartBuilderTable(ctx context.Context, server *MCPServer, dbPath string) (bool, error) {
@@ -574,6 +582,18 @@ func TestSmartQueryBuilderIntentParsing(t *testing.T) {
 
 	if bestTable != "attendance" && bestTable != "employees" {
 		t.Fatalf("Expected best match to be 'attendance' or 'employees', got '%s'", bestTable)
+	}
+}
+
+func TestSelectTableForIntentWithBusinessDomains(t *testing.T) {
+	params := SmartQueryBuilderParams{
+		Intent: "find payroll report",
+	}
+	tables := []string{"payroll_entries", "users", "orders"}
+	history := []ctxmgr.Message{{Role: "user", Content: "show hr metrics"}}
+	selected := selectTableForIntent(params, tables, true, history, []string{"hr"})
+	if selected != "payroll_entries" {
+		t.Fatalf("Expected payroll_entries, got %s", selected)
 	}
 }
 
@@ -1297,6 +1317,58 @@ func TestHandleListTools_VerifyAllTools(t *testing.T) {
 	}
 }
 
+func TestSmartQueryBuilderMultiTurnFlow(t *testing.T) {
+	testConfig := setupTestConfigWithNLP(t, config.NLPConfig{Enabled: boolPtr(true), BusinessDomains: []string{"hr"}})
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+
+	skip, err := createSmartBuilderTable(ctx, server, testSQLiteDBPath)
+	if skip {
+		t.Skipf("Skipping SQLite test due to driver issue: %v", err)
+	}
+	if err != nil {
+		t.Fatalf("Failed to create table for smart-query-builder: %v", err)
+	}
+
+	first, _, err := server.handleSmartQueryBuilder(ctx, nil, SmartQueryBuilderParams{
+		ProfileName:  "testsqlite",
+		Intent:       "attendance dashboard",
+		DatabaseName: testSQLiteDBPath,
+	})
+	if err != nil {
+		t.Fatalf("Expected smart-query-builder success, got error: %v", err)
+	}
+	if first == nil || len(first.Content) == 0 {
+		t.Fatalf("Expected smart-query-builder content")
+	}
+
+	second, _, err := server.handleSmartQueryBuilder(ctx, nil, SmartQueryBuilderParams{
+		ProfileName:  "testsqlite",
+		Intent:       "filter to last month",
+		DatabaseName: testSQLiteDBPath,
+	})
+	if err != nil {
+		t.Fatalf("Expected smart-query-builder success, got error: %v", err)
+	}
+	if second == nil || len(second.Content) == 0 {
+		t.Fatalf("Expected smart-query-builder content")
+	}
+
+	content, ok := second.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("Expected TextContent, got %T", second.Content[0])
+	}
+	var payload SmartQueryBuilderResult
+	if err := json.Unmarshal([]byte(content.Text), &payload); err != nil {
+		t.Fatalf("Failed to unmarshal response: %v", err)
+	}
+	if !strings.Contains(payload.Explanation, "attendance dashboard") {
+		t.Fatalf("Expected explanation to include multi-turn context")
+	}
+}
+
 // --- AnalyzeSchema MCP Action Tests ---
 
 func TestHandleAnalyzeSchema(t *testing.T) {
@@ -1451,7 +1523,10 @@ func TestRegisterAllTools_Idempotent(t *testing.T) {
 }
 
 func TestInferBusinessContextEmpty(t *testing.T) {
-	server := NewMCPServerWithConfig("nonexistent.yaml")
+	testConfig := setupTestConfigWithNLP(t, config.NLPConfig{BusinessDomains: []string{"healthcare"}})
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
 	ctx := server.inferBusinessContext(map[string]TableInfo{})
 	if ctx == nil {
 		t.Fatalf("Expected non-nil BusinessContext")
@@ -1459,8 +1534,8 @@ func TestInferBusinessContextEmpty(t *testing.T) {
 	if len(ctx.DomainIndicators) == 0 {
 		t.Errorf("Expected DomainIndicators to contain at least 'unknown'")
 	}
-	if _, ok := ctx.DomainIndicators["unknown"]; !ok {
-		t.Errorf("Expected 'unknown' domain indicator for empty schema")
+	if _, ok := ctx.DomainIndicators["healthcare"]; !ok {
+		t.Errorf("Expected configured domain indicator for empty schema")
 	}
 }
 
