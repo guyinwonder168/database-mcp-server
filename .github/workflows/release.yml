@@ -2,8 +2,8 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -15,42 +15,75 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine release version
+        id: version
+        run: |
+          VERSION=$(awk '/^## \[v/{print $2; exit}' CHANGELOG.md | tr -d '[]')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch tags
+        run: git fetch --tags
+
+      - name: Create tag if missing
+        id: tag
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if git rev-parse "refs/tags/$VERSION" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git tag -a "$VERSION" -m "Release $VERSION"
+          git push origin "$VERSION"
+          echo "exists=false" >> "$GITHUB_OUTPUT"
 
       - name: Setup Go
+        if: steps.tag.outputs.exists != 'true'
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Build binaries
+        if: steps.tag.outputs.exists != 'true'
         run: |
           GOOS=linux GOARCH=amd64 go build -o mcp-server-linux-amd64 ./cmd/server/main.go
           GOOS=darwin GOARCH=amd64 go build -o mcp-server-darwin-amd64 ./cmd/server/main.go
           GOOS=windows GOARCH=amd64 go build -o mcp-server-windows-amd64.exe ./cmd/server/main.go
 
       - name: Create archives
+        if: steps.tag.outputs.exists != 'true'
         run: |
-          tar -czf database-mcp-server_${{ github.ref_name }}_linux_amd64.tar.gz mcp-server-linux-amd64
-          tar -czf database-mcp-server_${{ github.ref_name }}_darwin_amd64.tar.gz mcp-server-darwin-amd64
-          zip -q database-mcp-server_${{ github.ref_name }}_windows_amd64.zip mcp-server-windows-amd64.exe
+          VERSION="${{ steps.version.outputs.version }}"
+          tar -czf database-mcp-server_${VERSION}_linux_amd64.tar.gz mcp-server-linux-amd64
+          tar -czf database-mcp-server_${VERSION}_darwin_amd64.tar.gz mcp-server-darwin-amd64
+          zip -q database-mcp-server_${VERSION}_windows_amd64.zip mcp-server-windows-amd64.exe
 
       - name: Extract changelog notes
+        if: steps.tag.outputs.exists != 'true'
         run: |
-          VERSION="${{ github.ref_name }}"
+          VERSION="${{ steps.version.outputs.version }}"
           awk -v version="$VERSION" '
             BEGIN { in_block=0 }
-            $0 ~ "^## \\[("version"|Unreleased)\\]" {
+            $0 ~ "^## \\["version"\\]" {
               if (in_block) exit
-              if ($0 ~ "^## \\[("version")\\]") { in_block=1; next }
+              in_block=1
+              next
             }
+            $0 ~ "^## \\[" && in_block { exit }
             in_block { print }
           ' CHANGELOG.md > release-notes.md
 
       - name: Publish GitHub release
+        if: steps.tag.outputs.exists != 'true'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: ${{ steps.version.outputs.version }}
           files: |
-            database-mcp-server_${{ github.ref_name }}_linux_amd64.tar.gz
-            database-mcp-server_${{ github.ref_name }}_darwin_amd64.tar.gz
-            database-mcp-server_${{ github.ref_name }}_windows_amd64.zip
+            database-mcp-server_${{ steps.version.outputs.version }}_linux_amd64.tar.gz
+            database-mcp-server_${{ steps.version.outputs.version }}_darwin_amd64.tar.gz
+            database-mcp-server_${{ steps.version.outputs.version }}_windows_amd64.zip
           body_path: release-notes.md

@@ -2,8 +2,8 @@ name: Update README Version
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -18,11 +18,17 @@ jobs:
         with:
           ref: main
 
+      - name: Determine release version
+        id: version
+        run: |
+          VERSION=$(awk '/^## \[v/{print $2; exit}' CHANGELOG.md | tr -d '[]')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Update README version
         run: |
-          VERSION="${{ github.ref_name }}"
+          VERSION="${{ steps.version.outputs.version }}"
           sed -i "s|https://img.shields.io/badge/Version-[^-]*-blue.svg|https://img.shields.io/badge/Version-${VERSION}-blue.svg|" README.md
-          sed -i "s|https://github.com/guyinwonder168/database-mcp-server/releases/tag/[^"]*|https://github.com/guyinwonder168/database-mcp-server/releases/tag/${VERSION}|" README.md
+          sed -i "s|https://github.com/guyinwonder168/database-mcp-server/releases/tag/[^\"]*|https://github.com/guyinwonder168/database-mcp-server/releases/tag/${VERSION}|" README.md
           sed -i "s|\*\*Version:\*\* v[0-9.]*|**Version:** ${VERSION}|" README.md
           sed -i "s|### Recent Enhancements (v[0-9.]+)|### Recent Enhancements (${VERSION})|" README.md
 
