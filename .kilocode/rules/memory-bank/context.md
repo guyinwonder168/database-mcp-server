@@ -3,15 +3,15 @@
 ## Current State
 
 ### Project Status
-- Version: v1.0.2
+- Version: v1.0.4
 - Author: guyinwonder
 - Created using: OpenAI GPT-4.1 via VSCode Kilocode AI code assistant extension
-- Stage: Production-ready with AI enhancement roadmap in progress
-- Last Updated: January 2026
+- Stage: Production-ready with Phase 2 enhancements in progress
+- Last Updated: February 2026
 - Toolchain: Go 1.25.5 (default via gvm)
 
 ### Implementation Status
-- ✅ Core MCP server using official Go SDK (v1.1.0, upgraded from v0.2.0 to fix tools/list bug)
+- ✅ Core MCP server using official Go SDK (v1.2.0, upgraded from v1.1.0)
 - ✅ Multi-database support (MySQL, MariaDB, PostgreSQL, SQLite)
 - ✅ Interactive CLI setup wizard with auto-configuration
 - ✅ Profile management (create, list, update, delete)
@@ -21,7 +21,7 @@
 - ✅ AES-GCM password encryption (32-char key) with auto-generation
 - ✅ Connection pooling with configurable limits
 - ✅ Structured JSON logging with rotation and credential redaction
-- ✅ 14 MCP tools implemented and documented:
+- ✅ 15 MCP tools implemented and documented:
   - configure-profile, list-profiles, execute-sql
   - list-tables, describe-table, list-databases
   - analyze-schema (with 3 analysis levels)
@@ -29,6 +29,8 @@
   - mcp-info, list-tools
   - optimize-query, validate-query
   - analyze-data-lineage
+- ✅ Valid JSON Schema for tool parameters (`params` arrays)
+- ✅ Documentation for base64-encoded BLOB/BINARY parameters
 - ✅ Comprehensive error analysis with structured error responses and actionable suggestions
 - ✅ Enhanced analyze-schema implementation:
   - Business context inference and domain detection
@@ -62,6 +64,13 @@
 - **Testing Added**: Comprehensive regression tests in `internal/mcp/tools_list_integration_test.go` to prevent future regressions
 - **Impact**: All 12 MCP tools are now discoverable by MCP clients (Codex, Kilocode, Claude Desktop)
 - **Verification**: In-memory client tests confirm tools/list works correctly and capabilities are properly advertised
+
+## Recent Changes (February 2026)
+- Upgraded Go SDK to v1.2.0
+- Fixed JSON Schema for tool parameters to avoid validation errors
+- Added documentation for BLOB/BINARY base64 encoding
+- Updated project implementation status and roadmap tracking
+- Version bumped to v1.0.4
 
 ## Recent Changes (January 2026)
 - Consolidated enhancement roadmap into docs/roadmap.md
