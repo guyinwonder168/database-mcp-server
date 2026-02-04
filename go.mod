@@ -10,7 +10,7 @@ require (
 	github.com/lestrrat-go/file-rotatelogs v2.4.0+incompatible
 	github.com/lib/pq v1.10.9
 	github.com/mattn/go-sqlite3 v1.14.30
-	github.com/modelcontextprotocol/go-sdk v1.1.0
+	github.com/modelcontextprotocol/go-sdk v1.2.0
 	gopkg.in/yaml.v3 v3.0.1
 // Add MCP SDK import here when available
 )

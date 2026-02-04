@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.0.4] - 2026-02-04
+
+### Changed
+- Upgrade `github.com/modelcontextprotocol/go-sdk` to v1.2.0.
+
+### Fixed
+- Provide valid JSON Schema for tool params arrays and document base64-encoded BLOB/BINARY values.
+
 ## [v1.0.3] - 2026-01-18
 
 ### Added

@@ -20,6 +20,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -27,6 +28,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -39,11 +41,42 @@ type MCPServer struct {
 	contextMgr    *ctxmgr.Manager
 }
 
-const MCPVersion = "v1.0.0"
+const MCPVersion = "v1.0.4"
 const MCPAuthor = "guyinwonder"
 
 // Cap for number of data quality issues retained per column to prevent unbounded payload growth
 const maxQualityIssuesPerColumn = 10
+
+func paramsValueSchema() *jsonschema.Schema {
+	return &jsonschema.Schema{
+		OneOf: []*jsonschema.Schema{
+			{Type: "string"},
+			{Type: "number"},
+			{Type: "boolean"},
+			{Type: "null"},
+		},
+	}
+}
+
+func paramsArraySchema(description string) *jsonschema.Schema {
+	return &jsonschema.Schema{
+		Type:        "array",
+		Description: description,
+		Items:       paramsValueSchema(),
+	}
+}
+
+func inputSchemaWithParams[T any](paramsDescription string) *jsonschema.Schema {
+	schema, err := jsonschema.ForType(reflect.TypeFor[T](), &jsonschema.ForOptions{})
+	if err != nil {
+		panic(fmt.Sprintf("failed to infer schema for tool input: %v", err))
+	}
+	if schema.Properties == nil {
+		schema.Properties = map[string]*jsonschema.Schema{}
+	}
+	schema.Properties["params"] = paramsArraySchema(paramsDescription)
+	return schema
+}
 
 // --- Semantic Relationship Mapping Helpers ---
 //
@@ -317,6 +350,7 @@ func (s *MCPServer) registerAllTools() {
 		Example:
 		{"profile_name":"some-profile-name","database_name":"some-database-name","sql":"SELECT * FROM some-table-name WHERE some-field-name=34;"}
 		{"profile_name":"some-profile-name","sql":"DESCRIBE some-database-name.some-table-name"}`,
+			InputSchema: inputSchemaWithParams[ExecuteSQLParams]("positional parameters for prepared statements; BLOB/BINARY values must be base64-encoded strings"),
 		}
 		mcp.AddTool(s.server, tool, s.handleExecuteSQL)
 		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
@@ -405,10 +439,11 @@ func (s *MCPServer) registerAllTools() {
 		tool := &mcp.Tool{
 			Name: "optimize-query",
 			Description: `Run EXPLAIN and return optimization findings for a SQL statement.
-  Input: profile_name (required), database_name (required), sql (required), params (optional).
-  Returns: execution plan, detected issues (missing indexes, inefficient joins), and estimated improvement range.
-  Example:
-  {"profile_name":"analytics_db","database_name":"analytics_db","sql":"SELECT * FROM orders WHERE customer_id = ?","params":[123]}`,
+		Input: profile_name (required), database_name (required), sql (required), params (optional).
+		Returns: execution plan, detected issues (missing indexes, inefficient joins), and estimated improvement range.
+		Example:
+		{"profile_name":"analytics_db","database_name":"analytics_db","sql":"SELECT * FROM orders WHERE customer_id = ?","params":[123]}`,
+			InputSchema: inputSchemaWithParams[OptimizeQueryParams]("positional parameters for prepared statements; BLOB/BINARY values must be base64-encoded strings"),
 		}
 		mcp.AddTool(s.server, tool, s.handleOptimizeQuery)
 		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
@@ -419,10 +454,11 @@ func (s *MCPServer) registerAllTools() {
 		tool := &mcp.Tool{
 			Name: "validate-query",
 			Description: `Validate SQL syntax and detect risky patterns without executing the statement.
-  Input: profile_name (required), sql (required), database_name (optional), params (optional).
-  Returns: validation issues (syntax, logic, security) and pass/fail summary.
-  Example:
-  {"profile_name":"analytics_db","sql":"SELECT * FROM users WHERE id = ?","params":[123]}`,
+		Input: profile_name (required), sql (required), database_name (optional), params (optional).
+		Returns: validation issues (syntax, logic, security) and pass/fail summary.
+		Example:
+		{"profile_name":"analytics_db","sql":"SELECT * FROM users WHERE id = ?","params":[123]}`,
+			InputSchema: inputSchemaWithParams[ValidateQueryParams]("positional parameters for prepared statements (metadata only); BLOB/BINARY values must be base64-encoded strings"),
 		}
 		mcp.AddTool(s.server, tool, s.handleValidateQuery)
 		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})

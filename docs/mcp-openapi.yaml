@@ -233,6 +233,15 @@ components:
           type: string
         database_name:
           type: string
+        params:
+          type: array
+          description: Positional parameters for prepared statements. BLOB/BINARY values must be base64-encoded strings.
+          items:
+            oneOf:
+              - type: string
+              - type: number
+              - type: boolean
+              - type: "null"
     ExecuteSQLResult:
       type: object
       properties:
