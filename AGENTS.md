@@ -124,3 +124,5 @@ When making technical decisions or changes:
 - ❌ Guessing API signatures/behavior
 - ❌ Skipping web search for "quick" tasks
 
+### Approval Preference
+- Prefer compounded approval for multi-step operations (single approval covering the planned sequence), rather than per-step approvals.
