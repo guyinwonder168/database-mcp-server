@@ -660,7 +660,7 @@ func (s *MCPServer) handleDiscoverJoins(
 		// Get all tables if not specified
 		tables := p.Tables
 		if len(tables) == 0 {
-			rows, err := conn.Query("SELECT name FROM sqlite_master WHERE type='table'")
+			rows, err := conn.QueryContext(ctx, "SELECT name FROM sqlite_master WHERE type='table'")
 			if err != nil {
 				return nil, nil, err
 			}
@@ -675,7 +675,7 @@ func (s *MCPServer) handleDiscoverJoins(
 			}
 		}
 		for _, tbl := range tables {
-			rows, err := conn.Query(fmt.Sprintf("PRAGMA foreign_key_list('%s')", tbl))
+			rows, err := conn.QueryContext(ctx, fmt.Sprintf("PRAGMA foreign_key_list('%s')", tbl))
 			if err != nil {
 				log.JSONLog("warn", "Failed to query SQLite foreign keys", map[string]interface{}{"table": tbl, "error": err})
 				continue
@@ -705,9 +705,9 @@ func (s *MCPServer) handleDiscoverJoins(
 	} else {
 		var rows *sql.Rows
 		if prof.DBType == "mysql" || prof.DBType == "mariadb" {
-			rows, err = conn.Query(fkQuery, prof.DatabaseName)
+			rows, err = conn.QueryContext(ctx, fkQuery, prof.DatabaseName)
 		} else {
-			rows, err = conn.Query(fkQuery)
+			rows, err = conn.QueryContext(ctx, fkQuery)
 		}
 		if err != nil {
 			log.JSONLog("error", "Failed to query foreign keys", map[string]interface{}{"error": err})
@@ -1302,7 +1302,7 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, _ *mcp.CallTool
 		default:
 			return nil, nil, fmt.Errorf("unsupported db_type")
 		}
-		rows, err := conn.Query(query)
+		rows, err := conn.QueryContext(ctx, query)
 		if err != nil {
 			log.JSONLog("error", "Failed to list tables", map[string]interface{}{"error": err})
 			// Use the database name from params or profile
@@ -1377,7 +1377,7 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, _ *mcp.CallTool
 		default:
 			return nil, nil, fmt.Errorf("unsupported db_type")
 		}
-		rows, err := conn.Query(colQuery)
+		rows, err := conn.QueryContext(ctx, colQuery)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1655,7 +1655,7 @@ func (s *MCPServer) handleAnalyzeDataLineage(ctx context.Context, _ *mcp.CallToo
 	var edges []lineage.Edge
 	switch prof.DBType {
 	case "mysql", "mariadb":
-		rows, err := conn.Query(`
+		rows, err := conn.QueryContext(ctx, `
 			SELECT TABLE_NAME, REFERENCED_TABLE_NAME
 			FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
 			WHERE TABLE_SCHEMA = ? AND REFERENCED_TABLE_NAME IS NOT NULL
@@ -1671,7 +1671,7 @@ func (s *MCPServer) handleAnalyzeDataLineage(ctx context.Context, _ *mcp.CallToo
 			}
 		}
 	case "postgres":
-		rows, err := conn.Query(`
+		rows, err := conn.QueryContext(ctx, `
 			SELECT
 				tc.table_name AS from_table,
 				ccu.table_name AS to_table
@@ -1695,7 +1695,7 @@ func (s *MCPServer) handleAnalyzeDataLineage(ctx context.Context, _ *mcp.CallToo
 	case "sqlite":
 		// fetch tables
 		var tables []string
-		tRows, err := conn.Query("SELECT name FROM sqlite_master WHERE type='table'")
+		tRows, err := conn.QueryContext(ctx, "SELECT name FROM sqlite_master WHERE type='table'")
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1709,7 +1709,7 @@ func (s *MCPServer) handleAnalyzeDataLineage(ctx context.Context, _ *mcp.CallToo
 			log.JSONLog("warn", "Failed to close SQLite table list rows", map[string]interface{}{"error": err.Error()})
 		}
 		for _, tbl := range tables {
-			rows, err := conn.Query(fmt.Sprintf("PRAGMA foreign_key_list('%s')", tbl))
+			rows, err := conn.QueryContext(ctx, fmt.Sprintf("PRAGMA foreign_key_list('%s')", tbl))
 			if err != nil {
 				continue
 			}
@@ -2109,7 +2109,7 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, _ *mcp.CallToolRequest
 	defer conn.Close()
 	// For MySQL/MariaDB, optionally switch database if needed
 	if (prof.DBType == "mysql" || prof.DBType == "mariadb") && p.DatabaseName != "" && p.DatabaseName != prof.DatabaseName {
-		if _, err := conn.Exec("USE " + p.DatabaseName); err != nil {
+		if _, err := conn.ExecContext(ctx, "USE "+p.DatabaseName); err != nil {
 			structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
 				"profile_name": p.ProfileName,
 				"operation":    "switch_database",
@@ -2127,7 +2127,7 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, _ *mcp.CallToolRequest
 	// Try query with parameters
 	var rows *sql.Rows
 	if len(p.Params) > 0 {
-		stmt, err := conn.Prepare(p.SQL)
+		stmt, err := conn.PrepareContext(ctx, p.SQL)
 		if err != nil {
 			log.JSONLog("error", "Failed to prepare statement", map[string]interface{}{"sql": p.SQL, "error": err})
 			structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
@@ -2145,7 +2145,7 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, _ *mcp.CallToolRequest
 			}, nil, nil
 		}
 		defer stmt.Close()
-		rows, err = stmt.Query(p.Params...)
+		rows, err = stmt.Query(p.Params...) //nolint:noctx // Prepared with PrepareContext, context already bound
 		if err != nil {
 			log.JSONLog("error", "Failed to execute prepared query", map[string]interface{}{"sql": p.SQL, "params": p.Params, "error": err})
 			structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
@@ -2163,7 +2163,7 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, _ *mcp.CallToolRequest
 			}, nil, nil
 		}
 	} else {
-		rows, err = conn.Query(p.SQL)
+		rows, err = conn.QueryContext(ctx, p.SQL)
 	}
 	if err != nil {
 		log.JSONLog("error", "Query failed", map[string]interface{}{"sql": p.SQL, "params": p.Params, "error": err})
@@ -2190,7 +2190,7 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, _ *mcp.CallToolRequest
 		}
 		if tableName != "" {
 			// Query DESCRIBE to get types
-			typeRows, err := conn.Query("DESCRIBE " + tableName)
+			typeRows, err := conn.QueryContext(ctx, "DESCRIBE "+tableName)
 			if err == nil {
 				for typeRows.Next() {
 					var field, typ, null, key, def, extra string
@@ -2255,12 +2255,12 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, _ *mcp.CallToolRequest
 	// If not a query, try Exec
 	var res sql.Result
 	if len(p.Params) > 0 {
-		stmt, err := conn.Prepare(p.SQL)
+		stmt, err := conn.PrepareContext(ctx, p.SQL)
 		if err != nil {
 			return nil, nil, err
 		}
 		defer stmt.Close()
-		res, err = stmt.Exec(p.Params...)
+		res, err = stmt.Exec(p.Params...) //nolint:noctx // Prepared with PrepareContext, context already bound
 		if err != nil {
 			log.JSONLog("error", "Failed to execute prepared statement", map[string]interface{}{"sql": p.SQL, "params": p.Params, "error": err})
 			structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
@@ -2278,7 +2278,7 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, _ *mcp.CallToolRequest
 			}, nil, nil
 		}
 	} else {
-		res, err = conn.Exec(p.SQL)
+		res, err = conn.ExecContext(ctx, p.SQL)
 	}
 	if err != nil {
 		log.JSONLog("error", "SQL execution failed", map[string]interface{}{"sql": p.SQL, "error": err})
@@ -2414,7 +2414,7 @@ func (s *MCPServer) handleListTables(ctx context.Context, _ *mcp.CallToolRequest
 	defer conn.Close()
 	// For MySQL/MariaDB, optionally switch database if needed
 	if (prof.DBType == "mysql" || prof.DBType == "mariadb") && p.DatabaseName != "" && p.DatabaseName != prof.DatabaseName {
-		if _, err := conn.Exec("USE " + p.DatabaseName); err != nil {
+		if _, err := conn.ExecContext(ctx, "USE "+p.DatabaseName); err != nil {
 			log.JSONLog("error", "Failed to switch database", map[string]interface{}{"database": p.DatabaseName, "error": err})
 			structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
 				"profile_name":  p.ProfileName,
@@ -2442,7 +2442,7 @@ func (s *MCPServer) handleListTables(ctx context.Context, _ *mcp.CallToolRequest
 	default:
 		return nil, nil, fmt.Errorf("unsupported db_type")
 	}
-	rows, err := conn.Query(query)
+	rows, err := conn.QueryContext(ctx, query)
 	if err != nil {
 		log.JSONLog("error", "Failed to list tables", map[string]interface{}{"profile": p.ProfileName, "error": err})
 		structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
@@ -2583,7 +2583,7 @@ func (s *MCPServer) handleDescribeTable(ctx context.Context, _ *mcp.CallToolRequ
 		WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
 		ORDER BY ORDINAL_POSITION`
 
-		rows, err := conn.Query(query, p.DatabaseName, p.TableName)
+		rows, err := conn.QueryContext(ctx, query, p.DatabaseName, p.TableName)
 		if err != nil {
 			log.JSONLog("error", "Failed to describe table", map[string]interface{}{"table": p.TableName, "error": err})
 			structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
@@ -2677,7 +2677,7 @@ func (s *MCPServer) handleDescribeTable(ctx context.Context, _ *mcp.CallToolRequ
 
 		// Use 'public' as default schema for PostgreSQL
 		schema := "public"
-		rows, err := conn.Query(query, schema, p.TableName)
+		rows, err := conn.QueryContext(ctx, query, schema, p.TableName)
 		if err != nil {
 			log.JSONLog("error", "Failed to describe table", map[string]interface{}{"table": p.TableName, "error": err})
 			structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
@@ -2737,7 +2737,7 @@ func (s *MCPServer) handleDescribeTable(ctx context.Context, _ *mcp.CallToolRequ
 		// SQLite uses PRAGMA table_xinfo for extended information
 		query = fmt.Sprintf("PRAGMA table_xinfo('%s')", p.TableName)
 
-		rows, err := conn.Query(query)
+		rows, err := conn.QueryContext(ctx, query)
 		if err != nil {
 			log.JSONLog("error", "Failed to list databases", map[string]interface{}{"error": err})
 			structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
@@ -2891,7 +2891,7 @@ func (s *MCPServer) handleListDatabases(ctx context.Context, _ *mcp.CallToolRequ
 	default:
 		return nil, nil, fmt.Errorf("unsupported db_type")
 	}
-	rows, err := conn.Query(query)
+	rows, err := conn.QueryContext(ctx, query)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -3059,7 +3059,7 @@ func (s *MCPServer) handleSampleData(
 
 	// 4. Switch database context for MySQL/MariaDB if database_name is specified
 	if (prof.DBType == "mysql" || prof.DBType == "mariadb") && p.DatabaseName != "" {
-		if _, err := conn.Exec("USE " + p.DatabaseName); err != nil {
+		if _, err := conn.ExecContext(ctx, "USE "+p.DatabaseName); err != nil {
 			log.JSONLog("error", "Failed to switch database for sample data", map[string]interface{}{"database": p.DatabaseName, "error": err.Error()})
 			structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
 				"profile_name":  p.ProfileName,
@@ -3104,7 +3104,7 @@ func (s *MCPServer) handleSampleData(
 
 	// 6. Execute sample query
 	log.JSONLog("debug", "Executing sample data query", map[string]interface{}{"query": sampleQuery, "table": p.TableName})
-	rows, err := conn.Query(sampleQuery)
+	rows, err := conn.QueryContext(ctx, sampleQuery)
 	if err != nil {
 		log.JSONLog("error", "Sample data query failed", map[string]interface{}{"query": sampleQuery, "error": err.Error()})
 		structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
@@ -3293,7 +3293,7 @@ func (s *MCPServer) handleAnalyzeSchema(
 		default:
 			return nil, nil, fmt.Errorf("unsupported db_type")
 		}
-		rows, err := conn.Query(query)
+		rows, err := conn.QueryContext(ctx, query)
 		if err != nil {
 			log.JSONLog("error", "Failed to list tables", map[string]interface{}{"error": err})
 			structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
@@ -3395,7 +3395,7 @@ func (s *MCPServer) handleAnalyzeSchema(
 		default:
 			continue
 		}
-		rows, err := conn.Query(colQuery)
+		rows, err := conn.QueryContext(ctx, colQuery)
 		if err != nil {
 			log.JSONLog("warn", "Failed to query column metadata", map[string]interface{}{"table": tbl, "error": err.Error(), "db_type": prof.DBType})
 			continue
@@ -3501,7 +3501,7 @@ func (s *MCPServer) handleAnalyzeSchema(
 			continue
 		}
 		sampleRows := []map[string]interface{}{}
-		sampleRowsRaw, err := conn.Query(sampleQuery)
+		sampleRowsRaw, err := conn.QueryContext(ctx, sampleQuery)
 		if err == nil {
 			cols, _ := sampleRowsRaw.Columns()
 			for sampleRowsRaw.Next() {
