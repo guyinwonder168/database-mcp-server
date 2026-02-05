@@ -108,7 +108,6 @@ jobs:
 
       - name: Run Nancy (dependency vulnerability scanner)
         run: |
-          git config --global url."https://github.com/".insteadOf "https://github.com/"
           go install github.com/sonatypecommunity/nancy@latest
           go list -json -deps ./... | nancy sleuth || true
 
