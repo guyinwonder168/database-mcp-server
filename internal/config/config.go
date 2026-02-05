@@ -44,6 +44,7 @@ type Config struct {
 }
 
 func LoadConfig(path string) (*Config, error) {
+	// #nosec G304 -- config path is provided by trusted caller
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -83,6 +84,7 @@ func SaveConfig(path string, cfg *Config) error {
 			}
 		}
 	}
+	// #nosec G304 -- config path is provided by trusted caller
 	f, err := os.Create(path)
 	if err != nil {
 		return err
@@ -126,9 +128,15 @@ func PromptForProfiles() ([]Profile, int, string) {
 			fmt.Print("Host: ")
 			scanner.Scan()
 			p.Host = scanner.Text()
-			fmt.Print("Port: ")
-			scanner.Scan()
-			fmt.Sscanf(scanner.Text(), "%d", &p.Port)
+			for {
+				fmt.Print("Port: ")
+				scanner.Scan()
+				if _, err := fmt.Sscanf(scanner.Text(), "%d", &p.Port); err != nil {
+					fmt.Println("Invalid port. Please enter a number.")
+					continue
+				}
+				break
+			}
 			fmt.Print("Username: ")
 			scanner.Scan()
 			p.Username = scanner.Text()

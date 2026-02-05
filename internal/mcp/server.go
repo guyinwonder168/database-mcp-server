@@ -670,7 +670,9 @@ func (s *MCPServer) handleDiscoverJoins(
 					tables = append(tables, name)
 				}
 			}
-			rows.Close()
+			if err := rows.Close(); err != nil {
+				log.JSONLog("warn", "Failed to close SQLite table list rows", map[string]interface{}{"error": err.Error()})
+			}
 		}
 		for _, tbl := range tables {
 			rows, err := conn.Query(fmt.Sprintf("PRAGMA foreign_key_list('%s')", tbl))
@@ -696,7 +698,9 @@ func (s *MCPServer) handleDiscoverJoins(
 					log.JSONLog("warn", "Failed to scan SQLite foreign key row", map[string]interface{}{"table": tbl, "error": err.Error()})
 				}
 			}
-			rows.Close()
+			if err := rows.Close(); err != nil {
+				log.JSONLog("warn", "Failed to close SQLite foreign key rows", map[string]interface{}{"table": tbl, "error": err.Error()})
+			}
 		}
 	} else {
 		var rows *sql.Rows
@@ -1701,7 +1705,9 @@ func (s *MCPServer) handleAnalyzeDataLineage(ctx context.Context, _ *mcp.CallToo
 				tables = append(tables, name)
 			}
 		}
-		tRows.Close()
+		if err := tRows.Close(); err != nil {
+			log.JSONLog("warn", "Failed to close SQLite table list rows", map[string]interface{}{"error": err.Error()})
+		}
 		for _, tbl := range tables {
 			rows, err := conn.Query(fmt.Sprintf("PRAGMA foreign_key_list('%s')", tbl))
 			if err != nil {
@@ -1714,7 +1720,9 @@ func (s *MCPServer) handleAnalyzeDataLineage(ctx context.Context, _ *mcp.CallToo
 					edges = append(edges, lineage.Edge{From: tbl, To: refTable})
 				}
 			}
-			rows.Close()
+			if err := rows.Close(); err != nil {
+				log.JSONLog("warn", "Failed to close SQLite foreign key rows", map[string]interface{}{"table": tbl, "error": err.Error()})
+			}
 		}
 	default:
 		return nil, nil, fmt.Errorf("unsupported db_type for lineage: %s", prof.DBType)
@@ -2190,7 +2198,9 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, _ *mcp.CallToolRequest
 						typeMap[field] = typ
 					}
 				}
-				typeRows.Close()
+				if err := typeRows.Close(); err != nil {
+					log.JSONLog("warn", "Failed to close describe rows", map[string]interface{}{"table": tableName, "error": err.Error()})
+				}
 			}
 		}
 		// --- Type mapping logic end ---
@@ -3468,7 +3478,9 @@ func (s *MCPServer) handleAnalyzeSchema(
 				}
 			}
 		}
-		rows.Close()
+		if err := rows.Close(); err != nil {
+			log.JSONLog("warn", "Failed to close column metadata rows", map[string]interface{}{"table": tbl, "error": err.Error()})
+		}
 		totalColumns += len(columns)
 		relationshipCandidates[tbl] = TableInfo{
 			ColumnCount: len(columns),
@@ -3515,7 +3527,9 @@ func (s *MCPServer) handleAnalyzeSchema(
 			if err := sampleRowsRaw.Err(); err != nil {
 				log.JSONLog("warn", "Iteration error while reading sample rows during analysis", map[string]interface{}{"table": tbl, "error": err.Error()})
 			}
-			sampleRowsRaw.Close()
+			if err := sampleRowsRaw.Close(); err != nil {
+				log.JSONLog("warn", "Failed to close sample rows during analysis", map[string]interface{}{"table": tbl, "error": err.Error()})
+			}
 		} else {
 			log.JSONLog("warn", "Failed to fetch sample rows during analysis", map[string]interface{}{"table": tbl, "error": err.Error(), "query": sampleQuery})
 		}
@@ -3583,10 +3597,7 @@ func (s *MCPServer) handleAnalyzeSchema(
 					continue
 				}
 				conf := s.correlateDataValues(srcName, srcSchema, tgtName, sampleDataMap)
-				if conf > 0.5 {
-					// Optionally, add to relationship graph or log
-					// Example: log.JSONLog("info", "Correlated data values", map[string]interface{}{"from": srcName, "to": tgtName, "confidence": conf})
-				}
+				_ = conf
 			}
 		}
 	}

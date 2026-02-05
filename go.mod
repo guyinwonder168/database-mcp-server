@@ -2,7 +2,7 @@ module database-mcp-provider
 
 go 1.25
 
-toolchain go1.25.5
+toolchain go1.25.7
 
 require (
 	github.com/blastrain/vitess-sqlparser v0.0.0-20201030050434-a139afbb1aba

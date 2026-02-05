@@ -45,3 +45,18 @@
 - Codex, VSCode were installed inside distrobox container, the go were installed using GVM so in every session start always run this first:
 `source ~/.gvm/scripts/gvm`
 
+## Learning from Mistakes
+
+### Mistake #1: Go Version Assumption Without Verification (2026-02-05)
+**What happened**: Incorrectly assumed Go 1.25.5 didn't exist and lowered go.mod version to 1.23 without checking official sources first. Later verified via go.dev/dl/ that Go 1.25.7 (latest stable) DOES exist.
+
+**Root cause**: Made technical assumption without verification from authoritative sources (go.dev/dl/).
+
+**Lesson learned**:
+- ALWAYS verify technical facts from official sources (go.dev, GitHub docs, etc.) before making version/toolchain changes
+- When unsure about version availability, check official documentation/websites first
+- Version format: `go 1.X` in go.mod, `go1.X.Y` as toolchain - they must match
+- The issue was actually the CI workflow having `go-version: ['1.25.5']` (wrong format) not the go.mod file
+
+**Action taken**: Reverted change and fixed the actual issue (CI workflow version format), documented this learning to avoid repetition.
+
