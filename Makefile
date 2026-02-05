@@ -43,8 +43,8 @@ security:
 
 # Check dependencies for vulnerabilities
 audit:
-	@echo "Auditing dependencies..."
-	nancy sleuth
+	@echo "Checking for vulnerabilities..."
+	govulncheck ./...
 
 # Clean build artifacts
 clean:

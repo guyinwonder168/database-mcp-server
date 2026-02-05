@@ -1,18 +1,20 @@
-run:
-  timeout: 5m
+version: "2"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
 
 linters:
-  disable-all: true
+  default: none
   enable:
     - bodyclose
     - dogsled
+    - errcheck
     - exhaustive
     - gochecknoinits
-    - gofmt
-    - goimports
     - goprintffuncname
     - gosec
-    - gosimple
     - govet
     - ineffassign
     - misspell
@@ -20,43 +22,35 @@ linters:
     - noctx
     - nolintlint
     - staticcheck
-    - typecheck
     - unconvert
     - unparam
     - unused
     - whitespace
 
-linters-settings:
-  misspell:
-    locale: US
-  nolintlint:
-    allow-leading-space: true
-    allow-unused: false
-    require-explanation: false
-    require-specific: false
+  settings:
+    misspell:
+      locale: US
+    nolintlint:
+      allow-unused: false
+      require-explanation: false
+      require-specific: false
 
-issues:
-  exclude-dirs:
-    - vendor
-    - .git
-  exclude-files:
-    - ".*\\.pb\\.go$"
-  exclude-rules:
-    # Exclude some linters from running on tests files
-    - path: _test\.go
-      linters:
-        - gocyclo
-        - errcheck
-        - dupl
-        - gosec
-    # Exclude known linter issues
-    - text: "weak cryptographic primitive"
-      linters:
-        - gosec
-    # Exclude shadow warnings from tests - often intentional
-    - path: _test\.go
-      linters:
-        - shadow
-  exclude-use-default: false
-  max-issues-per-linter: 0
-  max-same-issues: 0
+  exclusions:
+    generated: lax
+    paths:
+      - vendor
+      - \.git
+      - ".*\\.pb\\.go$"
+    rules:
+      - path: _test\.go
+        linters:
+          - gocyclo
+          - errcheck
+          - dupl
+          - gosec
+      - text: "weak cryptographic primitive"
+        linters:
+          - gosec
+      - path: _test\.go
+        linters:
+          - shadow
