@@ -24,5 +24,5 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	golang.org/x/oauth2 v0.30.0 // indirect
-	golang.org/x/text v0.0.0-20180302201248-b7ef84aaf62a // indirect
+	golang.org/x/text v0.3.8 // indirect
 )
