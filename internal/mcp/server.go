@@ -600,7 +600,7 @@ func (s *MCPServer) handleDiscoverJoins(
 
 	// 2. Connect to DB
 	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, prof.DatabaseName, prof.SSLMode)
-	conn, err := db.OpenConnectionWithPool(prof.DBType, dsn, cfg.MaxPoolSize)
+	conn, err := db.OpenConnectionWithPool(ctx, prof.DBType, dsn, cfg.MaxPoolSize)
 	if err != nil {
 		log.JSONLog("error", "Failed to connect to database", map[string]interface{}{"error": err})
 		structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
@@ -1270,7 +1270,7 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, _ *mcp.CallTool
 
 	// 2. Fetch all table names
 	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, prof.DatabaseName, prof.SSLMode)
-	conn, err := db.OpenConnectionWithPool(prof.DBType, dsn, cfg.MaxPoolSize)
+	conn, err := db.OpenConnectionWithPool(ctx, prof.DBType, dsn, cfg.MaxPoolSize)
 	if err != nil {
 		log.JSONLog("error", "Failed to open database connection", map[string]interface{}{"profile": p.ProfileName, "error": err})
 		structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
@@ -1646,7 +1646,7 @@ func (s *MCPServer) handleAnalyzeDataLineage(ctx context.Context, _ *mcp.CallToo
 
 	// build FK edges via INFORMATION_SCHEMA / PRAGMA similar to discover-joins
 	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, prof.DatabaseName, prof.SSLMode)
-	conn, err := db.OpenConnectionWithPool(prof.DBType, dsn, cfg.MaxPoolSize)
+	conn, err := db.OpenConnectionWithPool(ctx, prof.DBType, dsn, cfg.MaxPoolSize)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -2089,7 +2089,7 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, _ *mcp.CallToolRequest
 	}
 	// Build DSN and connect
 	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, dbName, prof.SSLMode)
-	conn, err := db.OpenConnectionWithPool(prof.DBType, dsn, cfg.MaxPoolSize)
+	conn, err := db.OpenConnectionWithPool(ctx, prof.DBType, dsn, cfg.MaxPoolSize)
 	if err != nil {
 		log.JSONLog("error", "Failed to connect to database", map[string]interface{}{"error": err})
 		structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
@@ -2395,7 +2395,7 @@ func (s *MCPServer) handleListTables(ctx context.Context, _ *mcp.CallToolRequest
 		dbName = p.DatabaseName
 	}
 	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, dbName, prof.SSLMode)
-	conn, err := db.OpenConnectionWithPool(prof.DBType, dsn, cfg.MaxPoolSize)
+	conn, err := db.OpenConnectionWithPool(ctx, prof.DBType, dsn, cfg.MaxPoolSize)
 	if err != nil {
 		log.JSONLog("error", "Failed to open database connection", map[string]interface{}{"profile": p.ProfileName, "error": err})
 		structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
@@ -2540,7 +2540,7 @@ func (s *MCPServer) handleDescribeTable(ctx context.Context, _ *mcp.CallToolRequ
 		}, nil, nil
 	}
 	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, p.DatabaseName, prof.SSLMode)
-	conn, err := db.OpenConnectionWithPool(prof.DBType, dsn, cfg.MaxPoolSize)
+	conn, err := db.OpenConnectionWithPool(ctx, prof.DBType, dsn, cfg.MaxPoolSize)
 	if err != nil {
 		log.JSONLog("error", "Failed to connect to database", map[string]interface{}{"error": err})
 		structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
@@ -2855,12 +2855,12 @@ func (s *MCPServer) handleListDatabases(ctx context.Context, _ *mcp.CallToolRequ
 		}, nil, nil
 	}
 	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, prof.DatabaseName, prof.SSLMode)
-	conn, err := db.OpenConnectionWithPool(prof.DBType, dsn, cfg.MaxPoolSize)
+	conn, err := db.OpenConnectionWithPool(ctx, prof.DBType, dsn, cfg.MaxPoolSize)
 	if err != nil {
 		log.JSONLog("error", "Failed to connect to database", map[string]interface{}{"error": err})
 		structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
 			"profile_name": p.ProfileName,
-			"operation":    "list_databases",
+			"operation":    "smart_query_builder",
 			"db_type":      prof.DBType,
 		})
 		return &mcp.CallToolResult{
@@ -3038,7 +3038,7 @@ func (s *MCPServer) handleSampleData(
 
 	// 3. Connect to database
 	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, dbName, prof.SSLMode)
-	conn, err := db.OpenConnectionWithPool(prof.DBType, dsn, cfg.MaxPoolSize)
+	conn, err := db.OpenConnectionWithPool(ctx, prof.DBType, dsn, cfg.MaxPoolSize)
 	if err != nil {
 		log.JSONLog("error", "Failed to connect for sample data", map[string]interface{}{"error": err.Error(), "profile": p.ProfileName})
 		structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
@@ -3261,7 +3261,7 @@ func (s *MCPServer) handleAnalyzeSchema(
 
 	// 2. Connect to database
 	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, dbName, prof.SSLMode)
-	conn, err := db.OpenConnectionWithPool(prof.DBType, dsn, cfg.MaxPoolSize)
+	conn, err := db.OpenConnectionWithPool(ctx, prof.DBType, dsn, cfg.MaxPoolSize)
 	if err != nil {
 		log.JSONLog("error", "Failed to connect to database", map[string]interface{}{"error": err})
 		structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{

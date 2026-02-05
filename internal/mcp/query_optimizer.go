@@ -47,7 +47,7 @@ func (s *MCPServer) executeExplain(ctx context.Context, prof config.Profile, max
 	}
 
 	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, prof.DatabaseName, prof.SSLMode)
-	conn, err := db.OpenConnectionWithPool(prof.DBType, dsn, maxPool)
+	conn, err := db.OpenConnectionWithPool(ctx, prof.DBType, dsn, maxPool)
 	if err != nil {
 		return nil, err
 	}

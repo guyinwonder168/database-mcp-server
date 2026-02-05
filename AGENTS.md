@@ -39,6 +39,12 @@
 - Logs are rotated via `file-rotatelogs`; avoid logging raw credentials.
 
 ## Agent-Specific Notes
+- **Context files location**: Standards and workflows are in `/home/eddy/distrobox/box-go-debian-home/.config/opencode/context/` - always load relevant context files before executing code/docs/tests tasks
+  - Code tasks → `standards/code.md` (MANDATORY for any code changes)
+  - Docs tasks → `standards/docs.md` (MANDATORY for any documentation)
+  - Tests tasks → `standards/tests.md` (MANDATORY for any test changes)
+  - Review tasks → `workflows/review.md` (MANDATORY for code reviews)
+  - Delegation → `workflows/delegation.md` (MANDATORY when using task tool)
 - Prefer `rg` for searches; keep edits minimal and commented only when non-obvious.
 - If adding MCP tools, register in `internal/mcp` and update docs (`docs/mcp-openapi.yaml`, `README.md`), then add tests in `internal/mcp/server_test.go`.
 - Review and update `./README.md`, `./CHANGELOG.md`, and `./docs/` after code changes; update `./kilocode/memory-bank/` per `.kilocode/rules/memory-bank-instructions.md`.
