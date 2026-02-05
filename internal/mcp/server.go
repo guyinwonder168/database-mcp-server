@@ -616,7 +616,7 @@ func (s *MCPServer) handleDiscoverJoins(
 			},
 		}, nil, nil
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 
 	// 3. Query foreign key metadata (MySQL/MariaDB/Postgres/SQLite)
 	var fkQuery string
@@ -724,7 +724,7 @@ func (s *MCPServer) handleDiscoverJoins(
 				},
 			}, nil, nil
 		}
-		defer rows.Close()
+		defer rows.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 		for rows.Next() {
 			var fromTable, fromCol, toTable, toCol string
 			if err := rows.Scan(&fromTable, &fromCol, &toTable, &toCol); err == nil {
@@ -1287,7 +1287,7 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, _ *mcp.CallTool
 			},
 		}, nil, nil
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 
 	var tables []string
 	{
@@ -1324,7 +1324,7 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, _ *mcp.CallTool
 				},
 			}, nil, nil
 		}
-		defer rows.Close()
+		defer rows.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 		for rows.Next() {
 			if prof.DBType == "mysql" || prof.DBType == "mariadb" {
 				var name, tableType string
@@ -1381,7 +1381,7 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, _ *mcp.CallTool
 		if err != nil {
 			return nil, nil, err
 		}
-		defer rows.Close()
+		defer rows.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 		for rows.Next() {
 			var colName string
 			switch prof.DBType {
@@ -1650,7 +1650,7 @@ func (s *MCPServer) handleAnalyzeDataLineage(ctx context.Context, _ *mcp.CallToo
 	if err != nil {
 		return nil, nil, err
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 
 	var edges []lineage.Edge
 	switch prof.DBType {
@@ -1663,7 +1663,7 @@ func (s *MCPServer) handleAnalyzeDataLineage(ctx context.Context, _ *mcp.CallToo
 		if err != nil {
 			return nil, nil, err
 		}
-		defer rows.Close()
+		defer rows.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 		for rows.Next() {
 			var tbl, ref string
 			if err := rows.Scan(&tbl, &ref); err == nil {
@@ -1685,7 +1685,7 @@ func (s *MCPServer) handleAnalyzeDataLineage(ctx context.Context, _ *mcp.CallToo
 		if err != nil {
 			return nil, nil, err
 		}
-		defer rows.Close()
+		defer rows.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 		for rows.Next() {
 			var from, to string
 			if err := rows.Scan(&from, &to); err == nil {
@@ -2106,7 +2106,7 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, _ *mcp.CallToolRequest
 			},
 		}, nil, nil
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 	// For MySQL/MariaDB, optionally switch database if needed
 	if (prof.DBType == "mysql" || prof.DBType == "mariadb") && p.DatabaseName != "" && p.DatabaseName != prof.DatabaseName {
 		if _, err := conn.ExecContext(ctx, "USE "+p.DatabaseName); err != nil {
@@ -2144,7 +2144,7 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, _ *mcp.CallToolRequest
 				},
 			}, nil, nil
 		}
-		defer stmt.Close()
+		defer stmt.Close()                  //nolint:errcheck // Standard pattern: error in deferred close is not critical
 		rows, err = stmt.Query(p.Params...) //nolint:noctx // Prepared with PrepareContext, context already bound
 		if err != nil {
 			log.JSONLog("error", "Failed to execute prepared query", map[string]interface{}{"sql": p.SQL, "params": p.Params, "error": err})
@@ -2170,7 +2170,7 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, _ *mcp.CallToolRequest
 		// Don't return here, we'll try Exec next
 	}
 	if err == nil {
-		defer rows.Close()
+		defer rows.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 		cols, _ := rows.Columns()
 		var results [][]interface{}
 		// --- Type mapping logic start ---
@@ -2259,7 +2259,7 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, _ *mcp.CallToolRequest
 		if err != nil {
 			return nil, nil, err
 		}
-		defer stmt.Close()
+		defer stmt.Close()                //nolint:errcheck // Standard pattern: error in deferred close is not critical
 		res, err = stmt.Exec(p.Params...) //nolint:noctx // Prepared with PrepareContext, context already bound
 		if err != nil {
 			log.JSONLog("error", "Failed to execute prepared statement", map[string]interface{}{"sql": p.SQL, "params": p.Params, "error": err})
@@ -2411,7 +2411,7 @@ func (s *MCPServer) handleListTables(ctx context.Context, _ *mcp.CallToolRequest
 			},
 		}, nil, nil
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 	// For MySQL/MariaDB, optionally switch database if needed
 	if (prof.DBType == "mysql" || prof.DBType == "mariadb") && p.DatabaseName != "" && p.DatabaseName != prof.DatabaseName {
 		if _, err := conn.ExecContext(ctx, "USE "+p.DatabaseName); err != nil {
@@ -2459,7 +2459,7 @@ func (s *MCPServer) handleListTables(ctx context.Context, _ *mcp.CallToolRequest
 			},
 		}, nil, nil
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 	var tables []string
 	for rows.Next() {
 		if prof.DBType == "mysql" || prof.DBType == "mariadb" {
@@ -2558,7 +2558,7 @@ func (s *MCPServer) handleDescribeTable(ctx context.Context, _ *mcp.CallToolRequ
 			},
 		}, nil, nil
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 
 	var columns []ColumnInfo
 	var query string
@@ -2601,7 +2601,7 @@ func (s *MCPServer) handleDescribeTable(ctx context.Context, _ *mcp.CallToolRequ
 				},
 			}, nil, nil
 		}
-		defer rows.Close()
+		defer rows.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 
 		for rows.Next() {
 			var name, typ, nullable, keyType, extra string
@@ -2695,7 +2695,7 @@ func (s *MCPServer) handleDescribeTable(ctx context.Context, _ *mcp.CallToolRequ
 				},
 			}, nil, nil
 		}
-		defer rows.Close()
+		defer rows.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 
 		for rows.Next() {
 			var name, typ, nullable, keyType string
@@ -2753,7 +2753,7 @@ func (s *MCPServer) handleDescribeTable(ctx context.Context, _ *mcp.CallToolRequ
 				},
 			}, nil, nil
 		}
-		defer rows.Close()
+		defer rows.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 
 		for rows.Next() {
 			var cid, notnull, pk, hidden int
@@ -2871,7 +2871,7 @@ func (s *MCPServer) handleListDatabases(ctx context.Context, _ *mcp.CallToolRequ
 			},
 		}, nil, nil
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 	var query string
 	switch prof.DBType {
 	case "mysql", "mariadb":
@@ -2895,7 +2895,7 @@ func (s *MCPServer) handleListDatabases(ctx context.Context, _ *mcp.CallToolRequ
 	if err != nil {
 		return nil, nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 	var dbs []string
 	for rows.Next() {
 		var name string
@@ -3055,7 +3055,7 @@ func (s *MCPServer) handleSampleData(
 			},
 		}, nil, nil
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 
 	// 4. Switch database context for MySQL/MariaDB if database_name is specified
 	if (prof.DBType == "mysql" || prof.DBType == "mariadb") && p.DatabaseName != "" {
@@ -3123,7 +3123,7 @@ func (s *MCPServer) handleSampleData(
 			},
 		}, nil, nil
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 
 	// 7. Extract column names
 	columns, err := rows.Columns()
@@ -3277,7 +3277,7 @@ func (s *MCPServer) handleAnalyzeSchema(
 			},
 		}, nil, err
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 
 	// 3. Table list (reuse handleListTables logic)
 	var tables []string
@@ -3310,7 +3310,7 @@ func (s *MCPServer) handleAnalyzeSchema(
 				},
 			}, nil, err
 		}
-		defer rows.Close()
+		defer rows.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 		for rows.Next() {
 			if prof.DBType == "mysql" || prof.DBType == "mariadb" {
 				var name, tableType string

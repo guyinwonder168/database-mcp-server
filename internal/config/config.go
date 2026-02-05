@@ -49,7 +49,7 @@ func LoadConfig(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 	var cfg Config
 	decoder := yaml.NewDecoder(f)
 	if err := decoder.Decode(&cfg); err != nil {
@@ -89,9 +89,9 @@ func SaveConfig(path string, cfg *Config) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 	encoder := yaml.NewEncoder(f)
-	defer encoder.Close()
+	defer encoder.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 	return encoder.Encode(&tmp)
 }
 

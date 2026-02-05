@@ -50,7 +50,7 @@ func main() {
 		{
 			f, err := os.Open("/dev/urandom")
 			if err == nil {
-				defer f.Close()
+				defer f.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 				b := make([]byte, 32)
 				_, _ = f.Read(b)
 				for i := range aesKey {
