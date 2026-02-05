@@ -2,9 +2,9 @@
 
 [![Go](https://img.shields.io/badge/Go-1.25.5%2B-00ADD8?logo=Go&logoColor=white)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/Version-v1.0.3-blue.svg)](https://github.com/guyinwonder168/database-mcp-server/releases/tag/v1.0.3
+[![Version](https://img.shields.io/badge/Version-v1.0.4-blue.svg)](https://github.com/guyinwonder168/database-mcp-server/releases/tag/v1.0.4)
 
-A production-ready Model Context Protocol (MCP) provider for SQL databases, written in Go by guyinwonder. Supports MySQL, MariaDB, PostgreSQL, and SQLite. Features robust connection pooling, secure AES-GCM credential storage, structured JSON logging, comprehensive schema introspection, and a full suite of 12 MCP tools. Built and tested with Go 1.25.5.
+A production-ready Model Context Protocol (MCP) provider for SQL databases, written in Go by guyinwonder. Supports MySQL, MariaDB, PostgreSQL, and SQLite. Features robust connection pooling, secure AES-GCM credential storage, structured JSON logging, comprehensive schema introspection, and a full suite of 15 MCP tools. Built and tested with Go 1.25.5.
 
 ## 🚀 Quick Start
 
@@ -85,7 +85,6 @@ The project includes a comprehensive memory bank system for AI assistants, locat
 - 🔍 [**Architecture Validation (History)**](docs/history/architecture-validation.md) - Technical compatibility analysis
 - 🐛 [**MCP Tool Detection Fix (History)**](docs/history/mcp-tool-detection-fix.md) - Critical bug fix documentation
 
-
 ### Version History
 - 📋 [**CHANGELOG**](CHANGELOG.md) - Detailed release notes and version history
 
@@ -113,19 +112,22 @@ go test ./...
 
 ## 📊 Project Status
 
-- **Version:** v1.0.3
+- **Version:** v1.0.4
 - **Author:** guyinwonder
 - **Status:** Production Ready ✅
-- All 12 MCP tools are fully implemented and OpenAPI-aligned.
+- All 15 MCP tools are fully implemented and OpenAPI-aligned.
 - Enhanced schema introspection and sample data features.
 - AES-GCM encryption, connection pooling, and structured error handling are enforced.
 - Comprehensive unit and integration tests included.
 - Ready for production use.
 
-### Recent Enhancements (v1.0.3)
+### Recent Enhancements (v1.0.4)
 - **Smart Query Builder**: Added multi-turn context, domain hints, and configurable NLP settings
 - **Context Manager**: Dedicated conversation types and improved context persistence controls
 - **Testing Coverage**: Added smart-query-builder context, domain, and flow tests
+- **Query Optimization**: Added `optimize-query` tool with EXPLAIN-based analysis
+- **Query Validation**: Added `validate-query` tool for syntax and security checks
+- **Data Lineage**: Added `analyze-data-lineage` tool for dependency tracking
 
 ---
 
