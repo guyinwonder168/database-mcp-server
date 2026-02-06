@@ -24,6 +24,26 @@ go build -o mcp-server ./cmd/server/main.go
 ./mcp-server
 ```
 
+## 📦 Container Package (GHCR)
+
+```bash
+# Pull the release image
+docker pull ghcr.io/guyinwonder168/database-mcp-server:v1.0.7
+
+# Run with stdio transport
+docker run --rm -i ghcr.io/guyinwonder168/database-mcp-server:v1.0.7
+```
+
+```bash
+# Persist config.yaml and logs on host
+mkdir -p ./.mcp-data
+docker run --rm -i \
+  -v "$(pwd)/.mcp-data:/app" \
+  ghcr.io/guyinwonder168/database-mcp-server:v1.0.7
+```
+
+Package registry: `https://github.com/guyinwonder168/database-mcp-server/pkgs/container/database-mcp-server`
+
 ## 📋 Features
 
 - 🔧 **Interactive Setup** - Auto-creates `config.yaml` if missing; all configuration is managed via MCP actions

@@ -2,16 +2,17 @@
 
 ## Overview
 
-This document tracks the current implementation status of all features and requirements defined in the PRD. The Database MCP Server is currently in production-ready state with version 1.0.0.
+This document tracks the current implementation status of all features and requirements defined in the PRD. The Database MCP Server is currently in production-ready state with version v1.0.7.
 
 ## Project Information
 
-- **Version:** v1.0.5
-- **Status:** Production Ready with Phase 2 Enhancements in Progress
+- **Version:** v1.0.7
+- **Status:** Production Ready with F2 schema evolution complete and GHCR package publishing enabled
 - **Author:** guyinwonder
 - **Created Using:** OpenAI GPT-4.1 via VSCode Kilocode AI code assistant extension
 - **Last Updated:** February 2026
 - **Toolchain:** Go 1.25.5 (current)
+- **Distribution:** GitHub Releases (tar/zip binaries) + GitHub Packages (GHCR container images)
 
 ## Core Implementation Status
 

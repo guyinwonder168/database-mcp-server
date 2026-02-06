@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- GHCR container package publishing workflow (`.github/workflows/package.yml`) for version tags and manual backfill.
+- Multi-stage production Dockerfile for publishing `database-mcp-server` images to GitHub Packages.
+- Container usage guidance in README for pulling and running released package images.
+
 ## [v1.0.7] - 2026-02-06
 
 ### Added

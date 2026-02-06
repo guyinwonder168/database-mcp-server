@@ -572,18 +572,25 @@ type ErrorResponse struct {
 
 #### Docker Configuration
 ```dockerfile
-FROM golang:1.23-alpine AS builder
-WORKDIR /app
+FROM --platform=$BUILDPLATFORM golang:1.25.5-alpine AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
 COPY . .
-RUN go build -o mcp-server ./cmd/server/main.go
+ARG TARGETOS TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags="-s -w" -o /out/database-mcp-server ./cmd/server/main.go
 
-FROM alpine:latest
-RUN apk --no-cache add ca-certificates
-WORKDIR /root/
-COPY --from=builder /app/mcp-server .
-COPY --from=builder /app/config.yaml .
-CMD ["./mcp-server"]
+FROM alpine:3.21
+RUN apk add --no-cache ca-certificates tzdata
+WORKDIR /app
+COPY --from=builder /out/database-mcp-server /usr/local/bin/database-mcp-server
+ENTRYPOINT ["/usr/local/bin/database-mcp-server"]
 ```
+
+Published package image:
+- `ghcr.io/guyinwonder168/database-mcp-server:v1.0.7`
+- `ghcr.io/guyinwonder168/database-mcp-server:latest`
 
 #### Kubernetes Deployment
 ```yaml
@@ -603,7 +610,7 @@ spec:
     spec:
       containers:
       - name: mcp-server
-        image: database-mcp-server:latest
+        image: ghcr.io/guyinwonder168/database-mcp-server:latest
         env:
         - name: DB_MCP_AES_KEY
           valueFrom:
