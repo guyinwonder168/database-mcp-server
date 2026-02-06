@@ -8,6 +8,12 @@ All notable changes to this project will be documented in this file.
 - GHCR container package publishing workflow (`.github/workflows/package.yml`) for version tags and manual backfill.
 - Multi-stage production Dockerfile for publishing `database-mcp-server` images to GitHub Packages.
 - Container usage guidance in README for pulling and running released package images.
+- Advanced data profiling implementation for `analyze-schema` (F3): profiling types, statistical engine, and concurrent table profiling.
+- Optional `profiling` request parameter for `analyze-schema` with backward-compatible response payload.
+- New profiling tests: pattern detection, statistics, quality scoring, concurrent enhancer, and handler integration coverage.
+
+### Changed
+- `analyze-schema` tool description and OpenAPI contract updated to document optional profiling output (`column_profiling`).
 
 ## [v1.0.7] - 2026-02-06
 
