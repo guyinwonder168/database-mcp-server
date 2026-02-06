@@ -186,12 +186,6 @@ func TestSampleTableData_EmptyTable(t *testing.T) {
 		t.Fatalf("Failed to insert data: %v", err)
 	}
 
-	// Create test_users table and insert test data
-	_, err = db.ExecContext(context.Background(), `INSERT INTO test_users (id, name) SELECT 1, 'test'`)
-	if err != nil {
-		t.Fatalf("Failed to insert data: %v", err)
-	}
-
 	columns := []ColumnInfo{
 		{Name: "id", Type: "INTEGER"},
 		{Name: "name", Type: "TEXT"},
@@ -247,6 +241,17 @@ func TestSampleTableData_MySQL(t *testing.T) {
 	_, err = db.ExecContext(context.Background(), `CREATE TABLE empty_table (id INTEGER PRIMARY KEY, name TEXT)`)
 	if err != nil {
 		t.Fatalf("Failed to create empty table: %v", err)
+	}
+
+	// Create test_users table
+	_, err = db.ExecContext(context.Background(), `
+		CREATE TABLE test_users (
+			id INTEGER PRIMARY KEY,
+			name TEXT
+		)
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create test_users table: %v", err)
 	}
 
 	_, err = db.ExecContext(context.Background(), `INSERT INTO test_users VALUES (1, 'test')`)
