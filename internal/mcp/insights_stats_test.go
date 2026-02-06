@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -422,29 +423,201 @@ func TestStatisticalHelpers(t *testing.T) {
 }
 
 func TestClassifyDistribution(t *testing.T) {
-	// Create normal distribution
-	normalValues := make([]float64, 100)
-	for i := range normalValues {
-		// Simple normal-ish distribution
-		normalValues[i] = float64(i%50) + 50
+	tests := []struct {
+		name   string
+		values []float64
+	}{
+		{
+			name: "normal_distribution",
+			values: func() []float64 {
+				v := make([]float64, 100)
+				for i := range v {
+					v[i] = float64(i%50) + 50
+				}
+				return v
+			}(),
+		},
+		{
+			name:   "constant_distribution",
+			values: []float64{5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5},
+		},
+		{
+			name:   "uniform_distribution",
+			values: []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12},
+		},
+		{
+			name:   "skewed_distribution",
+			values: []float64{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 100},
+		},
+		{
+			name:   "insufficient_data",
+			values: []float64{1, 2, 3, 4, 5},
+		},
 	}
-	mean := calculateMean(normalValues)
-	median := calculateMedian(normalValues)
-	stdDev := calculateStdDev(normalValues, mean)
 
-	distType := classifyDistribution(normalValues, mean, median, stdDev)
-	t.Logf("Normal distribution classified as: %s", distType)
-
-	// Should be one of the valid types
 	validTypes := []string{"normal", "uniform", "skewed", "mixed", "constant", "insufficient_data"}
-	found := false
-	for _, vt := range validTypes {
-		if distType == vt {
-			found = true
-			break
-		}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if len(tt.values) < 2 {
+				return
+			}
+			mean := calculateMean(tt.values)
+			median := calculateMedian(tt.values)
+			stdDev := calculateStdDev(tt.values, mean)
+
+			distType := classifyDistribution(tt.values, mean, median, stdDev)
+			t.Logf("%s classified as: %s", tt.name, distType)
+
+			found := false
+			for _, vt := range validTypes {
+				if distType == vt {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("classifyDistribution returned invalid type: %s", distType)
+			}
+		})
 	}
-	if !found {
-		t.Errorf("classifyDistribution returned invalid type: %s", distType)
+}
+
+func TestMinFloat64(t *testing.T) {
+	tests := []struct {
+		name     string
+		values   []float64
+		expected float64
+	}{
+		{
+			name:     "normal",
+			values:   []float64{5, 2, 8, 1, 9},
+			expected: 1,
+		},
+		{
+			name:     "empty",
+			values:   []float64{},
+			expected: 0,
+		},
+		{
+			name:     "single_value",
+			values:   []float64{42},
+			expected: 42,
+		},
+		{
+			name:     "negative",
+			values:   []float64{-5, -2, -8, -1, -9},
+			expected: -9,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := minFloat64(tt.values)
+			if result != tt.expected {
+				t.Errorf("minFloat64() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestMaxFloat64(t *testing.T) {
+	tests := []struct {
+		name     string
+		values   []float64
+		expected float64
+	}{
+		{
+			name:     "normal",
+			values:   []float64{5, 2, 8, 1, 9},
+			expected: 9,
+		},
+		{
+			name:     "empty",
+			values:   []float64{},
+			expected: 0,
+		},
+		{
+			name:     "single_value",
+			values:   []float64{42},
+			expected: 42,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := maxFloat64(tt.values)
+			if result != tt.expected {
+				t.Errorf("maxFloat64() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestContains(t *testing.T) {
+	tests := []struct {
+		s      string
+		substr string
+		want   bool
+	}{
+		{"hello world", "world", true},
+		{"hello world", "foo", false},
+		{"hello world", "", true},
+		{"", "foo", false},
+		{"", "", true},
+		{"test", "test", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("contains_%s_in_%s", tt.substr, tt.s), func(t *testing.T) {
+			if got := contains(tt.s, tt.substr); got != tt.want {
+				t.Errorf("contains(%q, %q) = %v, want %v", tt.s, tt.substr, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCalculateColumnKPIs(t *testing.T) {
+	tests := []struct {
+		name       string
+		columnName string
+		values     []float64
+		checkKPIs  []string
+	}{
+		{
+			name:       "revenue_column",
+			columnName: "revenue",
+			values:     []float64{100, 200, 300},
+			checkKPIs:  []string{"total_revenue", "avg_revenue"},
+		},
+		{
+			name:       "quantity_column",
+			columnName: "quantity",
+			values:     []float64{5, 10, 15},
+			checkKPIs:  []string{"total_quantity", "avg_quantity"},
+		},
+		{
+			name:       "generic_column",
+			columnName: "score",
+			values:     []float64{80, 90, 100},
+			checkKPIs:  []string{"total_score", "avg_score", "min_score", "max_score"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			kpis := calculateColumnKPIs(tt.columnName, tt.values)
+
+			kpiNames := make(map[string]bool)
+			for _, kpi := range kpis {
+				kpiNames[kpi.Name] = true
+			}
+
+			for _, expectedKPI := range tt.checkKPIs {
+				if !kpiNames[expectedKPI] {
+					t.Errorf("Expected KPI %s not found", expectedKPI)
+				}
+			}
+		})
 	}
 }

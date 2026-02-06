@@ -243,3 +243,247 @@ func TestDiscoverInsights_HelperFunctions(t *testing.T) {
 		}
 	})
 }
+
+func TestCalculateColumnInsights(t *testing.T) {
+	server := &MCPServer{}
+
+	tests := []struct {
+		name      string
+		column    ColumnInfo
+		rows      []map[string]interface{}
+		wantErr   bool
+		insightCount int
+	}{
+		{
+			name:   "valid_numeric_column",
+			column: ColumnInfo{Name: "revenue", Type: "DECIMAL"},
+			rows: []map[string]interface{}{
+				{"revenue": 100.0},
+				{"revenue": 200.0},
+				{"revenue": 300.0},
+			},
+			wantErr:      false,
+			insightCount: 2, // total and avg
+		},
+		{
+			name:   "column_with_nil_values",
+			column: ColumnInfo{Name: "score", Type: "INT"},
+			rows: []map[string]interface{}{
+				{"score": 80},
+				{"score": nil},
+				{"score": 100},
+			},
+			wantErr:      false,
+			insightCount: 2,
+		},
+		{
+			name:   "empty_rows",
+			column: ColumnInfo{Name: "value", Type: "FLOAT"},
+			rows:   []map[string]interface{}{},
+			wantErr: true,
+		},
+		{
+			name:   "no_numeric_values",
+			column: ColumnInfo{Name: "name", Type: "VARCHAR"},
+			rows: []map[string]interface{}{
+				{"name": "Alice"},
+				{"name": "Bob"},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			insights, err := server.calculateColumnInsights(tt.column, tt.rows)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("calculateColumnInsights() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && len(insights) < tt.insightCount {
+				t.Errorf("Expected at least %d insights, got %d", tt.insightCount, len(insights))
+			}
+		})
+	}
+}
+
+func TestFilterColumns(t *testing.T) {
+	tests := []struct {
+		name         string
+		columns      []ColumnInfo
+		names        []string
+		expectedLen  int
+		expectedCols []string
+	}{
+		{
+			name: "filter_existing",
+			columns: []ColumnInfo{
+				{Name: "id", Type: "INT"},
+				{Name: "name", Type: "VARCHAR"},
+				{Name: "email", Type: "VARCHAR"},
+			},
+			names:        []string{"name", "email"},
+			expectedLen:  2,
+			expectedCols: []string{"name", "email"},
+		},
+		{
+			name: "filter_nonexistent",
+			columns: []ColumnInfo{
+				{Name: "id", Type: "INT"},
+			},
+			names:        []string{"nonexistent"},
+			expectedLen:  0,
+			expectedCols: []string{},
+		},
+		{
+			name:         "empty_columns",
+			columns:      []ColumnInfo{},
+			names:        []string{"id"},
+			expectedLen:  0,
+			expectedCols: []string{},
+		},
+		{
+			name: "empty_names_returns_all",
+			columns: []ColumnInfo{
+				{Name: "id", Type: "INT"},
+				{Name: "name", Type: "VARCHAR"},
+			},
+			names:        []string{},
+			expectedLen:  0,
+			expectedCols: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filtered := filterColumns(tt.columns, tt.names)
+			if len(filtered) != tt.expectedLen {
+				t.Errorf("Expected %d columns, got %d", tt.expectedLen, len(filtered))
+			}
+			for i, expected := range tt.expectedCols {
+				if i < len(filtered) && filtered[i].Name != expected {
+					t.Errorf("Column %d: expected %s, got %s", i, expected, filtered[i].Name)
+				}
+			}
+		})
+	}
+}
+
+func TestDiscoverInsights_WithData(t *testing.T) {
+	server := &MCPServer{}
+
+	tests := []struct {
+		name         string
+		columns      []ColumnInfo
+		rows         []map[string]interface{}
+		insightTypes []InsightType
+		expectInsights bool
+	}{
+		{
+			name: "discover_kpis",
+			columns: []ColumnInfo{
+				{Name: "sales", Type: "DECIMAL"},
+				{Name: "date", Type: "timestamp"},
+			},
+			rows: []map[string]interface{}{
+				{"sales": 100.0, "date": "2024-01-01"},
+				{"sales": 200.0, "date": "2024-02-01"},
+				{"sales": 300.0, "date": "2024-03-01"},
+			},
+			insightTypes: []InsightType{InsightTypeKPI},
+			expectInsights: true,
+		},
+		{
+			name: "discover_trends_with_time_column",
+			columns: []ColumnInfo{
+				{Name: "revenue", Type: "DECIMAL"},
+				{Name: "created_at", Type: "timestamp"},
+			},
+			rows: []map[string]interface{}{
+				{"revenue": 100.0, "created_at": "2024-01-01"},
+				{"revenue": 150.0, "created_at": "2024-02-01"},
+				{"revenue": 200.0, "created_at": "2024-03-01"},
+			},
+			insightTypes: []InsightType{InsightTypeTrend},
+			expectInsights: true,
+		},
+		{
+			name: "discover_anomalies",
+			columns: []ColumnInfo{
+				{Name: "revenue", Type: "DECIMAL"},
+			},
+			rows: func() []map[string]interface{} {
+				// Create more data points to make anomaly detection work
+				rows := []map[string]interface{}{
+					{"revenue": 100.0},
+					{"revenue": 101.0},
+					{"revenue": 99.0},
+					{"revenue": 102.0},
+					{"revenue": 100.0},
+					{"revenue": 101.0},
+					{"revenue": 99.0},
+					{"revenue": 100.0},
+					{"revenue": 500.0}, // outlier
+				}
+				return rows
+			}(),
+			insightTypes: []InsightType{InsightTypeAnomaly},
+			expectInsights: true,
+		},
+		{
+			name: "discover_distributions",
+			columns: []ColumnInfo{
+				{Name: "age", Type: "INT"},
+			},
+			rows: []map[string]interface{}{
+				{"age": 20},
+				{"age": 25},
+				{"age": 30},
+				{"age": 35},
+				{"age": 40},
+			},
+			insightTypes: []InsightType{InsightTypeDistribution},
+			expectInsights: true,
+		},
+		{
+			name: "empty_data",
+			columns: []ColumnInfo{
+				{Name: "value", Type: "INT"},
+			},
+			rows:         []map[string]interface{}{},
+			insightTypes: []InsightType{InsightTypeKPI},
+			expectInsights: false,
+		},
+		{
+			name: "all_insight_types",
+			columns: []ColumnInfo{
+				{Name: "sales", Type: "DECIMAL"},
+				{Name: "created_at", Type: "timestamp"},
+			},
+			rows: []map[string]interface{}{
+				{"sales": 100.0, "created_at": "2024-01-01"},
+				{"sales": 200.0, "created_at": "2024-02-01"},
+				{"sales": 300.0, "created_at": "2024-03-01"},
+			},
+			insightTypes: []InsightType{}, // empty = all types
+			expectInsights: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			insights, err := server.discoverInsights(tt.columns, tt.rows, tt.insightTypes)
+			if err != nil {
+				t.Errorf("discoverInsights() unexpected error = %v", err)
+				return
+			}
+			if tt.expectInsights && len(insights) == 0 {
+				t.Errorf("Expected insights but got none")
+			}
+			if !tt.expectInsights && len(insights) != 0 {
+				t.Errorf("Expected no insights but got %d", len(insights))
+			}
+			t.Logf("Discovered %d insights", len(insights))
+		})
+	}
+}
