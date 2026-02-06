@@ -2,8 +2,10 @@
 
 ## Document Metadata
 
+> Historical note: This document records a completed lint remediation campaign from 2026-02-06 and is kept for reference.
+
 **Created**: 2026-02-06
-**Status**: Planning - Awaiting Approval
+**Status**: Historical Reference (completed)
 **Lint Tool**: golangci-lint v2.8.0
 **Total Issues**: 29 (18 errcheck, 11 noctx)
 **Approach**: Test-Driven Development (TDD) with Session-Aware Checkpoints

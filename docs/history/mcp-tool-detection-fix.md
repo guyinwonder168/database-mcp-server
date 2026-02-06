@@ -1,5 +1,8 @@
 # MCP Tool Detection Bug Fix Plan
 
+> Historical snapshot note: this file preserves earlier planning/execution context and may not reflect the latest runtime contracts.
+
+
 ## Issue Summary
 
 The Database MCP Server has all 12 profile management and database tools implemented, but MCP clients (Codex, Kilocode) cannot detect them due to a critical bug in the MCP Go SDK v0.2.0 implementation.

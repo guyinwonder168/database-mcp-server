@@ -1,5 +1,7 @@
 # Enhanced Schema Introspection - Test Results
 
+> Historical note: This page documents the earlier enhancement milestone and is retained as implementation history.
+
 ## Implementation Summary
 
 I have successfully implemented TODO point #1: **Enhanced Schema Introspection Tool** with the following improvements:

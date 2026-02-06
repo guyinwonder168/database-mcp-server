@@ -1,5 +1,8 @@
 # Database MCP Server - Architecture Validation
 
+> Historical snapshot note: this file preserves earlier planning/execution context and may not reflect the latest runtime contracts.
+
+
 ## Overview
 
 This document validates the enhancement roadmap against the existing Database MCP Server architecture to ensure compatibility, maintainability, and alignment with current design principles.

@@ -1,5 +1,8 @@
 # Database MCP Server - Implementation Roadmap
 
+> Historical snapshot note: this file preserves earlier planning/execution context and may not reflect the latest runtime contracts.
+
+
 ## Overview
 
 This document provides a high-level overview of the Database MCP Server enhancement roadmap based on the PRD analysis recommendations. It outlines the strategic direction for transforming the current production-ready MCP server into an AI-enhanced database interaction platform.
