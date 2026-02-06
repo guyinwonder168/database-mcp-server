@@ -3,12 +3,12 @@
 ## Current State
 
 ### Project Status
-- Version: v1.0.4
+- Version: v1.0.7
 - Author: guyinwonder
 - Created using: OpenAI GPT-4.1 via VSCode Kilocode AI code assistant extension
-- Stage: Production-ready with Phase 2 enhancements in progress
+- Stage: Production-ready with schema evolution handler integration complete
 - Last Updated: February 2026
-- Toolchain: Go 1.25.5 (default via gvm)
+- Toolchain: Go 1.25.7 (default via gvm)
 
 ### Implementation Status
 - ✅ Core MCP server using official Go SDK (v1.2.0, upgraded from v1.1.0)
@@ -21,14 +21,20 @@
 - ✅ AES-GCM password encryption (32-char key) with auto-generation
 - ✅ Connection pooling with configurable limits
 - ✅ Structured JSON logging with rotation and credential redaction
-- ✅ 15 MCP tools implemented and documented:
+- ✅ 17 MCP tools implemented and documented:
   - configure-profile, list-profiles, execute-sql
   - list-tables, describe-table, list-databases
   - analyze-schema (with 3 analysis levels)
   - smart-query-builder, discover-joins, sample-data
   - mcp-info, list-tools
   - optimize-query, validate-query
-  - analyze-data-lineage
+  - analyze-data-lineage, discover-insights
+  - track-schema-changes
+- ✅ Schema evolution implementation completed for `track-schema-changes`:
+  - Phase 1: snapshot/types (`schema_snapshot_types.go`)
+  - Phase 2: snapshot storage and diff/drift detection (`schema_storage.go`)
+  - Phase 3: migration generator (`schema_migrations.go`)
+  - Phase 4: MCP handler integration and tool registration (`schema_tracker.go`)
 - ✅ Valid JSON Schema for tool parameters (`params` arrays)
 - ✅ Documentation for base64-encoded BLOB/BINARY parameters
 - ✅ Comprehensive error analysis with structured error responses and actionable suggestions
@@ -48,7 +54,7 @@
 - ✅ Optional HTTP/SSE transport: enable via `MCP_SSE_ADDR` (Claude: point provider to http://localhost:PORT; Codex: use if SSE supported, else stdio; Kilocode: prefers stdio unless testing SSE)
 - ✅ Logging: stdout disabled by default to avoid MCP stdio contamination; enable via `MCP_LOG_TO_STDOUT=true`
 - ✅ Live DB smoke tests: Postgres and MySQL/MariaDB via env vars `DB_MCP_IT_*`
-- ✅ Codex/Kilocode tool discovery confirmed (14 tools visible)
+- ✅ Codex/Kilocode tool discovery confirmed (16 tools visible)
 
 ### Documentation Enhancements
 - ✅ Consolidated enhancement roadmap into docs/roadmap.md
@@ -66,11 +72,18 @@
 - **Verification**: In-memory client tests confirm tools/list works correctly and capabilities are properly advertised
 
 ## Recent Changes (February 2026)
+- Implemented F2 Phase 4 MCP handler integration (`schema_tracker.go`)
+- Registered `track-schema-changes` as a public MCP tool
+- Added end-to-end schema tracker tests (`schema_tracker_test.go`)
+- Implemented F2 Phase 3 migration generator (`schema_migrations.go`)
+- Added migration generator test coverage (`schema_migrations_test.go`)
+- Added SQL conversion, validation, and impact estimation utilities for schema diffs
+- Updated roadmap/TDD/docs status to reflect F2 phase progress
 - Upgraded Go SDK to v1.2.0
 - Fixed JSON Schema for tool parameters to avoid validation errors
 - Added documentation for BLOB/BINARY base64 encoding
 - Updated project implementation status and roadmap tracking
-- Version bumped to v1.0.4
+- Version bumped to v1.0.7
 
 ## Recent Changes (January 2026)
 - Consolidated enhancement roadmap into docs/roadmap.md
@@ -82,12 +95,9 @@
 ## Next Steps
 
 ### Immediate Priorities
-- Continue enhanced natural language processing for smart-query-builder
-- Prepare business intelligence discovery planning
+- Start F3 advanced profiling enhancements for `analyze-schema`
 - Monitor for bug reports and user feedback
 
 ### Future Enhancements
-- Business intelligence discovery
-- Schema evolution management
 - Advanced data profiling
 - Multi-database federation

@@ -4,7 +4,7 @@
 - Entry point: `cmd/server/main.go` builds the MCP server binary.
 - Core logic lives in `internal/`: `mcp/` (tools, handlers, tests), `config/` (YAML loading & AES key handling), `db/` (drivers, pooling), `log/` (structured logging).
 - Shared utilities sit in `pkg/` (e.g., `pkg/log/`); local testing artifacts may also live in `pkg/` and should not be committed unless intended. Docs in `docs/` (API, specs, roadmap) and planning notes in `project-plan/`. Logs rotate into `log/`.
-- AI memory-bank rules reside in `.kilocode/rules/`—avoid modifying unless you know the policy intent.
+
 
 ## Build, Test, and Development Commands
 - `go build -o ./tmp/mcp-server ./cmd/server/main.go` – compile the server binary.
@@ -17,7 +17,7 @@
 - IMPORTANT!: DO NOT OVER ENGINEERING!
 
 ## Coding Style & Naming Conventions
-- Go 1.25.5 toolchain; enforce `gofmt` and idiomatic Go patterns.
+- Go 1.25.7 toolchain; enforce `gofmt` and idiomatic Go patterns.
 - Packages/directories are lower_snake; exported identifiers use PascalCase; tests mirror source package names.
 - Prefer context-aware functions (`ctx` first parameter) and structured errors wrapped with context.
 - Logging: use the JSON logger in `internal/log`; avoid `fmt.Printf` in production paths.
@@ -47,7 +47,7 @@
   - Delegation → `workflows/delegation.md` (MANDATORY when using task tool)
 - Prefer `rg` for searches; keep edits minimal and commented only when non-obvious.
 - If adding MCP tools, register in `internal/mcp` and update docs (`docs/mcp-openapi.yaml`, `README.md`), then add tests in `internal/mcp/server_test.go`.
-- Review and update `./README.md`, `./CHANGELOG.md`, and `./docs/` after code changes; update `./kilocode/memory-bank/` per `.kilocode/rules/memory-bank-instructions.md`.
+- Review and update `./README.md`, `./CHANGELOG.md`, and `./docs/` after code changes; 
 - Codex, VSCode were installed inside distrobox container, the go were installed using GVM so in every session start always run this first:
 `source ~/.gvm/scripts/gvm`
 
@@ -105,7 +105,7 @@
 ### Verification-First Principle (MANDATORY)
 When making technical decisions or changes:
 
-1. **SEARCH FIRST**: Use webfetch, tavily-search, or google-search to get current information
+1. **SEARCH FIRST**: Use webfetch, tavily-search, brave-search or google-search to get current information
    - Check official documentation
    - Check GitHub repositories/issues
    - Verify version compatibility

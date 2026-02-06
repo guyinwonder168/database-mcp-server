@@ -2,6 +2,47 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.0.7] - 2026-02-06
+
+### Added
+- `track-schema-changes` Phase 4: MCP Tool Handler (F2)
+- Operation routing for schema tracking workflows: `track`, `history`, `generate_migration`, `detect_drift`
+- Schema snapshot capture from live database metadata with SHA-256 integrity hash
+- Snapshot retention enforcement with configurable `retention_days` (default 30 days)
+- Schema drift detection against baseline snapshots
+- End-to-end tests for schema tracker handler operations and tool registration
+
+### Changed
+- Registered `track-schema-changes` in MCP tool registry
+- Updated tool count from 16 to 17 across project docs
+
+### Fixed
+- Raised schema tracker new-code coverage with additional helper and error-path tests to satisfy SonarCloud Quality Gate thresholds
+- Updated SonarCloud workflow to use `sonarqube-scan-action` and emit `report.json` for Go test report ingestion
+- Resolved 9 SonarCloud PR code-smell issues in schema tracker/migration logic (cognitive complexity, duplicated literals, and readability findings)
+
+## [v1.0.6] - 2026-02-06
+
+### Added
+- `track-schema-changes` Phase 2: Snapshot Storage (F2)
+- `track-schema-changes` Phase 3: Migration Generator (F2)
+- Dialect-aware SQL generation for schema changes (`mysql`, `postgresql`, `sqlite`)
+- Migration validation with structured validation errors
+- Migration impact estimation (risk level, downtime heuristic, estimated duration)
+- Manual-action fallback comments for dialect-limited operations
+- Comprehensive unit tests for migration conversion/generation/validation/impact estimation
+- Schema snapshot persistence to filesystem (JSON format)
+- Snapshot retrieval by profile and ID
+- Snapshot listing with configurable limit
+- Schema comparison and diff detection (added/removed/modified tables and columns)
+- Schema drift detection between current state and last snapshot
+- SHA-256 hash generation for schema integrity verification
+- Column type and constraint change detection
+- Impact classification (breaking, compatible, informational)
+
+### Changed
+- Update tool count from 16 to 17
+
 ## [v1.0.5] - 2026-02-06
 
 ### Added

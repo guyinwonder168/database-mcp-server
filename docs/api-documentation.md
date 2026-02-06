@@ -1342,17 +1342,26 @@ Track and analyze schema evolution over time with automated migration assistance
 ```json
 {
   "profile_name": "string (required)",
-  "time_range": "string (optional)",
-  "change_types": "array (optional)",
-  "database_name": "string (optional)"
+  "operation": "string (optional, default: 'track')",
+  "database_name": "string (optional)",
+  "dialect": "string (optional)",
+  "from_snapshot_id": "string (optional, required with to_snapshot_id for migration)",
+  "to_snapshot_id": "string (optional, required with from_snapshot_id for migration)",
+  "snapshot_id": "string (optional, baseline for drift)",
+  "limit": "integer (optional, history only)",
+  "retention_days": "integer (optional, track only)"
 }
 ```
 
 #### Parameter Details
 - **profile_name**: Name of the profile to use for schema tracking
-- **time_range**: Time period for analysis (ISO 8601 duration)
-- **change_types**: Types of changes to track - array of: `add`, `drop`, `modify`
+- **operation**: One of `track`, `history`, `generate_migration`, `detect_drift`
 - **database_name**: Override default database
+- **dialect**: SQL dialect for migration generation (`mysql`, `postgresql`, `sqlite`)
+- **from_snapshot_id / to_snapshot_id**: Explicit snapshot pair for migration generation
+- **snapshot_id**: Baseline snapshot ID for drift detection (defaults to latest)
+- **limit**: Number of history snapshots to return
+- **retention_days**: Snapshot retention window in days (default 30)
 
 #### Example Request
 ```json
@@ -1361,8 +1370,8 @@ Track and analyze schema evolution over time with automated migration assistance
   "method": "track-schema-changes",
   "params": {
     "profile_name": "production_db",
-    "time_range": "P30D",
-    "change_types": ["add", "modify"]
+    "operation": "track",
+    "retention_days": 30
   },
   "id": "schema_001"
 }
@@ -1373,42 +1382,38 @@ Track and analyze schema evolution over time with automated migration assistance
 {
   "jsonrpc": "2.0",
   "result": {
-    "status": "success",
-    "time_range": "P30D",
+    "operation": "track",
+    "profile_name": "production_db",
+    "snapshot_id": "snap-1738863700123456789",
+    "previous_snapshot_id": "snap-1738863600123456789",
     "changes": [
       {
-        "timestamp": "2024-12-01T10:30:00Z",
-        "change_type": "add",
-        "object_type": "table",
-        "object_name": "customer_segments",
-        "impact_assessment": "non_breaking",
-        "description": "Added customer segmentation table for marketing analytics"
-      },
-      {
-        "timestamp": "2024-12-05T14:22:00Z",
-        "change_type": "modify",
-        "object_type": "column",
-        "object_name": "orders.status",
-        "impact_assessment": "breaking",
-        "description": "Modified orders.status column from ENUM to VARCHAR to support additional statuses"
+        "type": "add_column",
+        "table": "users",
+        "column": "email",
+        "impact": "compatible"
       }
     ],
-    "migration_suggestions": [
-      {
-        "change_id": "orders.status_modification",
-        "sql": "ALTER TABLE orders ADD COLUMN status_new VARCHAR(20); UPDATE orders SET status_new = CAST(status AS VARCHAR(20)); ALTER TABLE orders DROP COLUMN status; ALTER TABLE orders RENAME COLUMN status_new TO status;",
-        "rollback_sql": "No simple rollback available - requires data migration",
-        "impact": "Breaking change requiring application update"
-      }
-    ]
+    "migration": {
+      "from_version": "snap-1738863600123456789",
+      "to_version": "snap-1738863700123456789",
+      "dialect": "sqlite",
+      "statements": [
+        "ALTER TABLE \"users\" ADD COLUMN \"email\" TEXT;"
+      ],
+      "estimated_time": "about 2 minute(s)",
+      "is_reversible": true
+    },
+    "summary": "Schema changes tracked: 1 change(s) detected"
   },
   "id": "schema_001"
 }
 ```
 
 #### Error Responses
-- `HISTORY_NOT_AVAILABLE`: Schema change history not available
-- `MIGRATION_FAILED`: Migration suggestion generation failed
+- `MISSING_PARAMETER`: `profile_name` is required
+- `INVALID_INPUT`: Invalid operation or invalid snapshot arguments
+- `PROFILE_NOT_FOUND`: Profile does not exist
 
 ---
 

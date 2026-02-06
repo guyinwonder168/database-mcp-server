@@ -28,10 +28,12 @@ jobs:
         run: go mod download
 
       - name: Run tests with coverage
-        run: go test -coverprofile=coverage.out -covermode=atomic ./...
+        run: |
+          set -o pipefail
+          go test -coverprofile=coverage.out -covermode=atomic -json ./... 2>&1 | tee report.json
 
       - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@ffc3010689be73b8e5ae0c57ce35968afd7909e8 # v5.0.0
+        uses: SonarSource/sonarqube-scan-action@0303d6b62e310685c0e34d0b9cde218036885c4d # v5.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}    # Generated in SonarCloud UI
