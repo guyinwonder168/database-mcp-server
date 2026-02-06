@@ -54,12 +54,19 @@ jobs:
         id: git
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Ensure Dockerfile for legacy tags
+      - name: Ensure Dockerfile compatibility for legacy tags
         run: |
-          if [ -f Dockerfile ]; then
+          # Keep the checked-in Dockerfile when it doesn't require optional pkg/.
+          if [ -f Dockerfile ] && ! grep -Eq 'COPY[[:space:]]+pkg[[:space:]]+\./pkg' Dockerfile; then
             exit 0
           fi
 
+          # Keep the checked-in Dockerfile when pkg/ exists.
+          if [ -f Dockerfile ] && [ -d pkg ]; then
+            exit 0
+          fi
+
+          # Fallback Dockerfile for tags without Dockerfile or with incompatible COPY pkg lines.
           cat > Dockerfile <<'EOF'
           FROM --platform=$BUILDPLATFORM golang:1.25.5-alpine AS builder
           WORKDIR /src
