@@ -80,6 +80,11 @@ jobs:
       - name: Run go vet
         run: go vet ./...
 
+      - name: Verify version metadata sync
+        run: |
+          bash scripts/sync-version-from-server.sh
+          git diff --exit-code README.md docs/mcp-openapi.yaml
+
       - name: Verify go.mod is tidy
         run: |
           go mod tidy

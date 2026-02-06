@@ -21,11 +21,24 @@ jobs:
       - name: Determine release version
         id: version
         run: |
-          VERSION=$(awk '/^## \[v/{print $2; exit}' CHANGELOG.md | tr -d '[]')
+          VERSION=$(awk -F'"' '/^const MCPVersion = / {print $2; exit}' internal/mcp/server.go)
+          if ! echo "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Invalid MCPVersion in internal/mcp/server.go: $VERSION"
+            exit 1
+          fi
+          if ! grep -q "^## \[$VERSION\]" CHANGELOG.md; then
+            echo "CHANGELOG.md missing section for $VERSION"
+            exit 1
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Fetch tags
         run: git fetch --tags
+
+      - name: Verify version metadata sync
+        run: |
+          bash scripts/sync-version-from-server.sh
+          git diff --exit-code README.md docs/mcp-openapi.yaml
 
       - name: Create tag if missing
         id: tag
