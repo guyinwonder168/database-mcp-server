@@ -66,6 +66,71 @@ func baseTestConfig() *config.Config {
 	}
 }
 
+func TestSQLHotspotsNOSONAR(t *testing.T) {
+	src, err := os.ReadFile("server.go")
+	if err != nil {
+		t.Fatalf("Failed to read server.go: %v", err)
+	}
+	content := string(src)
+	pragmaCount := strings.Count(content, "PRAGMA foreign_key_list")
+	if pragmaCount < 2 {
+		t.Fatalf("Expected at least 2 PRAGMA foreign_key_list queries, got %d", pragmaCount)
+	}
+	pragmaNoSonarCount := strings.Count(content, "PRAGMA foreign_key_list('%s')\", tbl)) // NOSONAR")
+	if pragmaNoSonarCount < 2 {
+		t.Fatalf("Expected NOSONAR comments for PRAGMA queries, got %d", pragmaNoSonarCount)
+	}
+	if !strings.Contains(content, "DESCRIBE \"+tableName) // NOSONAR") {
+		t.Fatalf("Expected NOSONAR comment for DESCRIBE query")
+	}
+}
+
+func TestParamsValueSchema(t *testing.T) {
+	schema := paramsValueSchema()
+	if schema == nil {
+		t.Fatalf("Expected schema")
+	}
+	if len(schema.OneOf) != 4 {
+		t.Fatalf("Expected 4 oneOf entries, got %d", len(schema.OneOf))
+	}
+}
+
+func TestParamsArraySchema(t *testing.T) {
+	schema := paramsArraySchema("test params")
+	if schema == nil {
+		t.Fatalf("Expected schema")
+	}
+	if schema.Type != "array" {
+		t.Fatalf("Expected array type, got %s", schema.Type)
+	}
+	if schema.Items == nil {
+		t.Fatalf("Expected items schema")
+	}
+}
+
+func TestInputSchemaWithParams(t *testing.T) {
+	schema := inputSchemaWithParams[ExecuteSQLParams]("params")
+	if schema == nil {
+		t.Fatalf("Expected schema")
+	}
+	paramsSchema, ok := schema.Properties["params"]
+	if !ok || paramsSchema == nil {
+		t.Fatalf("Expected params schema property")
+	}
+}
+
+func TestInputSchemaWithParamsSetsProperties(t *testing.T) {
+	type emptyParams struct{}
+	schema := inputSchemaWithParams[emptyParams]("params")
+	if schema == nil {
+		t.Fatalf("Expected schema")
+	}
+	paramsSchema, ok := schema.Properties["params"]
+	if !ok || paramsSchema == nil {
+		t.Fatalf("Expected params schema property for empty params")
+	}
+}
+
 func TestHandleListProfiles(t *testing.T) {
 	testConfig := setupTestConfig(t)
 	defer os.Remove(testConfig)
