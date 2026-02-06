@@ -248,10 +248,10 @@ func TestCalculateColumnInsights(t *testing.T) {
 	server := &MCPServer{}
 
 	tests := []struct {
-		name      string
-		column    ColumnInfo
-		rows      []map[string]interface{}
-		wantErr   bool
+		name         string
+		column       ColumnInfo
+		rows         []map[string]interface{}
+		wantErr      bool
 		insightCount int
 	}{
 		{
@@ -277,9 +277,9 @@ func TestCalculateColumnInsights(t *testing.T) {
 			insightCount: 2,
 		},
 		{
-			name:   "empty_rows",
-			column: ColumnInfo{Name: "value", Type: "FLOAT"},
-			rows:   []map[string]interface{}{},
+			name:    "empty_rows",
+			column:  ColumnInfo{Name: "value", Type: "FLOAT"},
+			rows:    []map[string]interface{}{},
 			wantErr: true,
 		},
 		{
@@ -373,10 +373,10 @@ func TestDiscoverInsights_WithData(t *testing.T) {
 	server := &MCPServer{}
 
 	tests := []struct {
-		name         string
-		columns      []ColumnInfo
-		rows         []map[string]interface{}
-		insightTypes []InsightType
+		name           string
+		columns        []ColumnInfo
+		rows           []map[string]interface{}
+		insightTypes   []InsightType
 		expectInsights bool
 	}{
 		{
@@ -390,7 +390,7 @@ func TestDiscoverInsights_WithData(t *testing.T) {
 				{"sales": 200.0, "date": "2024-02-01"},
 				{"sales": 300.0, "date": "2024-03-01"},
 			},
-			insightTypes: []InsightType{InsightTypeKPI},
+			insightTypes:   []InsightType{InsightTypeKPI},
 			expectInsights: true,
 		},
 		{
@@ -404,7 +404,7 @@ func TestDiscoverInsights_WithData(t *testing.T) {
 				{"revenue": 150.0, "created_at": "2024-02-01"},
 				{"revenue": 200.0, "created_at": "2024-03-01"},
 			},
-			insightTypes: []InsightType{InsightTypeTrend},
+			insightTypes:   []InsightType{InsightTypeTrend},
 			expectInsights: true,
 		},
 		{
@@ -427,7 +427,7 @@ func TestDiscoverInsights_WithData(t *testing.T) {
 				}
 				return rows
 			}(),
-			insightTypes: []InsightType{InsightTypeAnomaly},
+			insightTypes:   []InsightType{InsightTypeAnomaly},
 			expectInsights: true,
 		},
 		{
@@ -442,7 +442,7 @@ func TestDiscoverInsights_WithData(t *testing.T) {
 				{"age": 35},
 				{"age": 40},
 			},
-			insightTypes: []InsightType{InsightTypeDistribution},
+			insightTypes:   []InsightType{InsightTypeDistribution},
 			expectInsights: true,
 		},
 		{
@@ -450,8 +450,8 @@ func TestDiscoverInsights_WithData(t *testing.T) {
 			columns: []ColumnInfo{
 				{Name: "value", Type: "INT"},
 			},
-			rows:         []map[string]interface{}{},
-			insightTypes: []InsightType{InsightTypeKPI},
+			rows:           []map[string]interface{}{},
+			insightTypes:   []InsightType{InsightTypeKPI},
 			expectInsights: false,
 		},
 		{
@@ -465,18 +465,14 @@ func TestDiscoverInsights_WithData(t *testing.T) {
 				{"sales": 200.0, "created_at": "2024-02-01"},
 				{"sales": 300.0, "created_at": "2024-03-01"},
 			},
-			insightTypes: []InsightType{}, // empty = all types
+			insightTypes:   []InsightType{}, // empty = all types
 			expectInsights: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			insights, err := server.discoverInsights(tt.columns, tt.rows, tt.insightTypes)
-			if err != nil {
-				t.Errorf("discoverInsights() unexpected error = %v", err)
-				return
-			}
+			insights := server.discoverInsights(tt.columns, tt.rows, tt.insightTypes)
 			if tt.expectInsights && len(insights) == 0 {
 				t.Errorf("Expected insights but got none")
 			}

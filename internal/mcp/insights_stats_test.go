@@ -463,10 +463,9 @@ func TestClassifyDistribution(t *testing.T) {
 				return
 			}
 			mean := calculateMean(tt.values)
-			median := calculateMedian(tt.values)
 			stdDev := calculateStdDev(tt.values, mean)
 
-			distType := classifyDistribution(tt.values, mean, median, stdDev)
+			distType := classifyDistribution(tt.values, mean, stdDev)
 			t.Logf("%s classified as: %s", tt.name, distType)
 
 			found := false

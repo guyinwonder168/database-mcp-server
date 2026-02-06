@@ -48,12 +48,12 @@ func TestHandleDiscoverInsights_InputValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, _, err := server.handleDiscoverInsights(context.Background(), &mcp.CallToolRequest{}, tt.input)
-			
+
 			if err != nil {
 				// Some errors are expected
 				t.Logf("Got error (may be expected): %v", err)
 			}
-			
+
 			if result != nil {
 				// Check if result has error content (errorResult returns JSON error)
 				hasErrorContent := len(result.Content) > 0
@@ -82,13 +82,13 @@ func TestHandleDiscoverInsights_WithAllParams(t *testing.T) {
 	}
 
 	result, _, err := server.handleDiscoverInsights(context.Background(), &mcp.CallToolRequest{}, input)
-	
+
 	// This will fail because there's no actual profile configured
 	// but it tests the code path
 	if err != nil {
 		t.Logf("Expected error due to missing profile: %v", err)
 	}
-	
+
 	if result != nil {
 		t.Logf("Got result: IsError=%v", result.IsError)
 	}

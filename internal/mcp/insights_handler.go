@@ -76,7 +76,7 @@ func (s *MCPServer) handleDiscoverInsights(ctx context.Context, _ *mcp.CallToolR
 	}
 
 	// Sample data from table
-	rows, err := s.sampleTableData(ctx, conn, prof, p.TableName, columns, 1000)
+	rows, err := s.sampleTableData(ctx, conn, p.TableName, columns, 1000)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to sample data: %w", err)
 	}
@@ -99,10 +99,7 @@ func (s *MCPServer) handleDiscoverInsights(ctx context.Context, _ *mcp.CallToolR
 	}
 
 	// Discover insights
-	insights, err := s.discoverInsights(columns, rows, p.InsightTypes)
-	if err != nil {
-		return nil, nil, fmt.Errorf("insight discovery failed: %w", err)
-	}
+	insights := s.discoverInsights(columns, rows, p.InsightTypes)
 
 	// Prioritize and limit results
 	if p.MaxResults > 0 && len(insights) > p.MaxResults {
@@ -137,9 +134,9 @@ func (s *MCPServer) getTableColumns(ctx context.Context, conn *sql.DB, prof *con
 	// Use DESCRIBE for MySQL/MariaDB
 	// Use INFORMATION_SCHEMA for PostgreSQL
 	// Use PRAGMA for SQLite
-	
+
 	var columns []ColumnInfo
-	
+
 	switch prof.DBType {
 	case "mysql", "mariadb":
 		var err error
@@ -147,25 +144,25 @@ func (s *MCPServer) getTableColumns(ctx context.Context, conn *sql.DB, prof *con
 		if err != nil {
 			return nil, err
 		}
-	
+
 	case "postgres":
 		var err error
 		columns, err = s.getTableColumnsPostgres(ctx, conn, tableName)
 		if err != nil {
 			return nil, err
 		}
-	
+
 	case "sqlite":
 		var err error
 		columns, err = s.getTableColumnsSQLite(ctx, conn, tableName)
 		if err != nil {
 			return nil, err
 		}
-	
+
 	default:
 		return nil, fmt.Errorf("unsupported db_type: %s", prof.DBType)
 	}
-	
+
 	return columns, nil
 }
 
@@ -175,8 +172,8 @@ func (s *MCPServer) getTableColumnsMySQL(ctx context.Context, conn *sql.DB, tabl
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	
+	defer func() { _ = rows.Close() }()
+
 	var columns []ColumnInfo
 	for rows.Next() {
 		var col ColumnInfo
@@ -201,8 +198,8 @@ func (s *MCPServer) getTableColumnsPostgres(ctx context.Context, conn *sql.DB, t
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	
+	defer func() { _ = rows.Close() }()
+
 	var columns []ColumnInfo
 	for rows.Next() {
 		var col ColumnInfo
@@ -221,8 +218,8 @@ func (s *MCPServer) getTableColumnsSQLite(ctx context.Context, conn *sql.DB, tab
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	
+	defer func() { _ = rows.Close() }()
+
 	var columns []ColumnInfo
 	for rows.Next() {
 		var col ColumnInfo
@@ -238,7 +235,7 @@ func (s *MCPServer) getTableColumnsSQLite(ctx context.Context, conn *sql.DB, tab
 }
 
 // sampleTableData samples data from a table
-func (s *MCPServer) sampleTableData(ctx context.Context, conn *sql.DB, prof *config.Profile, tableName string, columns []ColumnInfo, limit int) ([]map[string]interface{}, error) {
+func (s *MCPServer) sampleTableData(ctx context.Context, conn *sql.DB, tableName string, columns []ColumnInfo, limit int) ([]map[string]interface{}, error) {
 	if limit <= 0 {
 		limit = 1000
 	}
@@ -255,7 +252,7 @@ func (s *MCPServer) sampleTableData(ctx context.Context, conn *sql.DB, prof *con
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	// Get column names from result
 	colNamesFromDB, err := rows.Columns()
@@ -289,36 +286,36 @@ func (s *MCPServer) sampleTableData(ctx context.Context, conn *sql.DB, prof *con
 }
 
 // discoverInsights analyzes data and discovers insights
-func (s *MCPServer) discoverInsights(columns []ColumnInfo, rows []map[string]interface{}, insightTypes []InsightType) ([]Insight, error) {
+func (s *MCPServer) discoverInsights(columns []ColumnInfo, rows []map[string]interface{}, insightTypes []InsightType) []Insight {
 	var insights []Insight
-	
+
 	// If no insight types specified, use all
 	if len(insightTypes) == 0 {
 		insightTypes = []InsightType{InsightTypeKPI, InsightTypeTrend, InsightTypeAnomaly, InsightTypeDistribution}
 	}
-	
+
 	// Build set of requested insight types
 	requestedTypes := make(map[InsightType]bool)
 	for _, it := range insightTypes {
 		requestedTypes[it] = true
 	}
-	
+
 	// Find time series columns
 	timeCol := s.findTimeSeriesColumn(columns, rows)
-	
+
 	// Analyze each column
 	for _, col := range columns {
 		// Skip time columns for most analyses
 		if timeCol != nil && col.Name == timeCol.Name {
 			continue
 		}
-		
+
 		// Process different insight types
 		colInsights := s.processColumnInsights(col, rows, timeCol, requestedTypes)
 		insights = append(insights, colInsights...)
 	}
-	
-	return insights, nil
+
+	return insights
 }
 
 // findTimeSeriesColumn finds a time series column from the list
@@ -343,7 +340,7 @@ func (s *MCPServer) findTimeSeriesColumn(columns []ColumnInfo, rows []map[string
 // processColumnInsights processes all insight types for a single column
 func (s *MCPServer) processColumnInsights(col ColumnInfo, rows []map[string]interface{}, timeCol *ColumnInfo, requestedTypes map[InsightType]bool) []Insight {
 	var insights []Insight
-	
+
 	// KPI Insights
 	if requestedTypes[InsightTypeKPI] && isNumericType(col.Type) {
 		kpiInsights, err := s.calculateColumnInsights(col, rows)
@@ -351,35 +348,35 @@ func (s *MCPServer) processColumnInsights(col ColumnInfo, rows []map[string]inte
 			insights = append(insights, kpiInsights...)
 		}
 	}
-	
+
 	// Trend Insights
 	trendInsights := s.processTrendInsights(col, rows, timeCol, requestedTypes)
 	insights = append(insights, trendInsights...)
-	
+
 	// Anomaly Insights
 	anomalyInsights := s.processAnomalyInsights(col, rows, requestedTypes)
 	insights = append(insights, anomalyInsights...)
-	
+
 	// Distribution Insights
 	distributionInsights := s.processDistributionInsights(col, rows, requestedTypes)
 	insights = append(insights, distributionInsights...)
-	
+
 	return insights
 }
 
 // processTrendInsights processes trend insights for a column
 func (s *MCPServer) processTrendInsights(col ColumnInfo, rows []map[string]interface{}, timeCol *ColumnInfo, requestedTypes map[InsightType]bool) []Insight {
 	var insights []Insight
-	
-	if !(requestedTypes[InsightTypeTrend] && timeCol != nil && isNumericType(col.Type)) {
+
+	if !requestedTypes[InsightTypeTrend] || timeCol == nil || !isNumericType(col.Type) {
 		return insights
 	}
-	
+
 	trends, err := DetectTrends(timeCol.Name, col.Name, rows)
 	if err != nil || len(trends) == 0 {
 		return insights
 	}
-	
+
 	for _, trend := range trends {
 		insights = append(insights, Insight{
 			Type:        InsightTypeTrend,
@@ -394,16 +391,16 @@ func (s *MCPServer) processTrendInsights(col ColumnInfo, rows []map[string]inter
 // processAnomalyInsights processes anomaly insights for a column
 func (s *MCPServer) processAnomalyInsights(col ColumnInfo, rows []map[string]interface{}, requestedTypes map[InsightType]bool) []Insight {
 	var insights []Insight
-	
-	if !(requestedTypes[InsightTypeAnomaly] && isNumericType(col.Type)) {
+
+	if !requestedTypes[InsightTypeAnomaly] || !isNumericType(col.Type) {
 		return insights
 	}
-	
+
 	anomalies, err := DetectAnomalies(col.Name, rows, 2.0)
 	if err != nil {
 		return insights
 	}
-	
+
 	for _, anomaly := range anomalies {
 		insights = append(insights, Insight{
 			Type:        InsightTypeAnomaly,
@@ -418,16 +415,16 @@ func (s *MCPServer) processAnomalyInsights(col ColumnInfo, rows []map[string]int
 // processDistributionInsights processes distribution insights for a column
 func (s *MCPServer) processDistributionInsights(col ColumnInfo, rows []map[string]interface{}, requestedTypes map[InsightType]bool) []Insight {
 	var insights []Insight
-	
-	if !(requestedTypes[InsightTypeDistribution] && isNumericType(col.Type)) {
+
+	if !requestedTypes[InsightTypeDistribution] || !isNumericType(col.Type) {
 		return insights
 	}
-	
+
 	dist, err := AnalyzeDistributions(col.Name, rows)
 	if err != nil {
 		return insights
 	}
-	
+
 	insights = append(insights, Insight{
 		Type:         InsightTypeDistribution,
 		Column:       col.Name,
@@ -495,6 +492,7 @@ func prioritizeInsights(insights []Insight, limit int) []Insight {
 	}
 
 	// Simple bubble sort for small lists
+	// #nosec G602 - bounds are checked by loop conditions (j < len, i < len)
 	for i := 0; i < len(insights); i++ {
 		for j := i + 1; j < len(insights); j++ {
 			if priority[insights[j].Type] > priority[insights[i].Type] {

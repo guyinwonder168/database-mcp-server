@@ -152,7 +152,7 @@ func AnalyzeDistributions(column string, rows []map[string]interface{}) (*Distri
 
 	buckets := createDistributionBuckets(values)
 
-	distType := classifyDistribution(values, mean, median, stdDev)
+	distType := classifyDistribution(values, mean, stdDev)
 
 	return &DistributionInsight{
 		Column:  column,
@@ -339,7 +339,7 @@ func contains(s, substr string) bool {
 	return false
 }
 
-func classifyDistribution(values []float64, mean, median, stdDev float64) string {
+func classifyDistribution(values []float64, mean, stdDev float64) string {
 	if len(values) < 10 {
 		return "insufficient_data"
 	}
@@ -362,7 +362,8 @@ func classifyDistribution(values []float64, mean, median, stdDev float64) string
 	skewness := 0.0
 	if stdDev > 0 {
 		for _, v := range values {
-			skewness += math.Pow((v-mean)/stdDev, 3)
+			z := (v - mean) / stdDev
+			skewness += z * z * z
 		}
 		skewness /= float64(len(values))
 	}

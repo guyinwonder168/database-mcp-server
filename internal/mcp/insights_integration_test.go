@@ -18,7 +18,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 	}
 
 	// Create test table
-	_, err = db.Exec(`
+	_, err = db.ExecContext(context.Background(), `
 		CREATE TABLE test_users (
 			id INTEGER PRIMARY KEY,
 			name TEXT,
@@ -32,7 +32,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 	}
 
 	// Insert test data
-	_, err = db.Exec(`
+	_, err = db.ExecContext(context.Background(), `
 		INSERT INTO test_users (id, name, email, age, created_at) VALUES
 		(1, 'Alice', 'alice@example.com', 30, '2024-01-01'),
 		(2, 'Bob', 'bob@example.com', 25, '2024-02-01'),
@@ -93,10 +93,6 @@ func TestSampleTableData(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
-	prof := &config.Profile{
-		DBType: "sqlite",
-	}
-
 	columns := []ColumnInfo{
 		{Name: "id", Type: "INTEGER"},
 		{Name: "name", Type: "TEXT"},
@@ -135,7 +131,7 @@ func TestSampleTableData(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rows, err := server.sampleTableData(context.Background(), db, prof, tt.tableName, columns, tt.limit)
+			rows, err := server.sampleTableData(context.Background(), db, tt.tableName, columns, tt.limit)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("sampleTableData() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -165,13 +161,15 @@ func TestSampleTableData_EmptyTable(t *testing.T) {
 	defer db.Close()
 
 	// Create empty table
-	_, err = db.Exec(`CREATE TABLE empty_table (id INTEGER PRIMARY KEY, name TEXT)`)
+	_, err = db.ExecContext(context.Background(), `CREATE TABLE empty_table (id INTEGER PRIMARY KEY, name TEXT)`)
 	if err != nil {
 		t.Fatalf("Failed to create empty table: %v", err)
 	}
 
-	prof := &config.Profile{
-		DBType: "sqlite",
+	// Create test_users table and insert test data
+	_, err = db.ExecContext(context.Background(), `INSERT INTO test_users (id, name) SELECT 1, 'test'`)
+	if err != nil {
+		t.Fatalf("Failed to insert data: %v", err)
 	}
 
 	columns := []ColumnInfo{
@@ -179,7 +177,7 @@ func TestSampleTableData_EmptyTable(t *testing.T) {
 		{Name: "name", Type: "TEXT"},
 	}
 
-	rows, err := server.sampleTableData(context.Background(), db, prof, "empty_table", columns, 10)
+	rows, err := server.sampleTableData(context.Background(), db, "empty_table", columns, 10)
 	if err != nil {
 		t.Errorf("sampleTableData() unexpected error = %v", err)
 	}
@@ -204,7 +202,7 @@ func TestGetTableColumns_MySQL(t *testing.T) {
 	}
 	defer db.Close()
 
-	_, err = db.Exec(`CREATE TABLE test (id INTEGER PRIMARY KEY)`)
+	_, err = db.ExecContext(context.Background(), `CREATE TABLE test (id INTEGER PRIMARY KEY)`)
 	if err != nil {
 		t.Fatalf("Failed to create table: %v", err)
 	}
@@ -224,20 +222,16 @@ func TestSampleTableData_MySQL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
-	defer db.Close()
 
-	_, err = db.Exec(`CREATE TABLE test (id INTEGER PRIMARY KEY, name TEXT)`)
+	// Create empty table
+	_, err = db.ExecContext(context.Background(), `CREATE TABLE empty_table (id INTEGER PRIMARY KEY, name TEXT)`)
 	if err != nil {
-		t.Fatalf("Failed to create table: %v", err)
+		t.Fatalf("Failed to create empty table: %v", err)
 	}
 
-	_, err = db.Exec(`INSERT INTO test VALUES (1, 'test')`)
+	_, err = db.ExecContext(context.Background(), `INSERT INTO test_users VALUES (1, 'test')`)
 	if err != nil {
 		t.Fatalf("Failed to insert data: %v", err)
-	}
-
-	prof := &config.Profile{
-		DBType: "mysql",
 	}
 
 	columns := []ColumnInfo{
@@ -246,7 +240,7 @@ func TestSampleTableData_MySQL(t *testing.T) {
 	}
 
 	// This should work even with mysql profile since it uses generic SQL
-	rows, err := server.sampleTableData(context.Background(), db, prof, "test", columns, 10)
+	rows, err := server.sampleTableData(context.Background(), db, "test_users", columns, 10)
 	if err != nil {
 		t.Errorf("sampleTableData() unexpected error = %v", err)
 	}
@@ -263,15 +257,11 @@ func TestSampleTableData_UnsupportedDBType(t *testing.T) {
 	}
 	defer db.Close()
 
-	prof := &config.Profile{
-		DBType: "mongodb", // unsupported
-	}
-
 	columns := []ColumnInfo{
 		{Name: "id", Type: "INTEGER"},
 	}
 
-	_, err = server.sampleTableData(context.Background(), db, prof, "test", columns, 10)
+	_, err = server.sampleTableData(context.Background(), db, "test", columns, 10)
 	if err == nil {
 		t.Error("Expected error for unsupported DB type")
 	}
@@ -303,7 +293,7 @@ func TestSampleTableData_NullValues(t *testing.T) {
 	}
 	defer db.Close()
 
-	_, err = db.Exec(`
+	_, err = db.ExecContext(context.Background(), `
 		CREATE TABLE test_nulls (
 			id INTEGER PRIMARY KEY,
 			name TEXT,
@@ -314,7 +304,7 @@ func TestSampleTableData_NullValues(t *testing.T) {
 		t.Fatalf("Failed to create table: %v", err)
 	}
 
-	_, err = db.Exec(`
+	_, err = db.ExecContext(context.Background(), `
 		INSERT INTO test_nulls (id, name, age) VALUES
 		(1, 'Alice', 30),
 		(2, NULL, 25),
@@ -324,17 +314,13 @@ func TestSampleTableData_NullValues(t *testing.T) {
 		t.Fatalf("Failed to insert data: %v", err)
 	}
 
-	prof := &config.Profile{
-		DBType: "sqlite",
-	}
-
 	columns := []ColumnInfo{
 		{Name: "id", Type: "INTEGER"},
 		{Name: "name", Type: "TEXT"},
 		{Name: "age", Type: "INTEGER"},
 	}
 
-	rows, err := server.sampleTableData(context.Background(), db, prof, "test_nulls", columns, 10)
+	rows, err := server.sampleTableData(context.Background(), db, "test_nulls", columns, 10)
 	if err != nil {
 		t.Errorf("sampleTableData() unexpected error = %v", err)
 	}
@@ -405,7 +391,7 @@ func TestHandleDiscoverInsights_Integration(t *testing.T) {
 // TestGetTableColumns_AllDBTypes tests getTableColumns with different database types
 func TestGetTableColumns_AllDBTypes(t *testing.T) {
 	server := &MCPServer{}
-	
+
 	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
@@ -413,7 +399,7 @@ func TestGetTableColumns_AllDBTypes(t *testing.T) {
 	defer db.Close()
 
 	// Create test tables
-	_, err = db.Exec(`CREATE TABLE test_table (id INTEGER PRIMARY KEY, name TEXT)`)
+	_, err = db.ExecContext(context.Background(), `CREATE TABLE test_table (id INTEGER PRIMARY KEY, name TEXT)`)
 	if err != nil {
 		t.Fatalf("Failed to create table: %v", err)
 	}
