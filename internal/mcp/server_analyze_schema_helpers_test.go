@@ -556,6 +556,132 @@ func TestMarshalAnalyzeSchemaResultError(t *testing.T) {
 	}
 }
 
+func TestDescribePostgresTableColumnsWithSQLiteMetadata(t *testing.T) {
+	dbConn, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("failed to open sqlite memory db: %v", err)
+	}
+	defer dbConn.Close()
+	ctx := context.Background()
+
+	if _, err := dbConn.ExecContext(ctx, "ATTACH DATABASE ':memory:' AS information_schema"); err != nil {
+		t.Fatalf("failed to attach information_schema: %v", err)
+	}
+
+	createStatements := []string{
+		`CREATE TABLE information_schema.columns (
+			column_name TEXT, data_type TEXT, is_nullable TEXT, column_default TEXT,
+			character_maximum_length INTEGER, numeric_precision INTEGER, numeric_scale INTEGER,
+			table_schema TEXT, table_name TEXT, ordinal_position INTEGER
+		)`,
+		`CREATE TABLE information_schema.key_column_usage (
+			column_name TEXT, table_name TEXT, table_schema TEXT, constraint_name TEXT
+		)`,
+		`CREATE TABLE information_schema.table_constraints (
+			constraint_name TEXT, table_name TEXT, table_schema TEXT, constraint_type TEXT
+		)`,
+		`CREATE TABLE pg_class (relname TEXT, relnamespace INTEGER, oid INTEGER)`,
+		`CREATE TABLE pg_namespace (oid INTEGER, nspname TEXT)`,
+		`CREATE TABLE pg_attribute (attrelid INTEGER, attname TEXT, attnum INTEGER)`,
+		`CREATE TABLE pg_description (objoid INTEGER, objsubid INTEGER, description TEXT)`,
+	}
+	for _, stmt := range createStatements {
+		if _, err := dbConn.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("failed setup statement %q: %v", stmt, err)
+		}
+	}
+
+	seedStatements := []string{
+		`INSERT INTO information_schema.columns VALUES ('id','bigint','NO','nextval(seq)',255,20,0,'public','users',1)`,
+		`INSERT INTO information_schema.key_column_usage VALUES ('id','users','public','pk_users')`,
+		`INSERT INTO information_schema.table_constraints VALUES ('pk_users','users','public','PRIMARY KEY')`,
+		`INSERT INTO pg_class VALUES ('users',10,100)`,
+		`INSERT INTO pg_namespace VALUES (10,'public')`,
+		`INSERT INTO pg_attribute VALUES (100,'id',1)`,
+		`INSERT INTO pg_description VALUES (100,1,'identifier')`,
+	}
+	for _, stmt := range seedStatements {
+		if _, err := dbConn.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("failed seed statement %q: %v", stmt, err)
+		}
+	}
+
+	columns, err := describePostgresTableColumns(ctx, dbConn, "users")
+	if err != nil {
+		t.Fatalf("describePostgresTableColumns failed: %v", err)
+	}
+	if len(columns) != 1 {
+		t.Fatalf("expected one column, got %d", len(columns))
+	}
+	if columns[0].Key != "PRI" || !columns[0].AutoIncrement {
+		t.Fatalf("unexpected postgres column metadata: %+v", columns[0])
+	}
+}
+
+func TestLoadLineageEdgesForMySQLAndPostgresMetadata(t *testing.T) {
+	dbConn, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("failed to open sqlite memory db: %v", err)
+	}
+	defer dbConn.Close()
+	ctx := context.Background()
+
+	if _, err := dbConn.ExecContext(ctx, "ATTACH DATABASE ':memory:' AS INFORMATION_SCHEMA"); err != nil {
+		t.Fatalf("failed to attach INFORMATION_SCHEMA: %v", err)
+	}
+
+	// MySQL lineage metadata.
+	if _, err := dbConn.ExecContext(ctx, `CREATE TABLE INFORMATION_SCHEMA.KEY_COLUMN_USAGE (
+		TABLE_NAME TEXT, REFERENCED_TABLE_NAME TEXT, TABLE_SCHEMA TEXT, CONSTRAINT_NAME TEXT
+	)`); err != nil {
+		t.Fatalf("failed creating mysql lineage table: %v", err)
+	}
+	if _, err := dbConn.ExecContext(ctx, `INSERT INTO INFORMATION_SCHEMA.KEY_COLUMN_USAGE VALUES ('order_items','orders','appdb',NULL)`); err != nil {
+		t.Fatalf("failed seeding mysql lineage table: %v", err)
+	}
+
+	mysqlEdges, err := loadMySQLLineageEdges(ctx, dbConn, "appdb")
+	if err != nil {
+		t.Fatalf("loadMySQLLineageEdges failed: %v", err)
+	}
+	if len(mysqlEdges) != 1 || mysqlEdges[0].From != "order_items" || mysqlEdges[0].To != "orders" {
+		t.Fatalf("unexpected mysql lineage edges: %+v", mysqlEdges)
+	}
+
+	// Postgres lineage metadata.
+	createPostgresLineageTables := []string{
+		`CREATE TABLE information_schema.table_constraints (
+			table_name TEXT, constraint_name TEXT, table_schema TEXT, constraint_type TEXT
+		)`,
+		`CREATE TABLE information_schema.constraint_column_usage (
+			constraint_name TEXT, table_schema TEXT, table_name TEXT
+		)`,
+	}
+	for _, stmt := range createPostgresLineageTables {
+		if _, err := dbConn.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("failed postgres lineage setup statement %q: %v", stmt, err)
+		}
+	}
+	seedPostgresLineage := []string{
+		`INSERT INTO information_schema.table_constraints VALUES ('orders','fk_orders_users','public','FOREIGN KEY')`,
+		`INSERT INTO information_schema.key_column_usage VALUES ('orders',NULL,'public','fk_orders_users')`,
+		`INSERT INTO information_schema.constraint_column_usage VALUES ('fk_orders_users','public','users')`,
+	}
+	for _, stmt := range seedPostgresLineage {
+		if _, err := dbConn.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("failed postgres lineage seed statement %q: %v", stmt, err)
+		}
+	}
+
+	postgresEdges, err := loadPostgresLineageEdges(ctx, dbConn)
+	if err != nil {
+		t.Fatalf("loadPostgresLineageEdges failed: %v", err)
+	}
+	if len(postgresEdges) != 1 || postgresEdges[0].From != "orders" || postgresEdges[0].To != "users" {
+		t.Fatalf("unexpected postgres lineage edges: %+v", postgresEdges)
+	}
+}
+
 func floatEqual(left, right float64) bool {
 	return math.Abs(left-right) < 1e-9
 }
