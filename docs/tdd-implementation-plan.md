@@ -65,8 +65,9 @@ This document provides a Test-Driven Development (TDD) implementation plan for r
 - ✅ AAA Pattern: Arrange → Act → Assert
 - ✅ Pure functions for core logic
 - ✅ Table-driven tests
-- ✅ 90%+ coverage for critical paths
+- ✅ **Minimum 80% coverage** for new code (90%+ for critical paths)
 - ✅ Red → Green → Refactor cycle
+- ✅ **Run golangci-lint@2.8.0 after each phase completion**
 
 ---
 
@@ -94,9 +95,10 @@ This document provides a Test-Driven Development (TDD) implementation plan for r
 ### 3. Testing Standards
 
 - **AAA Pattern**: Arrange → Act → Assert
-- **Coverage Goals**: Critical (100%), High (90%+), Medium (80%+)
+- **Coverage Goals**: Minimum 80% for new code, Critical (100%), High (90%+), Medium (80%+)
 - **Test Independence**: No shared state, run in any order
 - **Fast & Reliable**: Quick execution, deterministic
+- **Lint Check**: Run golangci-lint@2.8.0 after each phase completion
 
 ---
 
@@ -114,6 +116,7 @@ Since this plan operates under **compounded approval**, the execution workflow f
 │  PHASE: Write failing tests (RED)                           │
 │  ├─ No approval needed                                      │
 │  ├─ Create *_test.go files                                  │
+│  ├─ Target: ≥80% coverage for new code                      │
 │  └─ Run: go test (expect failures)                          │
 └──────────────────────┬──────────────────────────────────────┘
                        │
@@ -122,7 +125,8 @@ Since this plan operates under **compounded approval**, the execution workflow f
 │  PHASE: Implement to pass (GREEN)                           │
 │  ├─ No approval needed                                      │
 │  ├─ Create implementation files                             │
-│  └─ Run: go test (expect pass)                              │
+│  ├─ Run: go test (expect pass)                              │
+│  └─ Run: go test -cover (check ≥80% coverage)               │
 └──────────────────────┬──────────────────────────────────────┘
                        │
                        ▼
@@ -130,7 +134,8 @@ Since this plan operates under **compounded approval**, the execution workflow f
 │  PHASE: Refactor & optimize                                 │
 │  ├─ No approval needed                                      │
 │  ├─ Improve code quality                                    │
-│  └─ Run: go test (still pass)                               │
+│  ├─ Run: go test (still pass)                               │
+│  └─ Run: golangci-lint@2.8.0 (check for issues)             │
 └──────────────────────┬──────────────────────────────────────┘
                        │
                        ▼
@@ -224,9 +229,10 @@ main (stable)
 
 3. **Pre-Merge Checklist** (Before creating PR)
    - [ ] All tests passing (`go test ./...`)
-   - [ ] Coverage ≥ 90% (`go test -cover`)
+   - [ ] Coverage ≥ 80% for new code, ≥ 90% for critical paths (`go test -cover`)
    - [ ] Code formatted (`gofmt -w .`)
-   - [ ] No lint errors (`go vet ./...`)
+   - [ ] No vet errors (`go vet ./...`)
+   - [ ] No lint errors (golangci-lint@2.8.0)
    - [ ] Documentation updated
    - [ ] Branch rebased on latest main
 
@@ -827,7 +833,8 @@ func (s *MCPServer) RegisterTools() error {
 - [ ] Handles empty tables gracefully (returns empty insights, not error)
 - [ ] Supports filtering by insight type (KPI, trend, anomaly, distribution)
 - [ ] Prioritizes most significant insights when limit is specified
-- [ ] 90%+ test coverage
+- [ ] **≥80% test coverage for new code** (≥90% for critical paths)
+- [ ] **golangci-lint@2.8.0 passes with no issues**
 - [ ] Integration tests pass with PostgreSQL, MySQL, and SQLite
 
 ### F1.4 Test Commands
@@ -845,6 +852,10 @@ DB_MCP_IT_PG_HOST=localhost DB_MCP_IT_PG_DB=testdb \
 
 # All tests including benchmarks
 go test ./internal/mcp -run "TestInsight|BenchmarkInsight" -v -bench=.
+
+# Run linter (after each phase and before PR)
+# Install: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.8.0
+golangci-lint run --timeout=5m
 ```
 
 ### F1.5 File Structure
@@ -1005,7 +1016,8 @@ func (s *MCPServer) handleDetectSchemaDrift(ctx context.Context, request mcp.Too
 - [ ] Stores history with configurable retention (default 30 days)
 - [ ] Detects drift by comparing current state to last snapshot
 - [ ] Classifies changes by impact (breaking, compatible, informational)
-- [ ] 90%+ test coverage
+- [ ] **≥80% test coverage for new code** (≥90% for critical paths)
+- [ ] **golangci-lint@2.8.0 passes with no issues**
 
 ---
 
@@ -1148,7 +1160,8 @@ func mergeWithExistingSchema(existing *SchemaAnalysis, enhanced *EnhancedSchemaA
 - [ ] Data quality scores 0-100% for completeness, uniqueness, validity
 - [ ] Concurrent profiling of multiple tables (configurable workers)
 - [ ] Backward compatible - existing analyze-schema unchanged
-- [ ] 90%+ test coverage
+- [ ] **≥80% test coverage for new code** (≥90% for critical paths)
+- [ ] **golangci-lint@2.8.0 passes with no issues**
 
 ---
 
@@ -1321,7 +1334,8 @@ func buildFederationResponse(result *FederatedQueryResult) ([]byte, error)
 - [ ] Normalizes data types between MySQL, PostgreSQL, SQLite
 - [ ] Handles partial failures gracefully (returns partial results with errors)
 - [ ] Returns results within 10 seconds for 3-profile queries
-- [ ] 90%+ test coverage
+- [ ] **≥80% test coverage for new code** (≥90% for critical paths)
+- [ ] **golangci-lint@2.8.0 passes with no issues**
 
 ---
 
@@ -1407,13 +1421,15 @@ internal/mcp/
 | MCP Handlers | 90% | Request/response |
 | Integration | 80% | End-to-end flows |
 
+**Minimum Requirement**: ≥80% coverage for all new code
+
 ### Test Commands
 
 ```bash
 # All new feature tests
 go test ./internal/mcp -run "TestInsight|TestProfile|TestSnapshot|TestMigration|TestFederation" -v
 
-# Coverage report
+# Coverage report (must be ≥80%)
 go test -coverprofile=coverage.out ./internal/mcp
 go tool cover -func=coverage.out | grep -E "(insights|profiling|schema|federation)"
 
@@ -1422,6 +1438,9 @@ go test -bench=. ./internal/mcp -run=^$ -benchtime=5s
 
 # Race condition detection
 go test -race ./internal/mcp -run "TestConcurrent"
+
+# Lint check (run after each phase - uses locally installed golangci-lint@2.8.0)
+golangci-lint run --timeout=5m ./internal/mcp
 ```
 
 ---
