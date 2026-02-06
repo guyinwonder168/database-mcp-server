@@ -27,9 +27,12 @@ jobs:
     steps:
       - name: Resolve release tag
         id: tag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_TAG: ${{ inputs.tag }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ inputs.tag }}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            VERSION="$DISPATCH_TAG"
           else
             VERSION="${GITHUB_REF_NAME}"
           fi
@@ -63,17 +66,19 @@ jobs:
 
       - name: Build image tag list
         id: image
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          VERSION: ${{ steps.tag.outputs.version }}
+          VERSION_NO_V: ${{ steps.tag.outputs.version_no_v }}
+          PUBLISH_LATEST: ${{ inputs.publish_latest }}
         run: |
-          IMAGE_NAME="ghcr.io/${{ github.repository }}"
-          VERSION="${{ steps.tag.outputs.version }}"
-          VERSION_NO_V="${{ steps.tag.outputs.version_no_v }}"
-
           echo "name=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
           {
             echo "tags<<EOF"
             echo "$IMAGE_NAME:$VERSION"
             echo "$IMAGE_NAME:$VERSION_NO_V"
-            if [ "${{ github.event_name }}" = "push" ] || [ "${{ inputs.publish_latest }}" = "true" ]; then
+            if [ "$EVENT_NAME" = "push" ] || [ "$PUBLISH_LATEST" = "true" ]; then
               echo "$IMAGE_NAME:latest"
             fi
             echo "EOF"
