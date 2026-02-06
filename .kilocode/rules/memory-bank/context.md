@@ -72,6 +72,8 @@
 - **Verification**: In-memory client tests confirm tools/list works correctly and capabilities are properly advertised
 
 ## Recent Changes (February 2026)
+- Added GHCR container packaging workflow (`.github/workflows/package.yml`) to publish versioned container images for release tags
+- Added production multi-stage `Dockerfile` and README container usage instructions
 - Implemented F2 Phase 4 MCP handler integration (`schema_tracker.go`)
 - Registered `track-schema-changes` as a public MCP tool
 - Added end-to-end schema tracker tests (`schema_tracker_test.go`)
