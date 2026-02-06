@@ -1817,3 +1817,374 @@ func TestPostgresConstraintMappingQueryDefinition(t *testing.T) {
 		}
 	}
 }
+
+// --- Error path tests to cover new refactored code ---
+
+func TestHandleListTables_ProfileNotFound(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+	server := NewMCPServerWithConfig(testConfig)
+	res, _, err := server.handleListTables(context.Background(), nil, ListTablesParams{
+		ProfileName:  "nonexistent",
+		DatabaseName: "db",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == nil {
+		t.Fatalf("expected error result, got nil")
+	}
+}
+
+func TestHandleListTables_MissingParams(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+	server := NewMCPServerWithConfig(testConfig)
+	res, _, err := server.handleListTables(context.Background(), nil, ListTablesParams{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == nil {
+		t.Fatalf("expected error result for missing params")
+	}
+}
+
+func TestHandleDescribeTable_ProfileNotFound(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+	server := NewMCPServerWithConfig(testConfig)
+	_, _, err := server.handleDescribeTable(context.Background(), nil, DescribeTableParams{
+		ProfileName:  "nonexistent",
+		DatabaseName: "db",
+		TableName:    "users",
+	})
+	if err == nil {
+		t.Fatalf("expected error for missing profile")
+	}
+}
+
+func TestHandleDescribeTable_MissingParams(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+	server := NewMCPServerWithConfig(testConfig)
+	res, _, err := server.handleDescribeTable(context.Background(), nil, DescribeTableParams{
+		ProfileName: "testsqlite",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == nil {
+		t.Fatalf("expected error result for missing params")
+	}
+}
+
+func TestHandleListDatabases_ProfileNotFound(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+	server := NewMCPServerWithConfig(testConfig)
+	res, _, err := server.handleListDatabases(context.Background(), nil, ListDatabasesParams{
+		ProfileName: "nonexistent",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == nil {
+		t.Fatalf("expected error result for profile not found")
+	}
+}
+
+func TestHandleAnalyzeSchema_ProfileNotFound(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+	server := NewMCPServerWithConfig(testConfig)
+	res, _, err := server.handleAnalyzeSchema(context.Background(), nil, AnalyzeSchemaParams{
+		ProfileName:   "nonexistent",
+		AnalysisLevel: "basic",
+	})
+	if err == nil {
+		t.Fatalf("expected error for missing profile")
+	}
+	if res == nil {
+		t.Fatalf("expected error result")
+	}
+}
+
+func TestHandleAnalyzeSchema_MissingLevel(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+	server := NewMCPServerWithConfig(testConfig)
+	res, _, err := server.handleAnalyzeSchema(context.Background(), nil, AnalyzeSchemaParams{
+		ProfileName: "testsqlite",
+	})
+	if err == nil {
+		t.Fatalf("expected error for missing analysis_level")
+	}
+	if res == nil {
+		t.Fatalf("expected error result for missing level")
+	}
+}
+
+func TestHandleDiscoverJoins_ProfileNotFound(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+	server := NewMCPServerWithConfig(testConfig)
+	_, _, err := server.handleDiscoverJoins(context.Background(), nil, DiscoverJoinsParams{
+		ProfileName: "nonexistent",
+	})
+	if err == nil {
+		t.Fatalf("expected error for missing profile")
+	}
+}
+
+func TestHandleExecuteSQL_ProfileNotFound(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+	server := NewMCPServerWithConfig(testConfig)
+	res, _, err := server.handleExecuteSQL(context.Background(), nil, ExecuteSQLParams{
+		ProfileName: "nonexistent",
+		SQL:         "SELECT 1",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == nil {
+		t.Fatalf("expected error result for profile not found")
+	}
+}
+
+func TestHandleSampleData_ProfileNotFound(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+	server := NewMCPServerWithConfig(testConfig)
+	res, _, err := server.handleSampleData(context.Background(), nil, SampleDataParams{
+		ProfileName: "nonexistent",
+		TableName:   "users",
+	})
+	if err == nil {
+		t.Fatalf("expected error for missing profile")
+	}
+	_ = res
+}
+
+func TestHandleSmartQueryBuilder_ProfileNotFound(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+	server := NewMCPServerWithConfig(testConfig)
+	_, _, err := server.handleSmartQueryBuilder(context.Background(), nil, SmartQueryBuilderParams{
+		ProfileName: "nonexistent",
+		Intent:      "list users",
+	})
+	if err == nil {
+		t.Fatalf("expected error for missing profile")
+	}
+}
+
+func TestHandleOptimizeQuery_ProfileNotFound(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+	server := NewMCPServerWithConfig(testConfig)
+	_, _, err := server.handleOptimizeQuery(context.Background(), nil, OptimizeQueryParams{
+		ProfileName:  "nonexistent",
+		DatabaseName: "db",
+		SQL:          "SELECT 1",
+	})
+	if err == nil {
+		t.Fatalf("expected error for missing profile")
+	}
+}
+
+func TestHandleValidateQuery_ProfileNotFound(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+	server := NewMCPServerWithConfig(testConfig)
+	_, _, err := server.handleValidateQuery(context.Background(), nil, ValidateQueryParams{
+		ProfileName:  "nonexistent",
+		DatabaseName: "db",
+		SQL:          "SELECT 1",
+	})
+	if err == nil {
+		t.Fatalf("expected error for missing profile")
+	}
+}
+
+func TestFindProfile_NotFound(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+	server := NewMCPServerWithConfig(testConfig)
+	cfg, prof, err := server.findProfile("nonexistent")
+	if err == nil {
+		t.Fatalf("expected error for nonexistent profile")
+	}
+	if cfg == nil {
+		t.Fatalf("expected config to be returned even on profile not found")
+	}
+	if prof != nil {
+		t.Fatalf("expected nil profile")
+	}
+}
+
+func TestFindProfile_BadConfig(t *testing.T) {
+	server := NewMCPServerWithConfig("nonexistent_config.yaml")
+	cfg, prof, err := server.findProfile("any")
+	if err == nil {
+		t.Fatalf("expected error for bad config")
+	}
+	if cfg != nil {
+		t.Fatalf("expected nil config")
+	}
+	if prof != nil {
+		t.Fatalf("expected nil profile")
+	}
+}
+
+func TestOpenConnection_ProfileNotFound(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+	server := NewMCPServerWithConfig(testConfig)
+	conn, prof, err := server.openConnection(context.Background(), "nonexistent", "")
+	if err == nil {
+		t.Fatalf("expected error for nonexistent profile")
+	}
+	if conn != nil {
+		t.Fatalf("expected nil connection")
+	}
+	if prof != nil {
+		t.Fatalf("expected nil profile for not-found case")
+	}
+}
+
+func TestSwitchMySQLDatabase_NilProfile(t *testing.T) {
+	server := NewMCPServerWithConfig("nonexistent.yaml")
+	result := server.switchMySQLDatabase(context.Background(), nil, nil, "test", "db")
+	if result == nil {
+		t.Fatalf("expected error result for nil profile")
+	}
+}
+
+func TestSwitchMySQLDatabase_SameDB(t *testing.T) {
+	server := NewMCPServerWithConfig("nonexistent.yaml")
+	result := server.switchMySQLDatabase(context.Background(), nil, &config.Profile{DBType: "mysql", DatabaseName: "db"}, "test", "db")
+	if result != nil {
+		t.Fatalf("expected nil for same database name")
+	}
+}
+
+func TestSwitchMySQLDatabase_EmptyDBName(t *testing.T) {
+	server := NewMCPServerWithConfig("nonexistent.yaml")
+	result := server.switchMySQLDatabase(context.Background(), nil, &config.Profile{DBType: "mysql", DatabaseName: "db"}, "test", "")
+	if result != nil {
+		t.Fatalf("expected nil for empty database name")
+	}
+}
+
+func TestHandleExecuteSQL_MissingParams(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+	server := NewMCPServerWithConfig(testConfig)
+	res, _, err := server.handleExecuteSQL(context.Background(), nil, ExecuteSQLParams{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == nil {
+		t.Fatalf("expected error result for missing params")
+	}
+}
+
+func TestHandleAnalyzeDataLineage_MissingParams(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+	server := NewMCPServerWithConfig(testConfig)
+	res, _, err := server.handleAnalyzeDataLineage(context.Background(), nil, AnalyzeDataLineageParams{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == nil {
+		t.Fatalf("expected error result for missing params")
+	}
+}
+
+func TestHandleListDatabases_BadConfig(t *testing.T) {
+	server := NewMCPServerWithConfig("nonexistent_config.yaml")
+	res, _, err := server.handleListDatabases(context.Background(), nil, ListDatabasesParams{
+		ProfileName: "any",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == nil {
+		t.Fatalf("expected error result for bad config")
+	}
+}
+
+func TestHandleDescribeTable_BadConfig(t *testing.T) {
+	server := NewMCPServerWithConfig("nonexistent_config.yaml")
+	res, _, err := server.handleDescribeTable(context.Background(), nil, DescribeTableParams{
+		ProfileName:  "any",
+		DatabaseName: "db",
+		TableName:    "t",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == nil {
+		t.Fatalf("expected error result for bad config")
+	}
+}
+
+func TestHandleExecuteSQL_BadConfig(t *testing.T) {
+	server := NewMCPServerWithConfig("nonexistent_config.yaml")
+	res, _, err := server.handleExecuteSQL(context.Background(), nil, ExecuteSQLParams{
+		ProfileName:  "any",
+		DatabaseName: "db",
+		SQL:          "SELECT 1",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == nil {
+		t.Fatalf("expected error result for bad config")
+	}
+}
+
+func TestHandleListTables_BadConfig(t *testing.T) {
+	server := NewMCPServerWithConfig("nonexistent_config.yaml")
+	res, _, err := server.handleListTables(context.Background(), nil, ListTablesParams{
+		ProfileName:  "any",
+		DatabaseName: "db",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == nil {
+		t.Fatalf("expected error result for bad config")
+	}
+}
+
+func TestHandleSampleData_BadConfig(t *testing.T) {
+	server := NewMCPServerWithConfig("nonexistent_config.yaml")
+	res, _, err := server.handleSampleData(context.Background(), nil, SampleDataParams{
+		ProfileName:  "any",
+		DatabaseName: "db",
+		TableName:    "t",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == nil {
+		t.Fatalf("expected error result for bad config")
+	}
+}
+
+func TestHandleAnalyzeSchema_BadConfig(t *testing.T) {
+	server := NewMCPServerWithConfig("nonexistent_config.yaml")
+	res, _, err := server.handleAnalyzeSchema(context.Background(), nil, AnalyzeSchemaParams{
+		ProfileName:   "any",
+		AnalysisLevel: "basic",
+	})
+	if err == nil {
+		t.Fatalf("expected error for bad config")
+	}
+	if res == nil {
+		t.Fatalf("expected error result for bad config")
+	}
+}
