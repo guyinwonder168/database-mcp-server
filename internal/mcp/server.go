@@ -49,6 +49,29 @@ const maxQualityIssuesPerColumn = 10
 
 const sqliteListTablesQuery = "SELECT name FROM sqlite_master WHERE type='table'"
 
+const (
+	joinSQLTemplate                     = "SELECT * FROM %s JOIN %s ON %s.%s = %s.%s"
+	toolConfigureProfile                = "configure-profile"
+	toolDiscoverJoins                   = "discover-joins"
+	toolListProfiles                    = "list-profiles"
+	mimeTypeApplicationJSON             = "application/json"
+	messageMissingRequiredParameters    = "Missing required parameters"
+	actionProvideAllRequiredParameters  = "Provide all required parameters"
+	messageCreateProfileConnectionInfo  = "Create the profile with database connection info"
+	messageProfileNotFound              = "Profile not found"
+	errorProfileNotFound                = "profile not found"
+	messageFailedToConnectToDatabase    = "Failed to connect to database"
+	queryShowFullTables                 = "SHOW FULL TABLES"
+	queryPostgresPublicInformationTable = "SELECT table_name FROM information_schema.tables WHERE table_schema='public'"
+	errorUnsupportedDBType              = "unsupported db_type"
+	messageFailedToListTables           = "Failed to list tables"
+	messageFailedToLoadConfiguration    = "Failed to load configuration"
+	actionInitializeConfiguration       = "Initialize configuration"
+	descriptionRunServerCreateConfig    = "Run the server to create initial configuration"
+	messageProfileNotFoundFormat        = "Profile '%s' not found"
+	descriptionSpecifiedProfileMissing  = "The specified database profile does not exist"
+)
+
 func paramsValueSchema() *jsonschema.Schema {
 	return &jsonschema.Schema{
 		OneOf: []*jsonschema.Schema{
@@ -101,9 +124,9 @@ func (s *MCPServer) mapSemanticRelationships(
 					ToTable:          col.ForeignKeyRef.RefTable,
 					ToColumn:         col.ForeignKeyRef.RefColumn,
 					RelationshipType: "many_to_one",
-					SuggestedJoin:    fmt.Sprintf("SELECT * FROM %s JOIN %s ON %s.%s = %s.%s", tableName, col.ForeignKeyRef.RefTable, tableName, col.ColumnName, col.ForeignKeyRef.RefTable, col.ForeignKeyRef.RefColumn),
+					SuggestedJoin:    fmt.Sprintf(joinSQLTemplate, tableName, col.ForeignKeyRef.RefTable, tableName, col.ColumnName, col.ForeignKeyRef.RefTable, col.ForeignKeyRef.RefColumn),
 				})
-				suggestedJoins = append(suggestedJoins, fmt.Sprintf("SELECT * FROM %s JOIN %s ON %s.%s = %s.%s", tableName, col.ForeignKeyRef.RefTable, tableName, col.ColumnName, col.ForeignKeyRef.RefTable, col.ForeignKeyRef.RefColumn))
+				suggestedJoins = append(suggestedJoins, fmt.Sprintf(joinSQLTemplate, tableName, col.ForeignKeyRef.RefTable, tableName, col.ColumnName, col.ForeignKeyRef.RefTable, col.ForeignKeyRef.RefColumn))
 			}
 		}
 	}
@@ -113,7 +136,7 @@ func (s *MCPServer) mapSemanticRelationships(
 		semanticRels = append(semanticRels, SemanticRelationship{
 			Tables:           []string{js.FromTable, js.ToTable},
 			RelationshipType: "join_suggestion",
-			ConnectionBasis:  "discover-joins",
+			ConnectionBasis:  toolDiscoverJoins,
 			ConfidenceScore:  0.8,
 			SuggestedJoin:    js.SuggestedJoinSQL,
 		})
@@ -170,7 +193,7 @@ func (s *MCPServer) analyzeNamingRelationships(srcName string, source TableInfo,
 					RelationshipType: "shared_column",
 					ConnectionBasis:  "shared_column",
 					ConfidenceScore:  0.6,
-					SuggestedJoin:    fmt.Sprintf("SELECT * FROM %s JOIN %s ON %s.%s = %s.%s", srcName, tgtName, srcName, col.ColumnName, tgtName, tgtCol.ColumnName),
+					SuggestedJoin:    fmt.Sprintf(joinSQLTemplate, srcName, tgtName, srcName, col.ColumnName, tgtName, tgtCol.ColumnName),
 				}
 			}
 		}
@@ -315,7 +338,7 @@ func (s *MCPServer) registerAllTools() {
 	// configure-profile
 	{
 		tool := &mcp.Tool{
-			Name: "configure-profile",
+			Name: toolConfigureProfile,
 			Description: `Create or update a database connection profile. Required for all database actions.
 		Fields:
 		  profile_name (required)
@@ -334,7 +357,7 @@ func (s *MCPServer) registerAllTools() {
 	// list-profiles
 	{
 		tool := &mcp.Tool{
-			Name: "list-profiles",
+			Name: toolListProfiles,
 			Description: `List all configured database profiles.
   Example:
   {}`,
@@ -528,7 +551,7 @@ func (s *MCPServer) registerAllTools() {
 	// discover-joins
 	{
 		tool := &mcp.Tool{
-			Name: "discover-joins",
+			Name: toolDiscoverJoins,
 			Description: `Discover joinable relationships (foreign keys) between tables and suggest JOIN SQL.
   Input: profile_name (required), tables (optional).
   Returns: list of join suggestions and summary.
@@ -585,7 +608,7 @@ func (s *MCPServer) registerResources() {
 		URI:         "tools://list",
 		Name:        "Registered MCP Tools",
 		Description: "All registered MCP tools with descriptions",
-		MIMEType:    "application/json",
+		MIMEType:    mimeTypeApplicationJSON,
 	}, s.resourceToolsHandler)
 
 	// Profile metadata (secrets redacted) via URI template
@@ -593,7 +616,7 @@ func (s *MCPServer) registerResources() {
 		URITemplate: "profile://{profile}",
 		Name:        "Database profile metadata",
 		Description: "Profile connection metadata without secrets",
-		MIMEType:    "application/json",
+		MIMEType:    mimeTypeApplicationJSON,
 	}, s.resourceProfileHandler)
 }
 
@@ -632,10 +655,10 @@ func (s *MCPServer) handleDiscoverJoins(
 	conn, prof, err := s.openConnection(ctx, p.ProfileName, "")
 	if err != nil {
 		if prof == nil {
-			log.JSONLog("error", "Profile not found", map[string]interface{}{"profile_name": p.ProfileName})
-			return nil, nil, fmt.Errorf("profile not found")
+			log.JSONLog("error", messageProfileNotFound, map[string]interface{}{"profile_name": p.ProfileName})
+			return nil, nil, fmt.Errorf(errorProfileNotFound)
 		}
-		log.JSONLog("error", "Failed to connect to database", map[string]interface{}{"error": err})
+		log.JSONLog("error", messageFailedToConnectToDatabase, map[string]interface{}{"error": err})
 		structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
 			"profile_name": p.ProfileName,
 			"operation":    "discover_joins",
@@ -718,7 +741,7 @@ func (s *MCPServer) handleDiscoverJoins(
 							ToTable:          table,
 							ToColumn:         to,
 							Relationship:     "foreign_key",
-							SuggestedJoinSQL: fmt.Sprintf("SELECT * FROM %s JOIN %s ON %s.%s = %s.%s", tbl, table, tbl, from, table, to),
+							SuggestedJoinSQL: fmt.Sprintf(joinSQLTemplate, tbl, table, tbl, from, table, to),
 						})
 					}
 				} else {
@@ -762,7 +785,7 @@ func (s *MCPServer) handleDiscoverJoins(
 						ToTable:          toTable,
 						ToColumn:         toCol,
 						Relationship:     "foreign_key",
-						SuggestedJoinSQL: fmt.Sprintf("SELECT * FROM %s JOIN %s ON %s.%s = %s.%s", fromTable, toTable, fromTable, fromCol, toTable, toCol),
+						SuggestedJoinSQL: fmt.Sprintf(joinSQLTemplate, fromTable, toTable, fromTable, fromCol, toTable, toCol),
 					})
 				}
 			}
@@ -1021,7 +1044,7 @@ func (s *MCPServer) resourceToolsHandler(ctx context.Context, req *mcp.ReadResou
 		Contents: []*mcp.ResourceContents{
 			{
 				URI:      req.Params.URI,
-				MIMEType: "application/json",
+				MIMEType: mimeTypeApplicationJSON,
 				Text:     string(b),
 			},
 		},
@@ -1041,7 +1064,7 @@ func (s *MCPServer) resourceProfileHandler(ctx context.Context, req *mcp.ReadRes
 
 	_, prof, err := s.findProfile(profileName)
 	if err != nil {
-		if err.Error() == "profile not found" {
+		if err.Error() == errorProfileNotFound {
 			return nil, fmt.Errorf("profile not found: %s", profileName)
 		}
 		return nil, err
@@ -1058,7 +1081,7 @@ func (s *MCPServer) resourceProfileHandler(ctx context.Context, req *mcp.ReadRes
 		Contents: []*mcp.ResourceContents{
 			{
 				URI:      req.Params.URI,
-				MIMEType: "application/json",
+				MIMEType: mimeTypeApplicationJSON,
 				Text:     string(b),
 			},
 		},
@@ -1244,19 +1267,19 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, _ *mcp.CallTool
 	// 1. Load config and profile
 	cfg, prof, err := s.findProfile(p.ProfileName)
 	if err != nil {
-		if err.Error() == "profile not found" {
+		if err.Error() == errorProfileNotFound {
 			structErr := NewStructuredError(
 				ErrorCodeProfileNotFound,
-				"Profile not found",
+				messageProfileNotFound,
 				"profile_name does not exist; configure a profile before using smart-query-builder",
 			).WithSuggestions(
 				ErrorSuggestion{
-					Tool:        "configure-profile",
-					Description: "Create the profile with database connection info",
+					Tool:        toolConfigureProfile,
+					Description: messageCreateProfileConnectionInfo,
 					Example:     `{"profile_name":"mydb","db_type":"postgres","host":"localhost","port":5432,"username":"user","password":"pass","database_name":"mydb"}`,
 				},
 			).WithContext("profile_name", p.ProfileName)
-			return errorResult(structErr), nil, fmt.Errorf("profile not found")
+			return errorResult(structErr), nil, fmt.Errorf(errorProfileNotFound)
 		}
 		return nil, nil, err
 	}
@@ -1305,17 +1328,17 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, _ *mcp.CallTool
 		var query string
 		switch prof.DBType {
 		case "mysql", "mariadb":
-			query = "SHOW FULL TABLES"
+			query = queryShowFullTables
 		case "postgres":
-			query = "SELECT table_name FROM information_schema.tables WHERE table_schema='public'"
+			query = queryPostgresPublicInformationTable
 		case "sqlite":
 			query = sqliteListTablesQuery
 		default:
-			return nil, nil, fmt.Errorf("unsupported db_type")
+			return nil, nil, fmt.Errorf(errorUnsupportedDBType)
 		}
 		rows, err := conn.QueryContext(ctx, query)
 		if err != nil {
-			log.JSONLog("error", "Failed to list tables", map[string]interface{}{"error": err})
+			log.JSONLog("error", messageFailedToListTables, map[string]interface{}{"error": err})
 			// Use the database name from params or profile
 			dbName := prof.DatabaseName
 			if p.DatabaseName != "" {
@@ -1386,7 +1409,7 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, _ *mcp.CallTool
 		case "sqlite":
 			colQuery = fmt.Sprintf("PRAGMA table_info('%s')", table)
 		default:
-			return nil, nil, fmt.Errorf("unsupported db_type")
+			return nil, nil, fmt.Errorf(errorUnsupportedDBType)
 		}
 		rows, err := conn.QueryContext(ctx, colQuery)
 		if err != nil {
@@ -1485,7 +1508,7 @@ func (s *MCPServer) handleOptimizeQuery(ctx context.Context, _ *mcp.CallToolRequ
 	if strings.TrimSpace(p.ProfileName) == "" || strings.TrimSpace(p.DatabaseName) == "" || strings.TrimSpace(p.SQL) == "" {
 		structErr := NewStructuredError(
 			ErrorCodeMissingParameter,
-			"Missing required parameters",
+			messageMissingRequiredParameters,
 			"profile_name, database_name, and sql are required for optimize-query",
 		).WithSuggestions(
 			ErrorSuggestion{
@@ -1499,19 +1522,19 @@ func (s *MCPServer) handleOptimizeQuery(ctx context.Context, _ *mcp.CallToolRequ
 
 	cfg, prof, err := s.findProfile(p.ProfileName)
 	if err != nil {
-		if err.Error() == "profile not found" {
+		if err.Error() == errorProfileNotFound {
 			structErr := NewStructuredError(
 				ErrorCodeProfileNotFound,
-				"Profile not found",
+				messageProfileNotFound,
 				"profile_name does not exist; configure a profile before using smart-query-builder",
 			).WithSuggestions(
 				ErrorSuggestion{
-					Tool:        "configure-profile",
-					Description: "Create the profile with database connection info",
+					Tool:        toolConfigureProfile,
+					Description: messageCreateProfileConnectionInfo,
 					Example:     `{"profile_name":"mydb","db_type":"postgres","host":"localhost","port":5432,"username":"user","password":"pass","database_name":"mydb"}`,
 				},
 			).WithContext("profile_name", p.ProfileName)
-			return errorResult(structErr), nil, fmt.Errorf("profile not found")
+			return errorResult(structErr), nil, fmt.Errorf(errorProfileNotFound)
 		}
 		return nil, nil, err
 	}
@@ -1559,7 +1582,7 @@ func (s *MCPServer) handleValidateQuery(ctx context.Context, _ *mcp.CallToolRequ
 	if strings.TrimSpace(p.ProfileName) == "" || strings.TrimSpace(p.SQL) == "" {
 		structErr := NewStructuredError(
 			ErrorCodeMissingParameter,
-			"Missing required parameters",
+			messageMissingRequiredParameters,
 			"profile_name and sql are required for validate-query",
 		).WithSuggestions(
 			ErrorSuggestion{
@@ -1573,19 +1596,19 @@ func (s *MCPServer) handleValidateQuery(ctx context.Context, _ *mcp.CallToolRequ
 
 	_, prof, err := s.findProfile(p.ProfileName)
 	if err != nil {
-		if err.Error() == "profile not found" {
+		if err.Error() == errorProfileNotFound {
 			structErr := NewStructuredError(
 				ErrorCodeProfileNotFound,
-				"Profile not found",
+				messageProfileNotFound,
 				"profile_name does not exist; configure a profile before using validate-query",
 			).WithSuggestions(
 				ErrorSuggestion{
-					Tool:        "configure-profile",
-					Description: "Create the profile with database connection info",
+					Tool:        toolConfigureProfile,
+					Description: messageCreateProfileConnectionInfo,
 					Example:     `{"profile_name":"mydb","db_type":"postgres","host":"localhost","port":5432,"username":"user","password":"pass","database_name":"mydb"}`,
 				},
 			).WithContext("profile_name", p.ProfileName)
-			return errorResult(structErr), nil, fmt.Errorf("profile not found")
+			return errorResult(structErr), nil, fmt.Errorf(errorProfileNotFound)
 		}
 		return nil, nil, err
 	}
@@ -1610,7 +1633,7 @@ func (s *MCPServer) handleAnalyzeDataLineage(ctx context.Context, _ *mcp.CallToo
 	if strings.TrimSpace(p.ProfileName) == "" || strings.TrimSpace(p.TableName) == "" {
 		structErr := NewStructuredError(
 			ErrorCodeMissingParameter,
-			"Missing required parameters",
+			messageMissingRequiredParameters,
 			"profile_name and table_name are required for analyze-data-lineage",
 		)
 		return errorResult(structErr), nil, nil
@@ -1620,7 +1643,7 @@ func (s *MCPServer) handleAnalyzeDataLineage(ctx context.Context, _ *mcp.CallToo
 	conn, prof, err := s.openConnection(ctx, p.ProfileName, "")
 	if err != nil {
 		if prof == nil {
-			return nil, nil, fmt.Errorf("profile not found")
+			return nil, nil, fmt.Errorf(errorProfileNotFound)
 		}
 		return nil, nil, err
 	}
@@ -1737,11 +1760,11 @@ func (s *MCPServer) handleConfigureProfile(ctx context.Context, _ *mcp.CallToolR
 	if p.ProfileName == "" || p.DBType == "" || p.DatabaseName == "" {
 		structErr := NewStructuredError(
 			ErrorCodeMissingParameter,
-			"Missing required parameters",
+			messageMissingRequiredParameters,
 			"All of profile_name, db_type, and database_name are required",
 		).WithSuggestions(
 			ErrorSuggestion{
-				Action:      "Provide all required parameters",
+				Action:      actionProvideAllRequiredParameters,
 				Description: "Ensure profile_name, db_type, and database_name are included",
 				Example:     `{"profile_name": "mydb", "db_type": "mysql", "database_name": "mydb"}`,
 			},
@@ -1864,11 +1887,11 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, _ *mcp.CallToolRequest
 	if p.ProfileName == "" || p.DatabaseName == "" {
 		structErr := NewStructuredError(
 			ErrorCodeMissingParameter,
-			"Missing required parameters",
+			messageMissingRequiredParameters,
 			"Both profile_name and database_name are required",
 		).WithSuggestions(
 			ErrorSuggestion{
-				Action:      "Provide all required parameters",
+				Action:      actionProvideAllRequiredParameters,
 				Description: "Ensure profile_name and database_name are included",
 				Example:     `{"profile_name": "mydb", "database_name": "mydb", "sql": "SELECT 1"}`,
 			},
@@ -1885,15 +1908,15 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, _ *mcp.CallToolRequest
 				"Configuration file is missing or contains no profiles",
 			).WithSuggestions(
 				ErrorSuggestion{
-					Tool:        "configure-profile",
+					Tool:        toolConfigureProfile,
 					Description: "Create a new database profile",
 					Example:     `{"profile_name": "mydb", "db_type": "mysql", "host": "localhost", "port": 3306, "username": "user", "password": "pass", "database_name": "mydb"}`,
 				},
 			)
 			return errorResult(structErr), nil, nil
 		}
-		log.JSONLog("error", "Profile not found", map[string]interface{}{"profile_name": p.ProfileName})
-		return nil, nil, fmt.Errorf("profile not found")
+		log.JSONLog("error", messageProfileNotFound, map[string]interface{}{"profile_name": p.ProfileName})
+		return nil, nil, fmt.Errorf(errorProfileNotFound)
 	}
 	// Strengthened read-only enforcement (supports WITH CTEs, blocks multi-statement & dangerous verbs)
 	if prof.Readonly {
@@ -2038,7 +2061,7 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, _ *mcp.CallToolRequest
 	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, dbName, prof.SSLMode)
 	conn, err := db.OpenConnectionWithPool(ctx, prof.DBType, dsn, cfg.MaxPoolSize)
 	if err != nil {
-		log.JSONLog("error", "Failed to connect to database", map[string]interface{}{"error": err})
+		log.JSONLog("error", messageFailedToConnectToDatabase, map[string]interface{}{"error": err})
 		structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
 			"profile_name": p.ProfileName,
 			"operation":    "connect",
@@ -2238,11 +2261,11 @@ func (s *MCPServer) handleListTables(ctx context.Context, _ *mcp.CallToolRequest
 	if p.ProfileName == "" || p.DatabaseName == "" {
 		structErr := NewStructuredError(
 			ErrorCodeMissingParameter,
-			"Missing required parameters",
+			messageMissingRequiredParameters,
 			"Both profile_name and database_name are required",
 		).WithSuggestions(
 			ErrorSuggestion{
-				Action:      "Provide all required parameters",
+				Action:      actionProvideAllRequiredParameters,
 				Description: "Ensure profile_name and database_name are included",
 				Example:     `{"profile_name": "mydb", "database_name": "mydb"}`,
 			},
@@ -2254,12 +2277,12 @@ func (s *MCPServer) handleListTables(ctx context.Context, _ *mcp.CallToolRequest
 		if cfg == nil {
 			structErr := NewStructuredError(
 				ErrorCodeConfigNotFound,
-				"Failed to load configuration",
+				messageFailedToLoadConfiguration,
 				err.Error(),
 			).WithSuggestions(
 				ErrorSuggestion{
-					Action:      "Initialize configuration",
-					Description: "Run the server to create initial configuration",
+					Action:      actionInitializeConfiguration,
+					Description: descriptionRunServerCreateConfig,
 				},
 			)
 			return errorResult(structErr), nil, nil
@@ -2271,10 +2294,10 @@ func (s *MCPServer) handleListTables(ctx context.Context, _ *mcp.CallToolRequest
 		structErr := NewStructuredError(
 			ErrorCodeProfileNotFound,
 			fmt.Sprintf("Profile '%s' not found", p.ProfileName),
-			"The specified database profile does not exist",
+			descriptionSpecifiedProfileMissing,
 		).WithSuggestions(
 			ErrorSuggestion{
-				Tool:        "list-profiles",
+				Tool:        toolListProfiles,
 				Description: "List all available database profiles",
 			},
 		).WithContext("available_profiles", availableProfiles)
@@ -2304,17 +2327,17 @@ func (s *MCPServer) handleListTables(ctx context.Context, _ *mcp.CallToolRequest
 	var query string
 	switch prof.DBType {
 	case "mysql", "mariadb":
-		query = "SHOW FULL TABLES"
+		query = queryShowFullTables
 	case "postgres":
-		query = "SELECT table_name FROM information_schema.tables WHERE table_schema='public'"
+		query = queryPostgresPublicInformationTable
 	case "sqlite":
 		query = sqliteListTablesQuery
 	default:
-		return nil, nil, fmt.Errorf("unsupported db_type")
+		return nil, nil, fmt.Errorf(errorUnsupportedDBType)
 	}
 	rows, err := conn.QueryContext(ctx, query)
 	if err != nil {
-		log.JSONLog("error", "Failed to list tables", map[string]interface{}{"profile": p.ProfileName, "error": err})
+		log.JSONLog("error", messageFailedToListTables, map[string]interface{}{"profile": p.ProfileName, "error": err})
 		structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
 			"profile_name":  p.ProfileName,
 			"database_name": dbName,
@@ -2363,27 +2386,27 @@ func (s *MCPServer) handleDescribeTable(ctx context.Context, _ *mcp.CallToolRequ
 		if cfg == nil {
 			structErr := NewStructuredError(
 				ErrorCodeConfigNotFound,
-				"Failed to load configuration",
+				messageFailedToLoadConfiguration,
 				err.Error(),
 			).WithSuggestions(
 				ErrorSuggestion{
-					Action:      "Initialize configuration",
-					Description: "Run the server to create initial configuration",
+					Action:      actionInitializeConfiguration,
+					Description: descriptionRunServerCreateConfig,
 				},
 			)
 			return errorResult(structErr), nil, nil
 		}
-		return nil, nil, fmt.Errorf("profile not found")
+		return nil, nil, fmt.Errorf(errorProfileNotFound)
 	}
 	// Always require both database name and table name from user
 	if p.DatabaseName == "" || p.TableName == "" {
 		structErr := NewStructuredError(
 			ErrorCodeMissingParameter,
-			"Missing required parameters",
+			messageMissingRequiredParameters,
 			"Both database_name and table_name are required",
 		).WithSuggestions(
 			ErrorSuggestion{
-				Action:      "Provide all required parameters",
+				Action:      actionProvideAllRequiredParameters,
 				Description: "Specify both database_name and table_name",
 				Example:     `{"profile_name": "mydb", "database_name": "mydb", "table_name": "users"}`,
 			},
@@ -2393,7 +2416,7 @@ func (s *MCPServer) handleDescribeTable(ctx context.Context, _ *mcp.CallToolRequ
 	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, p.DatabaseName, prof.SSLMode)
 	conn, err := db.OpenConnectionWithPool(ctx, prof.DBType, dsn, cfg.MaxPoolSize)
 	if err != nil {
-		log.JSONLog("error", "Failed to connect to database", map[string]interface{}{"error": err})
+		log.JSONLog("error", messageFailedToConnectToDatabase, map[string]interface{}{"error": err})
 		structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
 			"profile_name":  p.ProfileName,
 			"database_name": p.DatabaseName,
@@ -2631,7 +2654,7 @@ func (s *MCPServer) handleDescribeTable(ctx context.Context, _ *mcp.CallToolRequ
 		}
 
 	default:
-		return nil, nil, fmt.Errorf("unsupported db_type")
+		return nil, nil, fmt.Errorf(errorUnsupportedDBType)
 	}
 
 	result := DescribeTableResult{Columns: columns}
@@ -2648,32 +2671,32 @@ func (s *MCPServer) handleListDatabases(ctx context.Context, _ *mcp.CallToolRequ
 	p := input
 	cfg, prof, err := s.findProfile(p.ProfileName)
 	if err != nil {
-		log.JSONLog("error", "Failed to load configuration", map[string]interface{}{"error": err})
+		log.JSONLog("error", messageFailedToLoadConfiguration, map[string]interface{}{"error": err})
 		if cfg == nil {
 			structErr := NewStructuredError(
 				ErrorCodeConfigNotFound,
-				"Failed to load configuration",
+				messageFailedToLoadConfiguration,
 				err.Error(),
 			).WithSuggestions(
 				ErrorSuggestion{
-					Action:      "Initialize configuration",
-					Description: "Run the server to create initial configuration",
+					Action:      actionInitializeConfiguration,
+					Description: descriptionRunServerCreateConfig,
 				},
 			)
 			return errorResult(structErr), nil, nil
 		}
-		log.JSONLog("error", "Profile not found", map[string]interface{}{"profile_name": p.ProfileName})
+		log.JSONLog("error", messageProfileNotFound, map[string]interface{}{"profile_name": p.ProfileName})
 		structErr := NewStructuredError(
 			ErrorCodeProfileNotFound,
 			fmt.Sprintf("Profile '%s' not found", p.ProfileName),
-			"The specified database profile does not exist",
+			descriptionSpecifiedProfileMissing,
 		).WithSuggestions(
 			ErrorSuggestion{
-				Tool:        "list-profiles",
+				Tool:        toolListProfiles,
 				Description: "List all available database profiles",
 			},
 			ErrorSuggestion{
-				Tool:        "configure-profile",
+				Tool:        toolConfigureProfile,
 				Description: "Create a new database profile",
 				Example:     fmt.Sprintf(`{"profile_name": "%s", "db_type": "mysql", ...}`, p.ProfileName),
 			},
@@ -2683,7 +2706,7 @@ func (s *MCPServer) handleListDatabases(ctx context.Context, _ *mcp.CallToolRequ
 	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, prof.DatabaseName, prof.SSLMode)
 	conn, err := db.OpenConnectionWithPool(ctx, prof.DBType, dsn, cfg.MaxPoolSize)
 	if err != nil {
-		log.JSONLog("error", "Failed to connect to database", map[string]interface{}{"error": err})
+		log.JSONLog("error", messageFailedToConnectToDatabase, map[string]interface{}{"error": err})
 		structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
 			"profile_name": p.ProfileName,
 			"operation":    "smart_query_builder",
@@ -2709,7 +2732,7 @@ func (s *MCPServer) handleListDatabases(ctx context.Context, _ *mcp.CallToolRequ
 			},
 		}, nil, nil
 	default:
-		return nil, nil, fmt.Errorf("unsupported db_type")
+		return nil, nil, fmt.Errorf(errorUnsupportedDBType)
 	}
 	rows, err := conn.QueryContext(ctx, query)
 	if err != nil {
@@ -2756,18 +2779,18 @@ func (s *MCPServer) handleSampleData(
 			log.JSONLog("error", "Failed to load config for sample data", map[string]interface{}{"error": err.Error()})
 			structErr := NewStructuredError(
 				ErrorCodeConfigNotFound,
-				"Failed to load configuration",
+				messageFailedToLoadConfiguration,
 				err.Error(),
 			).WithSuggestions(
 				ErrorSuggestion{
-					Action:      "Initialize configuration",
-					Description: "Run the server to create initial configuration",
+					Action:      actionInitializeConfiguration,
+					Description: descriptionRunServerCreateConfig,
 				},
 			)
 			return errorResult(structErr), nil, nil
 		}
 		log.JSONLog("error", "Profile not found for sample data", map[string]interface{}{"profile_name": p.ProfileName})
-		return nil, nil, fmt.Errorf("profile not found")
+		return nil, nil, fmt.Errorf(errorProfileNotFound)
 	}
 	switch prof.DBType {
 	case "mysql", "mariadb", "postgres", "sqlite":
@@ -2784,11 +2807,11 @@ func (s *MCPServer) handleSampleData(
 	if p.ProfileName == "" || p.DatabaseName == "" || p.TableName == "" {
 		structErr := NewStructuredError(
 			ErrorCodeMissingParameter,
-			"Missing required parameters",
+			messageMissingRequiredParameters,
 			"All of profile_name, database_name, and table_name are required",
 		).WithSuggestions(
 			ErrorSuggestion{
-				Action:      "Provide all required parameters",
+				Action:      actionProvideAllRequiredParameters,
 				Description: "Ensure profile_name, database_name, and table_name are included",
 				Example:     `{"profile_name": "mydb", "database_name": "mydb", "table_name": "users", "sample_size": 5}`,
 			},
@@ -2971,7 +2994,7 @@ func (s *MCPServer) handleAnalyzeSchema(
 		if cfg == nil {
 			structErr := NewStructuredError(
 				ErrorCodeConfigNotFound,
-				"Failed to load configuration",
+				messageFailedToLoadConfiguration,
 				err.Error(),
 			)
 			return errorResult(structErr), nil, err
@@ -2979,9 +3002,9 @@ func (s *MCPServer) handleAnalyzeSchema(
 		structErr := NewStructuredError(
 			ErrorCodeProfileNotFound,
 			fmt.Sprintf("Profile '%s' not found", p.ProfileName),
-			"The specified database profile does not exist",
+			descriptionSpecifiedProfileMissing,
 		)
-		return errorResult(structErr), nil, fmt.Errorf("profile not found")
+		return errorResult(structErr), nil, fmt.Errorf(errorProfileNotFound)
 	}
 	dbName := prof.DatabaseName
 	if p.DatabaseName != "" {
@@ -2992,7 +3015,7 @@ func (s *MCPServer) handleAnalyzeSchema(
 	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, dbName, prof.SSLMode)
 	conn, err := db.OpenConnectionWithPool(ctx, prof.DBType, dsn, cfg.MaxPoolSize)
 	if err != nil {
-		log.JSONLog("error", "Failed to connect to database", map[string]interface{}{"error": err})
+		log.JSONLog("error", messageFailedToConnectToDatabase, map[string]interface{}{"error": err})
 		structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
 			"profile_name": p.ProfileName,
 			"operation":    "analyze_schema",
@@ -3008,17 +3031,17 @@ func (s *MCPServer) handleAnalyzeSchema(
 		var query string
 		switch prof.DBType {
 		case "mysql", "mariadb":
-			query = "SHOW FULL TABLES"
+			query = queryShowFullTables
 		case "postgres":
-			query = "SELECT table_name FROM information_schema.tables WHERE table_schema='public'"
+			query = queryPostgresPublicInformationTable
 		case "sqlite":
 			query = sqliteListTablesQuery
 		default:
-			return nil, nil, fmt.Errorf("unsupported db_type")
+			return nil, nil, fmt.Errorf(errorUnsupportedDBType)
 		}
 		rows, err := conn.QueryContext(ctx, query)
 		if err != nil {
-			log.JSONLog("error", "Failed to list tables", map[string]interface{}{"error": err})
+			log.JSONLog("error", messageFailedToListTables, map[string]interface{}{"error": err})
 			structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
 				"profile_name":  p.ProfileName,
 				"database_name": dbName,
@@ -3395,7 +3418,7 @@ func (s *MCPServer) handleAnalyzeSchema(
 			AnalysisLevel:      p.AnalysisLevel,
 			DatabaseType:       prof.DBType,
 			AnalysisTimestamp:  startTime,
-			ToolsUsed:          []string{"list-tables", "describe-table", "sample-data", "discover-joins"},
+			ToolsUsed:          []string{"list-tables", "describe-table", "sample-data", toolDiscoverJoins},
 			AnalysisDurationMs: int(time.Since(startTime).Milliseconds()),
 		},
 		DatabaseOverview: DatabaseOverview{
