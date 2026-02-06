@@ -47,6 +47,8 @@ const MCPAuthor = "guyinwonder"
 // Cap for number of data quality issues retained per column to prevent unbounded payload growth
 const maxQualityIssuesPerColumn = 10
 
+const sqliteListTablesQuery = "SELECT name FROM sqlite_master WHERE type='table'"
+
 func paramsValueSchema() *jsonschema.Schema {
 	return &jsonschema.Schema{
 		OneOf: []*jsonschema.Schema{
@@ -640,7 +642,7 @@ func (s *MCPServer) handleDiscoverJoins(
 		// Get all tables if not specified
 		tables := p.Tables
 		if len(tables) == 0 {
-			rows, err := conn.QueryContext(ctx, "SELECT name FROM sqlite_master WHERE type='table'")
+			rows, err := conn.QueryContext(ctx, sqliteListTablesQuery)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -1262,7 +1264,7 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, _ *mcp.CallTool
 		case "postgres":
 			query = "SELECT table_name FROM information_schema.tables WHERE table_schema='public'"
 		case "sqlite":
-			query = "SELECT name FROM sqlite_master WHERE type='table'"
+			query = sqliteListTablesQuery
 		default:
 			return nil, nil, fmt.Errorf("unsupported db_type")
 		}
@@ -1622,7 +1624,7 @@ func (s *MCPServer) handleAnalyzeDataLineage(ctx context.Context, _ *mcp.CallToo
 	case "sqlite":
 		// fetch tables
 		var tables []string
-		tRows, err := conn.QueryContext(ctx, "SELECT name FROM sqlite_master WHERE type='table'")
+		tRows, err := conn.QueryContext(ctx, sqliteListTablesQuery)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -2261,7 +2263,7 @@ func (s *MCPServer) handleListTables(ctx context.Context, _ *mcp.CallToolRequest
 	case "postgres":
 		query = "SELECT table_name FROM information_schema.tables WHERE table_schema='public'"
 	case "sqlite":
-		query = "SELECT name FROM sqlite_master WHERE type='table'"
+		query = sqliteListTablesQuery
 	default:
 		return nil, nil, fmt.Errorf("unsupported db_type")
 	}
@@ -2965,7 +2967,7 @@ func (s *MCPServer) handleAnalyzeSchema(
 		case "postgres":
 			query = "SELECT table_name FROM information_schema.tables WHERE table_schema='public'"
 		case "sqlite":
-			query = "SELECT name FROM sqlite_master WHERE type='table'"
+			query = sqliteListTablesQuery
 		default:
 			return nil, nil, fmt.Errorf("unsupported db_type")
 		}
