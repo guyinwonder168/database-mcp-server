@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -76,7 +77,8 @@ func TestSQLHotspotsNOSONAR(t *testing.T) {
 	if pragmaCount < 2 {
 		t.Fatalf("Expected at least 2 PRAGMA foreign_key_list queries, got %d", pragmaCount)
 	}
-	pragmaNoSonarCount := strings.Count(content, "PRAGMA foreign_key_list('%s')\", tbl)) // NOSONAR")
+	pragmaNoSonarRe := regexp.MustCompile(`PRAGMA foreign_key_list\('%s'\)[^\n]*// NOSONAR`)
+	pragmaNoSonarCount := len(pragmaNoSonarRe.FindAllString(content, -1))
 	if pragmaNoSonarCount < 2 {
 		t.Fatalf("Expected NOSONAR comments for PRAGMA queries, got %d", pragmaNoSonarCount)
 	}
@@ -1227,9 +1229,10 @@ func TestSampleDataUnsupportedDatabase(t *testing.T) {
 	server := NewMCPServerWithConfig(testConfig)
 	ctx := context.Background()
 	params := SampleDataParams{
-		ProfileName: "testunsupported",
-		TableName:   "users",
-		SampleSize:  3,
+		ProfileName:  "testunsupported",
+		DatabaseName: "testdb",
+		TableName:    "users",
+		SampleSize:   3,
 	}
 	_, _, err := server.handleSampleData(ctx, nil, params)
 	if err == nil {
