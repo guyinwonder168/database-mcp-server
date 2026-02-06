@@ -11,31 +11,31 @@ import (
 
 // SimpleTableInfo represents basic table info for schema snapshots
 type SimpleTableInfo struct {
-	Name    string            `json:"name"`
-	Type    string            `json:"type"`
+	Name    string                `json:"name"`
+	Type    string                `json:"type"`
 	Columns map[string]ColumnInfo `json:"columns,omitempty"`
 }
 
 // SchemaSnapshot represents a snapshot of database schema at a point in time
 type SchemaSnapshot struct {
-	ID         string                  `json:"id"`
-	Timestamp  time.Time               `json:"timestamp"`
-	Profile    string                  `json:"profile"`
-	TablesHash string                  `json:"tables_hash"` // SHA-256 for integrity
+	ID         string                     `json:"id"`
+	Timestamp  time.Time                  `json:"timestamp"`
+	Profile    string                     `json:"profile"`
+	TablesHash string                     `json:"tables_hash"` // SHA-256 for integrity
 	Tables     map[string]SimpleTableInfo `json:"tables"`
-	RawDDL     map[string]string         `json:"raw_ddl,omitempty"`
+	RawDDL     map[string]string          `json:"raw_ddl,omitempty"`
 }
 
 // SchemaChangeType represents the type of schema change
 type SchemaChangeType string
 
 const (
-	ChangeTypeAddColumn      SchemaChangeType = "add_column"
-	ChangeTypeDropColumn     SchemaChangeType = "drop_column"
-	ChangeTypeAlterType      SchemaChangeType = "alter_type"
-	ChangeTypeRenameColumn   SchemaChangeType = "rename_column"
-	ChangeTypeAddTable       SchemaChangeType = "add_table"
-	ChangeTypeDropTable      SchemaChangeType = "drop_table"
+	ChangeTypeAddColumn       SchemaChangeType = "add_column"
+	ChangeTypeDropColumn      SchemaChangeType = "drop_column"
+	ChangeTypeAlterType       SchemaChangeType = "alter_type"
+	ChangeTypeRenameColumn    SchemaChangeType = "rename_column"
+	ChangeTypeAddTable        SchemaChangeType = "add_table"
+	ChangeTypeDropTable       SchemaChangeType = "drop_table"
 	ChangeTypeAlterConstraint SchemaChangeType = "alter_constraint"
 )
 
@@ -47,11 +47,11 @@ func (sct SchemaChangeType) String() string {
 // SchemaChange represents a single schema change detected
 type SchemaChange struct {
 	Type     SchemaChangeType `json:"type"`
-	Table    string            `json:"table"`
-	Column   string            `json:"column,omitempty"`
-	OldValue interface{}       `json:"old_value,omitempty"`
-	NewValue interface{}       `json:"new_value,omitempty"`
-	Impact   string            `json:"impact"` // breaking, compatible, informational
+	Table    string           `json:"table"`
+	Column   string           `json:"column,omitempty"`
+	OldValue interface{}      `json:"old_value,omitempty"`
+	NewValue interface{}      `json:"new_value,omitempty"`
+	Impact   string           `json:"impact"` // breaking, compatible, informational
 }
 
 // SchemaDiff represents differences between two schema snapshots
@@ -64,17 +64,17 @@ type SchemaDiff struct {
 
 // TableDiff represents changes to a single table
 type TableDiff struct {
-	TableName     string          `json:"table_name"`
-	AddedCols     []SchemaChange `json:"added_columns,omitempty"`
-	DroppedCols    []SchemaChange `json:"dropped_columns,omitempty"`
-	ModifiedCols   []SchemaChange `json:"modified_columns,omitempty"`
+	TableName    string         `json:"table_name"`
+	AddedCols    []SchemaChange `json:"added_columns,omitempty"`
+	DroppedCols  []SchemaChange `json:"dropped_columns,omitempty"`
+	ModifiedCols []SchemaChange `json:"modified_columns,omitempty"`
 }
 
 // MigrationScript represents a generated migration script
 type MigrationScript struct {
 	FromVersion   string   `json:"from_version"`
 	ToVersion     string   `json:"to_version"`
-	Dialect       string   `json:"dialect"`       // mysql, postgresql, sqlite
+	Dialect       string   `json:"dialect"` // mysql, postgresql, sqlite
 	Statements    []string `json:"statements"`
 	EstimatedTime string   `json:"estimated_time,omitempty"`
 	IsReversible  bool     `json:"is_reversible"`

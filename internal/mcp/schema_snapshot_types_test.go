@@ -117,8 +117,8 @@ func TestMigrationScript_Validate(t *testing.T) {
 		{
 			name: "valid_script",
 			script: MigrationScript{
-				FromVersion: "v1.0.0",
-				ToVersion:   "v1.1.0",
+				FromVersion:  "v1.0.0",
+				ToVersion:    "v1.1.0",
 				Dialect:      "mysql",
 				Statements:   []string{"ALTER TABLE users ADD COLUMN phone VARCHAR(20)"},
 				IsReversible: true,
@@ -128,7 +128,7 @@ func TestMigrationScript_Validate(t *testing.T) {
 		{
 			name: "missing_from_version",
 			script: MigrationScript{
-				ToVersion: "v1.1.0",
+				ToVersion:  "v1.1.0",
 				Dialect:    "mysql",
 				Statements: []string{"ALTER TABLE users ADD COLUMN phone VARCHAR(20)"},
 			},
@@ -175,9 +175,9 @@ func TestSchemaSnapshot_Validate(t *testing.T) {
 		{
 			name: "valid_snapshot",
 			snapshot: SchemaSnapshot{
-				ID:        "snap-001",
-				Timestamp: time.Now(),
-				Profile:   "test-profile",
+				ID:         "snap-001",
+				Timestamp:  time.Now(),
+				Profile:    "test-profile",
 				TablesHash: "abc123",
 				Tables: map[string]SimpleTableInfo{
 					"users": {Name: "users", Type: "table"},
@@ -197,7 +197,7 @@ func TestSchemaSnapshot_Validate(t *testing.T) {
 		{
 			name: "missing_timestamp",
 			snapshot: SchemaSnapshot{
-				ID:     "snap-001",
+				ID:      "snap-001",
 				Profile: "test-profile",
 				Tables:  map[string]SimpleTableInfo{},
 			},
@@ -227,8 +227,8 @@ func TestSchemaSnapshot_Validate(t *testing.T) {
 
 func TestComputeTablesHash(t *testing.T) {
 	tests := []struct {
-		name   string
-		tables map[string]SimpleTableInfo
+		name    string
+		tables  map[string]SimpleTableInfo
 		wantErr bool
 	}{
 		{
@@ -240,8 +240,8 @@ func TestComputeTablesHash(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:   "empty_tables",
-			tables: map[string]SimpleTableInfo{},
+			name:    "empty_tables",
+			tables:  map[string]SimpleTableInfo{},
 			wantErr: false,
 		},
 	}
