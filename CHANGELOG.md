@@ -39,6 +39,7 @@ All notable changes to this project will be documented in this file.
 - Resolve SonarCloud security hotspots and improve new code coverage.
 - Remove unused `nolint:gosec` directive in helpers.go.
 - Pin Go version to 1.25.7 across all CI workflows for consistency.
+- Resolve all 12 SonarCloud issues: reduced cognitive complexity, fixed variable naming, removed duplicate literals.
 
 ## [v1.0.3] - 2026-01-18
 

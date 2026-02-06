@@ -12,6 +12,11 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+const (
+	// sampleQueryTemplate is the SQL template for sampling table data
+	sampleQueryTemplate = "SELECT %s FROM %s LIMIT %d"
+)
+
 // DiscoverInsightsParams represents the input parameters for discovering insights
 type DiscoverInsightsParams struct {
 	ProfileName  string        `json:"profile_name" jsonschema:"profile to use for connection"`
@@ -132,70 +137,103 @@ func (s *MCPServer) getTableColumns(ctx context.Context, conn *sql.DB, prof *con
 	// Use DESCRIBE for MySQL/MariaDB
 	// Use INFORMATION_SCHEMA for PostgreSQL
 	// Use PRAGMA for SQLite
-
+	
 	var columns []ColumnInfo
-
+	
 	switch prof.DBType {
 	case "mysql", "mariadb":
-		rows, err := conn.QueryContext(ctx, fmt.Sprintf("DESCRIBE %s", tableName))
+		var err error
+		columns, err = s.getTableColumnsMySQL(ctx, conn, tableName)
 		if err != nil {
 			return nil, err
 		}
-		defer rows.Close()
-
-		for rows.Next() {
-			var col ColumnInfo
-			var nullStr, key, defaultStr, extra string
-			if err := rows.Scan(&col.Name, &col.Type, &nullStr, &key, &defaultStr, &extra); err == nil {
-				col.Nullable = nullStr == "YES"
-				col.Key = key
-				col.Extra = extra
-				columns = append(columns, col)
-			}
-		}
-
+	
 	case "postgres":
-		rows, err := conn.QueryContext(ctx, `
-			SELECT column_name, data_type, is_nullable
-			FROM information_schema.columns
-			WHERE table_name = $1 AND table_schema = 'public'
-		`, tableName)
+		var err error
+		columns, err = s.getTableColumnsPostgres(ctx, conn, tableName)
 		if err != nil {
 			return nil, err
 		}
-		defer rows.Close()
-
-		for rows.Next() {
-			var col ColumnInfo
-			var nullStr string
-			if err := rows.Scan(&col.Name, &col.Type, &nullStr); err == nil {
-				col.Nullable = nullStr == "YES"
-				columns = append(columns, col)
-			}
-		}
-
+	
 	case "sqlite":
-		rows, err := conn.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info('%s')", tableName))
+		var err error
+		columns, err = s.getTableColumnsSQLite(ctx, conn, tableName)
 		if err != nil {
 			return nil, err
 		}
-		defer rows.Close()
-
-		for rows.Next() {
-			var col ColumnInfo
-			var cid int
-			var notNull int
-			var dfltValue interface{}
-			if err := rows.Scan(&cid, &col.Name, &col.Type, &notNull, &dfltValue, &col.Key); err == nil {
-				col.Nullable = notNull == 0
-				columns = append(columns, col)
-			}
-		}
-
+	
 	default:
 		return nil, fmt.Errorf("unsupported db_type: %s", prof.DBType)
 	}
+	
+	return columns, nil
+}
 
+// getTableColumnsMySQL retrieves columns using DESCRIBE
+func (s *MCPServer) getTableColumnsMySQL(ctx context.Context, conn *sql.DB, tableName string) ([]ColumnInfo, error) {
+	rows, err := conn.QueryContext(ctx, fmt.Sprintf("DESCRIBE %s", tableName))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	
+	var columns []ColumnInfo
+	for rows.Next() {
+		var col ColumnInfo
+		var nullStr, key, defaultStr, extra string
+		if rows.Scan(&col.Name, &col.Type, &nullStr, &key, &defaultStr, &extra) == nil {
+			col.Nullable = nullStr == "YES"
+			col.Key = key
+			col.Extra = extra
+			columns = append(columns, col)
+		}
+	}
+	return columns, nil
+}
+
+// getTableColumnsPostgres retrieves columns using information_schema
+func (s *MCPServer) getTableColumnsPostgres(ctx context.Context, conn *sql.DB, tableName string) ([]ColumnInfo, error) {
+	rows, err := conn.QueryContext(ctx, `
+		SELECT column_name, data_type, is_nullable
+		FROM information_schema.columns
+		WHERE table_name = $1 AND table_schema = 'public'
+	`, tableName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	
+	var columns []ColumnInfo
+	for rows.Next() {
+		var col ColumnInfo
+		var nullStr string
+		if rows.Scan(&col.Name, &col.Type, &nullStr) == nil {
+			col.Nullable = nullStr == "YES"
+			columns = append(columns, col)
+		}
+	}
+	return columns, nil
+}
+
+// getTableColumnsSQLite retrieves columns using PRAGMA
+func (s *MCPServer) getTableColumnsSQLite(ctx context.Context, conn *sql.DB, tableName string) ([]ColumnInfo, error) {
+	rows, err := conn.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info('%s')", tableName))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	
+	var columns []ColumnInfo
+	for rows.Next() {
+		var col ColumnInfo
+		var cid int
+		var notNull int
+		var dfltValue interface{}
+		if rows.Scan(&cid, &col.Name, &col.Type, &notNull, &dfltValue, &col.Key) == nil {
+			col.Nullable = notNull == 0
+			columns = append(columns, col)
+		}
+	}
 	return columns, nil
 }
 
@@ -211,17 +249,7 @@ func (s *MCPServer) sampleTableData(ctx context.Context, conn *sql.DB, prof *con
 		colNames[i] = col.Name
 	}
 
-	var query string
-	switch prof.DBType {
-	case "mysql", "mariadb":
-		query = fmt.Sprintf("SELECT %s FROM %s LIMIT %d", strings.Join(colNames, ", "), tableName, limit)
-	case "postgres":
-		query = fmt.Sprintf("SELECT %s FROM %s LIMIT %d", strings.Join(colNames, ", "), tableName, limit)
-	case "sqlite":
-		query = fmt.Sprintf("SELECT %s FROM %s LIMIT %d", strings.Join(colNames, ", "), tableName, limit)
-	default:
-		return nil, fmt.Errorf("unsupported db_type: %s", prof.DBType)
-	}
+	query := fmt.Sprintf(sampleQueryTemplate, strings.Join(colNames, ", "), tableName, limit)
 
 	rows, err := conn.QueryContext(ctx, query)
 	if err != nil {
@@ -245,7 +273,7 @@ func (s *MCPServer) sampleTableData(ctx context.Context, conn *sql.DB, prof *con
 			valuePtrs[i] = &values[i]
 		}
 
-		if err := rows.Scan(valuePtrs...); err != nil {
+		if rows.Scan(valuePtrs...) != nil {
 			continue
 		}
 
@@ -263,20 +291,38 @@ func (s *MCPServer) sampleTableData(ctx context.Context, conn *sql.DB, prof *con
 // discoverInsights analyzes data and discovers insights
 func (s *MCPServer) discoverInsights(columns []ColumnInfo, rows []map[string]interface{}, insightTypes []InsightType) ([]Insight, error) {
 	var insights []Insight
-
+	
 	// If no insight types specified, use all
 	if len(insightTypes) == 0 {
 		insightTypes = []InsightType{InsightTypeKPI, InsightTypeTrend, InsightTypeAnomaly, InsightTypeDistribution}
 	}
-
+	
 	// Build set of requested insight types
 	requestedTypes := make(map[InsightType]bool)
 	for _, it := range insightTypes {
 		requestedTypes[it] = true
 	}
-
+	
 	// Find time series columns
-	var timeCol *ColumnInfo
+	timeCol := s.findTimeSeriesColumn(columns, rows)
+	
+	// Analyze each column
+	for _, col := range columns {
+		// Skip time columns for most analyses
+		if timeCol != nil && col.Name == timeCol.Name {
+			continue
+		}
+		
+		// Process different insight types
+		colInsights := s.processColumnInsights(col, rows, timeCol, requestedTypes)
+		insights = append(insights, colInsights...)
+	}
+	
+	return insights, nil
+}
+
+// findTimeSeriesColumn finds a time series column from the list
+func (s *MCPServer) findTimeSeriesColumn(columns []ColumnInfo, rows []map[string]interface{}) *ColumnInfo {
 	for i := range columns {
 		sampleValues := make([]interface{}, 0, min(len(rows), 10))
 		for j, row := range rows {
@@ -288,71 +334,107 @@ func (s *MCPServer) discoverInsights(columns []ColumnInfo, rows []map[string]int
 			}
 		}
 		if IsTimeSeriesColumn(columns[i], sampleValues) {
-			timeCol = &columns[i]
-			break
+			return &columns[i]
 		}
 	}
+	return nil
+}
 
-	// Analyze each column
-	for _, col := range columns {
-		// Skip time columns for most analyses
-		if timeCol != nil && col.Name == timeCol.Name {
-			continue
-		}
-
-		// KPI Insights
-		if requestedTypes[InsightTypeKPI] && isNumericType(col.Type) {
-			colInsights, err := s.calculateColumnInsights(col, rows)
-			if err == nil {
-				insights = append(insights, colInsights...)
-			}
-		}
-
-		// Trend Insights
-		if requestedTypes[InsightTypeTrend] && timeCol != nil && isNumericType(col.Type) {
-			trends, err := DetectTrends(timeCol.Name, col.Name, rows)
-			if err == nil && len(trends) > 0 {
-				for _, trend := range trends {
-					insights = append(insights, Insight{
-						Type:        InsightTypeTrend,
-						Column:      col.Name,
-						Description: fmt.Sprintf("Trend detected in %s: %s", col.Name, trend.Direction),
-						Trend:       &trend,
-					})
-				}
-			}
-		}
-
-		// Anomaly Insights
-		if requestedTypes[InsightTypeAnomaly] && isNumericType(col.Type) {
-			anomalies, err := DetectAnomalies(col.Name, rows, 2.0)
-			if err == nil {
-				for _, anomaly := range anomalies {
-					insights = append(insights, Insight{
-						Type:        InsightTypeAnomaly,
-						Column:      col.Name,
-						Description: fmt.Sprintf("Anomaly in %s: expected %.2f, got %.2f", col.Name, anomaly.Expected, anomaly.Actual),
-						Anomaly:     &anomaly,
-					})
-				}
-			}
-		}
-
-		// Distribution Insights
-		if requestedTypes[InsightTypeDistribution] && isNumericType(col.Type) {
-			dist, err := AnalyzeDistributions(col.Name, rows)
-			if err == nil {
-				insights = append(insights, Insight{
-					Type:         InsightTypeDistribution,
-					Column:       col.Name,
-					Description:  fmt.Sprintf("Distribution of %s: %s", col.Name, dist.Type),
-					Distribution: dist,
-				})
-			}
+// processColumnInsights processes all insight types for a single column
+func (s *MCPServer) processColumnInsights(col ColumnInfo, rows []map[string]interface{}, timeCol *ColumnInfo, requestedTypes map[InsightType]bool) []Insight {
+	var insights []Insight
+	
+	// KPI Insights
+	if requestedTypes[InsightTypeKPI] && isNumericType(col.Type) {
+		kpiInsights, err := s.calculateColumnInsights(col, rows)
+		if err == nil {
+			insights = append(insights, kpiInsights...)
 		}
 	}
+	
+	// Trend Insights
+	trendInsights := s.processTrendInsights(col, rows, timeCol, requestedTypes)
+	insights = append(insights, trendInsights...)
+	
+	// Anomaly Insights
+	anomalyInsights := s.processAnomalyInsights(col, rows, requestedTypes)
+	insights = append(insights, anomalyInsights...)
+	
+	// Distribution Insights
+	distributionInsights := s.processDistributionInsights(col, rows, requestedTypes)
+	insights = append(insights, distributionInsights...)
+	
+	return insights
+}
 
-	return insights, nil
+// processTrendInsights processes trend insights for a column
+func (s *MCPServer) processTrendInsights(col ColumnInfo, rows []map[string]interface{}, timeCol *ColumnInfo, requestedTypes map[InsightType]bool) []Insight {
+	var insights []Insight
+	
+	if !(requestedTypes[InsightTypeTrend] && timeCol != nil && isNumericType(col.Type)) {
+		return insights
+	}
+	
+	trends, err := DetectTrends(timeCol.Name, col.Name, rows)
+	if err != nil || len(trends) == 0 {
+		return insights
+	}
+	
+	for _, trend := range trends {
+		insights = append(insights, Insight{
+			Type:        InsightTypeTrend,
+			Column:      col.Name,
+			Description: fmt.Sprintf("Trend detected in %s: %s", col.Name, trend.Direction),
+			Trend:       &trend,
+		})
+	}
+	return insights
+}
+
+// processAnomalyInsights processes anomaly insights for a column
+func (s *MCPServer) processAnomalyInsights(col ColumnInfo, rows []map[string]interface{}, requestedTypes map[InsightType]bool) []Insight {
+	var insights []Insight
+	
+	if !(requestedTypes[InsightTypeAnomaly] && isNumericType(col.Type)) {
+		return insights
+	}
+	
+	anomalies, err := DetectAnomalies(col.Name, rows, 2.0)
+	if err != nil {
+		return insights
+	}
+	
+	for _, anomaly := range anomalies {
+		insights = append(insights, Insight{
+			Type:        InsightTypeAnomaly,
+			Column:      col.Name,
+			Description: fmt.Sprintf("Anomaly in %s: expected %.2f, got %.2f", col.Name, anomaly.Expected, anomaly.Actual),
+			Anomaly:     &anomaly,
+		})
+	}
+	return insights
+}
+
+// processDistributionInsights processes distribution insights for a column
+func (s *MCPServer) processDistributionInsights(col ColumnInfo, rows []map[string]interface{}, requestedTypes map[InsightType]bool) []Insight {
+	var insights []Insight
+	
+	if !(requestedTypes[InsightTypeDistribution] && isNumericType(col.Type)) {
+		return insights
+	}
+	
+	dist, err := AnalyzeDistributions(col.Name, rows)
+	if err != nil {
+		return insights
+	}
+	
+	insights = append(insights, Insight{
+		Type:         InsightTypeDistribution,
+		Column:       col.Name,
+		Description:  fmt.Sprintf("Distribution of %s: %s", col.Name, dist.Type),
+		Distribution: dist,
+	})
+	return insights
 }
 
 // calculateColumnInsights calculates KPIs for a column

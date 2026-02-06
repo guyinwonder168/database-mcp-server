@@ -59,116 +59,28 @@ func AnalyzeColumnStats(column ColumnInfo, rows []map[string]interface{}) (*Colu
 	return stats, nil
 }
 
+type dataPoint struct {
+	time  time.Time
+	value float64
+}
+
 // DetectTrends identifies trends in time-series data
 func DetectTrends(timeColumn string, valueColumn string, rows []map[string]interface{}) ([]TrendInsight, error) {
 	if len(rows) < 2 {
 		return []TrendInsight{}, nil
 	}
 
-	// Extract time-value pairs
-	type dataPoint struct {
-		time  time.Time
-		value float64
-	}
-
-	points := make([]dataPoint, 0, len(rows))
-	var minTime, maxTime time.Time
-
-	for _, row := range rows {
-		timeVal, ok := row[timeColumn]
-		if !ok || timeVal == nil {
-			continue
-		}
-
-		valueVal, ok := row[valueColumn]
-		if !ok || valueVal == nil {
-			continue
-		}
-
-		t, err := parseTime(timeVal)
-		if err != nil {
-			continue
-		}
-
-		v, err := toFloat64(valueVal)
-		if err != nil {
-			continue
-		}
-
-		points = append(points, dataPoint{time: t, value: v})
-
-		if minTime.IsZero() || t.Before(minTime) {
-			minTime = t
-		}
-		if maxTime.IsZero() || t.After(maxTime) {
-			maxTime = t
-		}
-	}
-
+	points, minTime, maxTime := extractDataPoints(timeColumn, valueColumn, rows)
 	if len(points) < 2 {
 		return []TrendInsight{}, nil
 	}
 
-	// Sort by time
 	sort.Slice(points, func(i, j int) bool {
 		return points[i].time.Before(points[j].time)
 	})
 
-	// Calculate linear regression
-	n := float64(len(points))
-	sumX, sumY, sumXY, sumX2 := 0.0, 0.0, 0.0, 0.0
-
-	for i, p := range points {
-		x := float64(i)
-		y := p.value
-		sumX += x
-		sumY += y
-		sumXY += x * y
-		sumX2 += x * x
-	}
-
-	// Slope = (n*sumXY - sumX*sumY) / (n*sumX2 - sumX*sumX)
-	denominator := n*sumX2 - sumX*sumX
-	if denominator == 0 {
-		return []TrendInsight{}, nil
-	}
-
-	slope := (n*sumXY - sumX*sumY) / denominator
-
-	// Calculate R-squared for confidence
-	meanY := sumY / n
-	ssTotal, ssResidual := 0.0, 0.0
-	for i, p := range points {
-		x := float64(i)
-		predicted := (sumY / n) + slope*(x-(sumX/n))
-		ssTotal += (p.value - meanY) * (p.value - meanY)
-		ssResidual += (p.value - predicted) * (p.value - predicted)
-	}
-
-	var rSquared float64
-	if ssTotal > 0 {
-		rSquared = 1 - (ssResidual / ssTotal)
-	}
-	confidence := math.Max(0, math.Min(1, rSquared))
-
-	// Determine direction
-	direction := "stable"
-	threshold := 0.001 * (points[len(points)-1].value - points[0].value)
-	if math.Abs(threshold) < 0.0001 {
-		threshold = 0.001
-	}
-
-	if slope > threshold {
-		direction = "upward"
-	} else if slope < -threshold {
-		direction = "downward"
-	}
-
-	// If confidence is very low, mark as stable
-	if confidence < 0.3 {
-		direction = "stable"
-		slope = 0
-	}
+	slope, confidence := calculateLinearRegression(points)
+	direction := determineTrendDirection(slope, confidence, points)
 
 	return []TrendInsight{
 		{
@@ -189,24 +101,11 @@ func DetectAnomalies(column string, rows []map[string]interface{}, threshold flo
 		return []AnomalyInsight{}, nil
 	}
 
-	// Extract numeric values
-	values := make([]float64, 0, len(rows))
-	rowMap := make(map[int]map[string]interface{})
-
-	for i, row := range rows {
-		rowMap[i] = row
-		if val, ok := row[column]; ok && val != nil {
-			if f, err := toFloat64(val); err == nil {
-				values = append(values, f)
-			}
-		}
-	}
-
+	values := extractAnomalyValues(column, rows)
 	if len(values) == 0 {
 		return []AnomalyInsight{}, nil
 	}
 
-	// Calculate mean and standard deviation
 	mean := calculateMean(values)
 	stdDev := calculateStdDev(values, mean)
 
@@ -214,43 +113,7 @@ func DetectAnomalies(column string, rows []map[string]interface{}, threshold flo
 		return []AnomalyInsight{}, nil
 	}
 
-	// Find anomalies using Z-score
-	var anomalies []AnomalyInsight
-	for i, row := range rows {
-		val, ok := row[column]
-		if !ok || val == nil {
-			continue
-		}
-
-		f, err := toFloat64(val)
-		if err != nil {
-			continue
-		}
-
-		zScore := math.Abs((f - mean) / stdDev)
-		if zScore > threshold {
-			// Determine severity based on Z-score
-			severity := "low"
-			if zScore > 4.0 {
-				severity = "critical"
-			} else if zScore > 3.0 {
-				severity = "high"
-			} else if zScore > 2.5 {
-				severity = "medium"
-			}
-
-			anomalies = append(anomalies, AnomalyInsight{
-				Column:   column,
-				Expected: mean,
-				Actual:   f,
-				Severity: severity,
-			})
-		}
-		_ = i // Use i to avoid unused variable warning
-		_ = rowMap[i]
-	}
-
-	return anomalies, nil
+	return findAnomalies(column, rows, mean, stdDev, threshold)
 }
 
 // CalculateKPIs computes key performance indicators
@@ -260,28 +123,13 @@ func CalculateKPIs(table string, columns []ColumnInfo, rows []map[string]interfa
 	}
 
 	var kpis []KPIInsight
-
 	for _, col := range columns {
-		if !isNumericType(col.Type) {
-			continue
-		}
-
-		// Extract values
-		values := make([]float64, 0, len(rows))
-		for _, row := range rows {
-			if val, ok := row[col.Name]; ok && val != nil {
-				if f, err := toFloat64(val); err == nil {
-					values = append(values, f)
-				}
+		if isNumericType(col.Type) {
+			values := extractColumnValues(col.Name, rows)
+			if len(values) > 0 {
+				kpis = append(kpis, calculateColumnKPIs(col.Name, values)...)
 			}
 		}
-
-		if len(values) == 0 {
-			continue
-		}
-
-		// Calculate KPIs based on column name patterns
-		kpis = append(kpis, calculateColumnKPIs(col.Name, values)...)
 	}
 
 	return kpis, nil
@@ -293,51 +141,17 @@ func AnalyzeDistributions(column string, rows []map[string]interface{}) (*Distri
 		return nil, fmt.Errorf("no data to analyze")
 	}
 
-	// Extract numeric values
-	values := make([]float64, 0, len(rows))
-	for _, row := range rows {
-		if val, ok := row[column]; ok && val != nil {
-			if f, err := toFloat64(val); err == nil {
-				values = append(values, f)
-			}
-		}
-	}
-
+	values := extractColumnValues(column, rows)
 	if len(values) == 0 {
 		return nil, fmt.Errorf("no numeric values found")
 	}
 
-	// Calculate statistics
 	mean := calculateMean(values)
 	median := calculateMedian(values)
 	stdDev := calculateStdDev(values, mean)
 
-	// Create buckets (using 10 buckets)
-	min := minFloat64(values)
-	max := maxFloat64(values)
-	bucketSize := (max - min) / 10
-	if bucketSize == 0 {
-		bucketSize = 1
-	}
+	buckets := createDistributionBuckets(values)
 
-	buckets := make([]DistributionBucket, 10)
-	for i := range buckets {
-		buckets[i].Min = min + float64(i)*bucketSize
-		buckets[i].Max = min + float64(i+1)*bucketSize
-	}
-
-	for _, v := range values {
-		bucketIdx := int((v - min) / bucketSize)
-		if bucketIdx >= 10 {
-			bucketIdx = 9
-		}
-		if bucketIdx < 0 {
-			bucketIdx = 0
-		}
-		buckets[bucketIdx].Count++
-	}
-
-	// Determine distribution type
 	distType := classifyDistribution(values, mean, median, stdDev)
 
 	return &DistributionInsight{
@@ -533,8 +347,8 @@ func classifyDistribution(values []float64, mean, median, stdDev float64) string
 	// Check for uniform distribution
 	min := minFloat64(values)
 	max := maxFloat64(values)
-	range_val := max - min
-	if range_val == 0 {
+	valueRange := max - min
+	if valueRange == 0 {
 		return "constant"
 	}
 
@@ -629,4 +443,204 @@ func calculateColumnKPIs(columnName string, values []float64) []KPIInsight {
 	}
 
 	return kpis
+}
+
+// Helper functions for DetectTrends
+
+func extractDataPoints(timeColumn, valueColumn string, rows []map[string]interface{}) ([]dataPoint, time.Time, time.Time) {
+	points := make([]dataPoint, 0, len(rows))
+	var minTime, maxTime time.Time
+
+	for _, row := range rows {
+		timeVal, ok := row[timeColumn]
+		if !ok || timeVal == nil {
+			continue
+		}
+
+		valueVal, ok := row[valueColumn]
+		if !ok || valueVal == nil {
+			continue
+		}
+
+		t, err := parseTime(timeVal)
+		if err != nil {
+			continue
+		}
+
+		v, err := toFloat64(valueVal)
+		if err != nil {
+			continue
+		}
+
+		points = append(points, dataPoint{time: t, value: v})
+
+		if minTime.IsZero() || t.Before(minTime) {
+			minTime = t
+		}
+		if maxTime.IsZero() || t.After(maxTime) {
+			maxTime = t
+		}
+	}
+
+	return points, minTime, maxTime
+}
+
+func calculateLinearRegression(points []dataPoint) (slope float64, confidence float64) {
+	n := float64(len(points))
+	sumX, sumY, sumXY, sumX2 := 0.0, 0.0, 0.0, 0.0
+
+	for i, p := range points {
+		x := float64(i)
+		y := p.value
+		sumX += x
+		sumY += y
+		sumXY += x * y
+		sumX2 += x * x
+	}
+
+	denominator := n*sumX2 - sumX*sumX
+	if denominator == 0 {
+		return 0, 0
+	}
+
+	slope = (n*sumXY - sumX*sumY) / denominator
+	confidence = calculateRSquared(points, slope, sumX, sumY, n)
+
+	return slope, confidence
+}
+
+func calculateRSquared(points []dataPoint, slope, sumX, sumY, n float64) float64 {
+	meanY := sumY / n
+	ssTotal, ssResidual := 0.0, 0.0
+	for i, p := range points {
+		x := float64(i)
+		predicted := (sumY / n) + slope*(x-(sumX/n))
+		ssTotal += (p.value - meanY) * (p.value - meanY)
+		ssResidual += (p.value - predicted) * (p.value - predicted)
+	}
+
+	var rSquared float64
+	if ssTotal > 0 {
+		rSquared = 1 - (ssResidual / ssTotal)
+	}
+	return math.Max(0, math.Min(1, rSquared))
+}
+
+func determineTrendDirection(slope, confidence float64, points []dataPoint) string {
+	direction := "stable"
+
+	if confidence < 0.3 {
+		return direction
+	}
+
+	threshold := 0.001 * (points[len(points)-1].value - points[0].value)
+	if math.Abs(threshold) < 0.0001 {
+		threshold = 0.001
+	}
+
+	if slope > threshold {
+		direction = "upward"
+	} else if slope < -threshold {
+		direction = "downward"
+	}
+
+	return direction
+}
+
+// Helper functions for DetectAnomalies
+
+func extractAnomalyValues(column string, rows []map[string]interface{}) []float64 {
+	values := make([]float64, 0, len(rows))
+	for _, row := range rows {
+		if val, ok := row[column]; ok && val != nil {
+			if f, err := toFloat64(val); err == nil {
+				values = append(values, f)
+			}
+		}
+	}
+	return values
+}
+
+func findAnomalies(column string, rows []map[string]interface{}, mean, stdDev, threshold float64) []AnomalyInsight {
+	var anomalies []AnomalyInsight
+	for _, row := range rows {
+		val, ok := row[column]
+		if !ok || val == nil {
+			continue
+		}
+
+		f, err := toFloat64(val)
+		if err != nil {
+			continue
+		}
+
+		zScore := math.Abs((f - mean) / stdDev)
+		if zScore > threshold {
+			severity := determineAnomalySeverity(zScore)
+			anomalies = append(anomalies, AnomalyInsight{
+				Column:   column,
+				Expected: mean,
+				Actual:   f,
+				Severity: severity,
+			})
+		}
+	}
+	return anomalies
+}
+
+func determineAnomalySeverity(zScore float64) string {
+	if zScore > 4.0 {
+		return "critical"
+	}
+	if zScore > 3.0 {
+		return "high"
+	}
+	if zScore > 2.5 {
+		return "medium"
+	}
+	return "low"
+}
+
+// Helper functions for CalculateKPIs
+
+func extractColumnValues(columnName string, rows []map[string]interface{}) []float64 {
+	values := make([]float64, 0, len(rows))
+	for _, row := range rows {
+		if val, ok := row[columnName]; ok && val != nil {
+			if f, err := toFloat64(val); err == nil {
+				values = append(values, f)
+			}
+		}
+	}
+	return values
+}
+
+// Helper functions for AnalyzeDistributions
+
+func createDistributionBuckets(values []float64) []DistributionBucket {
+	min := minFloat64(values)
+	max := maxFloat64(values)
+	bucketSize := (max - min) / 10
+	if bucketSize == 0 {
+		bucketSize = 1
+	}
+
+	buckets := make([]DistributionBucket, 10)
+	for i := range buckets {
+		buckets[i].Min = min + float64(i)*bucketSize
+		buckets[i].Max = min + float64(i+1)*bucketSize
+	}
+
+	for _, v := range values {
+		bucketIndex := int((v - min) / bucketSize)
+		if bucketIndex >= 10 {
+			bucketIndex = 9
+		}
+		if bucketIndex < 0 {
+			bucketIndex = 0
+		}
+		buckets[bucketIndex].Count++
+	}
+
+	return buckets
 }
