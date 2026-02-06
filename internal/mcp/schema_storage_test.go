@@ -21,8 +21,6 @@ func tempStorageDir(t *testing.T) (string, func()) {
 }
 
 // Helper function to create a sample snapshot
-//
-//nolint:unparam // profile is used dynamically in tests
 func sampleSnapshot(profile string) SchemaSnapshot {
 	return SchemaSnapshot{
 		ID:         "snap-001",

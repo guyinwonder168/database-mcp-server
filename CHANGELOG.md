@@ -16,6 +16,10 @@ All notable changes to this project will be documented in this file.
 - Registered `track-schema-changes` in MCP tool registry
 - Updated tool count from 16 to 17 across project docs
 
+### Fixed
+- Raised schema tracker new-code coverage with additional helper and error-path tests to satisfy SonarCloud Quality Gate thresholds
+- Updated SonarCloud workflow to use `sonarqube-scan-action` and emit `report.json` for Go test report ingestion
+
 ## [v1.0.6] - 2026-02-06
 
 ### Added
