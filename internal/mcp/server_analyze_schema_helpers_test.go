@@ -1,7 +1,10 @@
+//go:build cgo
+
 package mcp
 
 import (
 	"context"
+	"database-mcp-provider/internal/config"
 	"database/sql"
 	"errors"
 	"math"
@@ -679,6 +682,269 @@ func TestLoadLineageEdgesForMySQLAndPostgresMetadata(t *testing.T) {
 	}
 	if len(postgresEdges) != 1 || postgresEdges[0].From != "orders" || postgresEdges[0].To != "users" {
 		t.Fatalf("unexpected postgres lineage edges: %+v", postgresEdges)
+	}
+}
+
+func TestAdditionalHelperBranchesCoverage(t *testing.T) {
+	if got := namingValueString(map[string]interface{}{"k": "v"}, "k", "fallback"); got != "v" {
+		t.Fatalf("expected namingValueString to return value, got %q", got)
+	}
+	if got := namingValueString(map[string]interface{}{"k": 1}, "k", "fallback"); got != "fallback" {
+		t.Fatalf("expected namingValueString fallback, got %q", got)
+	}
+
+	if got := namingValueFloat(map[string]interface{}{"k": int64(7)}, "k", 0); got != 7 {
+		t.Fatalf("expected namingValueFloat int64 conversion, got %f", got)
+	}
+	if got := namingValueFloat(map[string]interface{}{"k": "x"}, "k", 1.5); got != 1.5 {
+		t.Fatalf("expected namingValueFloat fallback, got %f", got)
+	}
+
+	sliceVal := namingValueStringSlice(map[string]interface{}{
+		"k": []interface{}{"a", 2},
+	}, "k")
+	if len(sliceVal) != 2 || sliceVal[0] != "a" {
+		t.Fatalf("unexpected namingValueStringSlice result: %+v", sliceVal)
+	}
+	if got := namingValueStringSlice(map[string]interface{}{}, "missing"); len(got) != 0 {
+		t.Fatalf("expected empty namingValueStringSlice for missing key")
+	}
+
+	prefixes := map[string]int{}
+	suffixes := map[string]int{}
+	recordPrefixAndSuffix(prefixes, suffixes, "simple")
+	if len(prefixes) != 0 || len(suffixes) != 0 {
+		t.Fatalf("expected no prefix/suffix recorded for simple name")
+	}
+	recordPrefixAndSuffix(prefixes, suffixes, "user_id")
+	if prefixes["user"] != 1 || suffixes["id"] != 1 {
+		t.Fatalf("unexpected prefix/suffix counts: %+v %+v", prefixes, suffixes)
+	}
+
+	if got := classifyForeignKeyPattern(0, 1, 1); got != "prefix" {
+		t.Fatalf("expected prefix fk pattern, got %q", got)
+	}
+	if got := classifyForeignKeyPattern(0, 0, 0); got != "none" {
+		t.Fatalf("expected none fk pattern, got %q", got)
+	}
+
+	server := &MCPServer{}
+	types := server.identifyEntityTypes([]string{
+		"audit_log", "country_type", "sales_order", "users", "misc",
+	})
+	if len(types) != 5 {
+		t.Fatalf("expected 5 identified types, got %d", len(types))
+	}
+}
+
+func TestFetchAnalyzeSchemaErrorPaths(t *testing.T) {
+	server := &MCPServer{}
+	ctx := context.Background()
+	dbConn, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("failed to open sqlite db: %v", err)
+	}
+	defer dbConn.Close()
+
+	cols, keyCols := server.fetchAnalyzeSchemaColumns(ctx, dbConn, "users", "oracle")
+	if len(cols) != 0 || keyCols.PrimaryKey != "" {
+		t.Fatalf("expected empty columns for unsupported db type")
+	}
+
+	cols, keyCols = server.fetchAnalyzeSchemaColumns(ctx, dbConn, "users", "mysql")
+	if len(cols) != 0 || keyCols.PrimaryKey != "" {
+		t.Fatalf("expected empty columns when mysql metadata query fails on sqlite")
+	}
+
+	samples := server.fetchAnalyzeSchemaSampleRows(ctx, dbConn, "users", "oracle", 1)
+	if len(samples) != 0 {
+		t.Fatalf("expected empty samples for unsupported db type")
+	}
+	samples = server.fetchAnalyzeSchemaSampleRows(ctx, dbConn, "users", "mysql", 1)
+	if len(samples) != 0 {
+		t.Fatalf("expected empty samples when mysql query fails on sqlite")
+	}
+}
+
+func TestBuildSampleQueryAndNormalizeSampleSizeBranches(t *testing.T) {
+	if normalizeSampleSize(101) != 100 {
+		t.Fatalf("expected normalizeSampleSize to cap at 100")
+	}
+	if normalizeSampleSize(-1) != 3 {
+		t.Fatalf("expected normalizeSampleSize default to 3")
+	}
+
+	if query, _, err := buildSampleQuery("mysql", "users", 2); err != nil || query == "" {
+		t.Fatalf("expected mysql sample query, got query=%q err=%v", query, err)
+	}
+	if query, _, err := buildSampleQuery("postgres", "users", 2); err != nil || query == "" {
+		t.Fatalf("expected postgres sample query, got query=%q err=%v", query, err)
+	}
+	if query, _, err := buildSampleQuery("sqlite", "users", 2); err != nil || query == "" {
+		t.Fatalf("expected sqlite sample query, got query=%q err=%v", query, err)
+	}
+	if _, errResult, err := buildSampleQuery("oracle", "users", 2); err == nil || errResult == nil {
+		t.Fatalf("expected unsupported db buildSampleQuery error result")
+	}
+}
+
+func TestOpenExecuteSQLConnectionAndDecodeMySQLByteValueBranches(t *testing.T) {
+	server := &MCPServer{errorAnalyzer: NewErrorAnalyzer("")}
+	ctx := context.Background()
+	_, errResult := server.openExecuteSQLConnection(ctx, "profile", "db", 5, &config.Profile{
+		ProfileName: "profile",
+		DBType:      "oracle",
+	})
+	if errResult == nil {
+		t.Fatalf("expected openExecuteSQLConnection error result for unsupported db")
+	}
+
+	if got := decodeMySQLByteValue([]byte("42"), "int"); got != int64(42) {
+		t.Fatalf("expected int64 decode, got %#v", got)
+	}
+	if got := decodeMySQLByteValue([]byte("3.14"), "decimal(10,2)"); got != 3.14 {
+		t.Fatalf("expected float decode, got %#v", got)
+	}
+	if got := decodeMySQLByteValue([]byte("text"), "varchar"); got != "text" {
+		t.Fatalf("expected string decode, got %#v", got)
+	}
+}
+
+func TestScanTableNameAndForeignKeyQueryBranches(t *testing.T) {
+	ctx := context.Background()
+	dbConn, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("failed to open sqlite db: %v", err)
+	}
+	defer dbConn.Close()
+
+	rows, err := dbConn.QueryContext(ctx, "SELECT 'users','BASE TABLE'")
+	if err != nil {
+		t.Fatalf("failed to query two-column row: %v", err)
+	}
+	if !rows.Next() {
+		t.Fatalf("expected row for scanTableName mysql")
+	}
+	name, err := scanTableName(rows, "mysql")
+	if err != nil || name != "users" {
+		t.Fatalf("unexpected mysql scanTableName result name=%q err=%v", name, err)
+	}
+	_ = rows.Close()
+
+	if _, err := foreignKeyQuery("oracle"); err == nil {
+		t.Fatalf("expected unsupported foreignKeyQuery error")
+	}
+	if _, err := foreignKeyQuery("postgres"); err != nil {
+		t.Fatalf("expected postgres foreign key query")
+	}
+	if _, err := foreignKeyQuery("mysql"); err != nil {
+		t.Fatalf("expected mysql foreign key query")
+	}
+}
+
+func TestCollectSQLiteJoinSuggestions(t *testing.T) {
+	ctx := context.Background()
+	dbConn, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("failed to open sqlite db: %v", err)
+	}
+	defer dbConn.Close()
+
+	if _, err := dbConn.ExecContext(ctx, "CREATE TABLE parents (id INTEGER PRIMARY KEY)"); err != nil {
+		t.Fatalf("failed to create parents table: %v", err)
+	}
+	if _, err := dbConn.ExecContext(ctx, "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER, FOREIGN KEY(parent_id) REFERENCES parents(id))"); err != nil {
+		t.Fatalf("failed to create children table: %v", err)
+	}
+
+	joins, err := collectSQLiteJoinSuggestions(ctx, dbConn, nil, map[string]bool{})
+	if err != nil {
+		t.Fatalf("collectSQLiteJoinSuggestions failed: %v", err)
+	}
+	if len(joins) == 0 {
+		t.Fatalf("expected sqlite join suggestions")
+	}
+}
+
+func TestCollectJoinSuggestionsAndForeignKeyQueryBranches(t *testing.T) {
+	ctx := context.Background()
+	server := &MCPServer{errorAnalyzer: NewErrorAnalyzer("")}
+	dbConn, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("failed to open sqlite db: %v", err)
+	}
+	defer dbConn.Close()
+
+	// Trigger error branch for non-sqlite join discovery on missing metadata tables.
+	_, errResult, err := server.collectJoinSuggestions(
+		ctx,
+		dbConn,
+		config.Profile{ProfileName: "test", DBType: "postgres"},
+		"test",
+		nil,
+		map[string]bool{},
+	)
+	if err != nil || errResult == nil {
+		t.Fatalf("expected structured join discovery error result, got err=%v errResult=%v", err, errResult)
+	}
+
+	// Cover standard join suggestion success path.
+	joins, err := collectStandardJoinSuggestions(
+		ctx,
+		dbConn,
+		config.Profile{DBType: "postgres"},
+		"SELECT 'orders','user_id','users','id'",
+		map[string]bool{},
+	)
+	if err != nil {
+		t.Fatalf("collectStandardJoinSuggestions failed: %v", err)
+	}
+	if len(joins) != 1 {
+		t.Fatalf("expected one join suggestion, got %d", len(joins))
+	}
+
+	// Cover mysql branch in queryForeignKeys.
+	rows, err := queryForeignKeys(
+		ctx,
+		dbConn,
+		config.Profile{DBType: "mysql", DatabaseName: "appdb"},
+		"SELECT 'orders','user_id','users','id' WHERE ? IS NOT NULL",
+	)
+	if err != nil {
+		t.Fatalf("queryForeignKeys mysql branch failed: %v", err)
+	}
+	if !rows.Next() {
+		t.Fatalf("expected a row from mysql queryForeignKeys branch")
+	}
+	_ = rows.Close()
+}
+
+func TestListSmartBuilderTablesErrorBranch(t *testing.T) {
+	ctx := context.Background()
+	server := &MCPServer{errorAnalyzer: NewErrorAnalyzer("")}
+	dbConn, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("failed to open sqlite db: %v", err)
+	}
+	if err := dbConn.Close(); err != nil {
+		t.Fatalf("failed to close sqlite db: %v", err)
+	}
+
+	_, errResult, err := server.listSmartBuilderTables(
+		ctx,
+		dbConn,
+		SmartQueryBuilderParams{ProfileName: "test", DatabaseName: "testdb"},
+		&config.Profile{DBType: "sqlite", DatabaseName: "testdb"},
+	)
+	if err != nil || errResult == nil {
+		t.Fatalf("expected listSmartBuilderTables error result, got err=%v errResult=%v", err, errResult)
+	}
+}
+
+func TestValidateConfigureProfileParamsErrorBranch(t *testing.T) {
+	result := validateConfigureProfileParams(ConfigureProfileParams{})
+	if result == nil || len(result.Content) == 0 {
+		t.Fatalf("expected validation error result for empty configure-profile params")
 	}
 }
 
