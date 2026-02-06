@@ -6,7 +6,7 @@ This roadmap consolidates the strategic enhancement plan for the Database MCP Se
 
 ## Current State
 
-- Production-ready MCP server with 16 MCP tools implemented and documented
+- Production-ready MCP server with 17 MCP tools implemented and documented
 - Multi-database support (MySQL, MariaDB, PostgreSQL, SQLite)
 - Robust security (AES-GCM credential encryption, read-only enforcement)
 - Structured logging, connection pooling, and comprehensive schema introspection
@@ -21,7 +21,7 @@ This roadmap consolidates the strategic enhancement plan for the Database MCP Se
 | Data Lineage & Impact Analysis | Complete | `analyze-data-lineage` MCP tool delivered |
 | Enhanced Natural Language Processing | Complete | Context-aware `smart-query-builder` with config, multi-turn tests, and domain hints |
 | Business Intelligence Discovery | Complete | `discover-insights` delivered with KPI/trend/anomaly/distribution analysis |
-| Schema Evolution Management | In Progress | F2 Phase 1-3 complete (snapshot types/storage + migration generator) |
+| Schema Evolution Management | Complete | F2 Phase 1-4 complete (`track-schema-changes` handler integration delivered) |
 | Advanced Data Profiling | Planned | Enhanced `analyze-schema` profiling |
 | Multi-Database Federation | Planned | Cross-profile query execution |
 
@@ -46,7 +46,7 @@ This roadmap consolidates the strategic enhancement plan for the Database MCP Se
 
 **Goal**: Support enterprise-scale schema evolution and federation.
 
-- Schema evolution management (`track-schema-changes`) - In progress (handler integration pending)
+- Schema evolution management (`track-schema-changes`) - Complete
 - Advanced data profiling (enhanced `analyze-schema`) - Planned
 - Multi-database federation (`federated-query`) - Planned
 

@@ -187,6 +187,34 @@ paths:
            application/json:
              schema:
                $ref: '#/components/schemas/ErrorResponse'
+ /track-schema-changes:
+   post:
+     summary: Track schema snapshots, migration plans, and drift
+     description: |
+       Tracks schema evolution with four operations:
+       - track (default): capture and persist a snapshot, compare with previous snapshot
+       - history: list stored snapshots
+       - generate_migration: build migration SQL between two snapshots
+       - detect_drift: compare live schema with baseline snapshot
+     requestBody:
+       required: true
+       content:
+         application/json:
+           schema:
+             $ref: '#/components/schemas/TrackSchemaChangesParams'
+     responses:
+       '200':
+         description: Success
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/TrackSchemaChangesResult'
+       '400':
+         description: Error - Invalid parameters
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
     ConfigureProfileParams:
@@ -424,6 +452,64 @@ components:
              type: array
              items:
                $ref: '#/components/schemas/QuerySuggestion'
+
+   TrackSchemaChangesParams:
+     type: object
+     required:
+       - profile_name
+     properties:
+       profile_name:
+         type: string
+       database_name:
+         type: string
+       operation:
+         type: string
+         enum: ["track", "history", "generate_migration", "detect_drift"]
+       dialect:
+         type: string
+       from_snapshot_id:
+         type: string
+       to_snapshot_id:
+         type: string
+       snapshot_id:
+         type: string
+       limit:
+         type: integer
+       retention_days:
+         type: integer
+
+   TrackSchemaChangesResult:
+     type: object
+     properties:
+       operation:
+         type: string
+       profile_name:
+         type: string
+       database_name:
+         type: string
+       from_snapshot_id:
+         type: string
+       to_snapshot_id:
+         type: string
+       snapshot_id:
+         type: string
+       previous_snapshot_id:
+         type: string
+       changes:
+         type: array
+         items:
+           type: object
+           properties:
+             type:
+               type: string
+             table:
+               type: string
+             column:
+               type: string
+             impact:
+               type: string
+       summary:
+         type: string
 
    TableSchema:
      type: object

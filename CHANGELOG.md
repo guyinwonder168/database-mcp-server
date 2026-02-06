@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.0.7] - 2026-02-06
+
+### Added
+- `track-schema-changes` Phase 4: MCP Tool Handler (F2)
+- Operation routing for schema tracking workflows: `track`, `history`, `generate_migration`, `detect_drift`
+- Schema snapshot capture from live database metadata with SHA-256 integrity hash
+- Snapshot retention enforcement with configurable `retention_days` (default 30 days)
+- Schema drift detection against baseline snapshots
+- End-to-end tests for schema tracker handler operations and tool registration
+
+### Changed
+- Registered `track-schema-changes` in MCP tool registry
+- Updated tool count from 16 to 17 across project docs
+
 ## [v1.0.6] - 2026-02-06
 
 ### Added

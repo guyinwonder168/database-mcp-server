@@ -2,13 +2,13 @@
 
 [![Go](https://img.shields.io/badge/Go-1.25.5%2B-00ADD8?logo=Go&logoColor=white)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/Version-v1.0.6-blue.svg)](https://github.com/guyinwonder168/database-mcp-server/releases/tag/v1.0.6)
+[![Version](https://img.shields.io/badge/Version-v1.0.7-blue.svg)](https://github.com/guyinwonder168/database-mcp-server/releases/tag/v1.0.7)
 [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=guyinwonder168_database-mcp-server&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=guyinwonder168_database-mcp-server)
 [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=guyinwonder168_database-mcp-server&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=guyinwonder168_database-mcp-server)
 [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=guyinwonder168_database-mcp-server&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=guyinwonder168_database-mcp-server)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=guyinwonder168_database-mcp-server&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=guyinwonder168_database-mcp-server)
 
-A production-ready Model Context Protocol (MCP) provider for SQL databases, built using various vibe coding tools. Supports MySQL, MariaDB, PostgreSQL, and SQLite. Features robust connection pooling, secure AES-GCM credential storage, structured JSON logging, comprehensive schema introspection, and a full suite of 16 MCP tools. Built and tested with Go 1.25.5.
+A production-ready Model Context Protocol (MCP) provider for SQL databases, built using various vibe coding tools. Supports MySQL, MariaDB, PostgreSQL, and SQLite. Features robust connection pooling, secure AES-GCM credential storage, structured JSON logging, comprehensive schema introspection, and a full suite of 17 MCP tools. Built and tested with Go 1.25.5.
 
 ## 🚀 Quick Start
 
@@ -43,7 +43,7 @@ go build -o mcp-server ./cmd/server/main.go
 - 🔌 **Official MCP Protocol** - Communication via stdio (not HTTP server; JSON is exchanged over stdio via official Go MCP SDK)
 - 📈 **Business Intelligence** - Discover KPIs, trends, anomalies, and distribution patterns via `discover-insights`
 - 🧭 **Data Lineage** - Analyze upstream/downstream dependencies via `analyze-data-lineage`
-- 🧱 **Schema Evolution Foundations** - Snapshot persistence/diff and migration generation engine for upcoming `track-schema-changes`
+- 🧱 **Schema Evolution Tracking** - Track schema snapshots, detect drift, and generate migration scripts via `track-schema-changes`
 
 ## 🛠️ Supported MCP Tools
 
@@ -62,6 +62,7 @@ go build -o mcp-server ./cmd/server/main.go
 | `discover-joins` | Discover foreign key relationships and suggest JOINs |
 | `sample-data` | Fetch sample rows to infer data formats |
 | `discover-insights` | Discover KPIs, trends, anomalies, and distribution patterns in database tables |
+| `track-schema-changes` | Track schema snapshots/history, generate migrations, and detect schema drift |
 | `list-tools` | List all available MCP tools and descriptions |
 | `analyze-schema` | Comprehensive schema analysis with AI query suggestions |
 | `mcp-info` | Show provider version and author |
@@ -119,10 +120,10 @@ go test ./...
 
 ## 📊 Project Status
 
-- **Version:** v1.0.6
+- **Version:** v1.0.7
 - **Built with:** Various vibe coding tools
 - **Status:** Production Ready ✅
-- All 16 MCP tools are fully implemented and OpenAPI-aligned.
+- All 17 MCP tools are fully implemented and OpenAPI-aligned.
 - Enhanced schema introspection and sample data features.
 - AES-GCM encryption, connection pooling, and structured error handling are enforced.
 - Comprehensive unit and integration tests included.
@@ -146,7 +147,7 @@ MIT
 - **Phase 3** (90+ Days): Schema evolution, advanced profiling, and multi-database federation
 
 **Current Progress**:
-- `track-schema-changes` foundation is in progress: F2 Phase 1 (snapshot types), Phase 2 (snapshot storage), and Phase 3 (migration generator) are implemented and tested.
+- `track-schema-changes` is implemented with snapshot tracking, history, migration generation, and drift detection (F2 Phase 4 complete).
 
 **Planning Documents**:
 - [Enhancement Roadmap](docs/roadmap.md) - Strategic overview

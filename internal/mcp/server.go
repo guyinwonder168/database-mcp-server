@@ -495,6 +495,21 @@ func (s *MCPServer) registerAllTools() {
 		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
 	}
 
+	// track-schema-changes
+	{
+		tool := &mcp.Tool{
+			Name: "track-schema-changes",
+			Description: `Track schema evolution with snapshots, history, migration generation, and drift detection.
+  Input: profile_name (required), operation (optional: track|history|generate_migration|detect_drift), database_name (optional), dialect (optional),
+         from_snapshot_id/to_snapshot_id (optional for migration), snapshot_id (optional for drift), limit (optional), retention_days (optional).
+  Returns: schema snapshots, detected changes, migration script/validation/impact, or drift report depending on operation.
+  Example:
+  {"profile_name":"analytics_db","operation":"track","retention_days":30}`,
+		}
+		mcp.AddTool(s.server, tool, s.handleTrackSchemaChanges)
+		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+	}
+
 	// discover-joins
 	{
 		tool := &mcp.Tool{
