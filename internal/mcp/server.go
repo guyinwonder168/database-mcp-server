@@ -480,6 +480,21 @@ func (s *MCPServer) registerAllTools() {
 		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
 	}
 
+	// discover-insights
+	{
+		tool := &mcp.Tool{
+			Name: "discover-insights",
+			Description: `Automatically discovers KPIs, trends, anomalies, and distribution patterns in database tables.
+  Input: profile_name (required), table_name (required), columns (optional), insight_types (optional: kpi, trend, anomaly, distribution), max_results (optional).
+  Returns: list of insights with type, column, description, and detailed metrics.
+  Example:
+  {"profile_name":"analytics_db","table_name":"sales","insight_types":["kpi","trend"],"max_results":10}`,
+			InputSchema: inputSchemaWithParams[DiscoverInsightsParams]("Optional query parameters for filtering insights"),
+		}
+		mcp.AddTool(s.server, tool, s.handleDiscoverInsights)
+		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+	}
+
 	// discover-joins
 	{
 		tool := &mcp.Tool{
