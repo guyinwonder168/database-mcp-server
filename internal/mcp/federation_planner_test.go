@@ -104,3 +104,38 @@ func TestDetermineExecutionOrder(t *testing.T) {
 		t.Fatalf("expected right side dependency on u, got %+v", steps[1])
 	}
 }
+
+func TestFederationPlannerEdgeCases(t *testing.T) {
+	if _, err := ParseFederatedQuery(""); err == nil {
+		t.Fatalf("expected empty SQL validation error")
+	}
+	if _, err := ParseFederatedQuery("DELETE FROM p1.users"); err == nil {
+		t.Fatalf("expected non-read SQL parser error")
+	}
+	if _, err := ParseFederatedQuery("SELECT 1"); err == nil {
+		t.Fatalf("expected missing profile.table parser error")
+	}
+
+	if _, err := BuildSubQueries(nil, nil); err == nil {
+		t.Fatalf("expected nil plan build error")
+	}
+	if _, err := BuildSubQueries(&FederatedQueryPlan{}, nil); err == nil {
+		t.Fatalf("expected no-tables build error")
+	}
+
+	if OptimizeFederationPlan(nil) != nil {
+		t.Fatalf("expected nil optimization passthrough")
+	}
+
+	cost := EstimateFederationCost(nil)
+	if cost != (CostEstimate{}) {
+		t.Fatalf("expected zero-value cost for nil plan, got %+v", cost)
+	}
+
+	if steps := DetermineExecutionOrder(nil, nil); len(steps) != 0 {
+		t.Fatalf("expected empty execution order for nil subqueries")
+	}
+	if alias := aliasFromQualified("not-qualified"); alias != "" {
+		t.Fatalf("expected empty alias for non-qualified expression, got %q", alias)
+	}
+}

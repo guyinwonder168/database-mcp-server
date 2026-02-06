@@ -1,8 +1,11 @@
 package mcp
 
 import (
+	"context"
+	"database-mcp-provider/internal/config"
 	"math"
 	"testing"
+	"time"
 )
 
 func TestPerformJoin(t *testing.T) {
@@ -180,5 +183,208 @@ func TestNumericHelpers(t *testing.T) {
 	row := Row{nil, 5}
 	if aggregationCount([]Row{row}, 0) != 0 {
 		t.Fatalf("expected nil value to be excluded from column COUNT")
+	}
+}
+
+func TestAggregateResultsAdditionalPaths(t *testing.T) {
+	results := []SubQueryResult{
+		{
+			Columns: []string{"total", "label"},
+			Rows:    []Row{{10, "a"}, {20, "b"}, {nil, "c"}, {"n/a", "d"}},
+		},
+	}
+
+	avg, err := AggregateResults(results, []Aggregation{{Function: "AVG", Column: "total", Alias: "avg_total"}})
+	if err != nil {
+		t.Fatalf("expected AVG aggregation success, got %v", err)
+	}
+	if avg.Rows[0][0] != float64(15) {
+		t.Fatalf("unexpected AVG result: %+v", avg.Rows)
+	}
+
+	minimum, err := AggregateResults(results, []Aggregation{{Function: "MIN", Column: "total", Alias: "min_total"}})
+	if err != nil {
+		t.Fatalf("expected MIN aggregation success, got %v", err)
+	}
+	if minimum.Rows[0][0] != float64(10) {
+		t.Fatalf("unexpected MIN result: %+v", minimum.Rows)
+	}
+
+	maximum, err := AggregateResults(results, []Aggregation{{Function: "MAX", Column: "total", Alias: "max_total"}})
+	if err != nil {
+		t.Fatalf("expected MAX aggregation success, got %v", err)
+	}
+	if maximum.Rows[0][0] != float64(20) {
+		t.Fatalf("unexpected MAX result: %+v", maximum.Rows)
+	}
+
+	countDefaultAlias, err := AggregateResults(results, []Aggregation{{Function: "COUNT", Column: "*"}})
+	if err != nil {
+		t.Fatalf("expected COUNT aggregation success, got %v", err)
+	}
+	if len(countDefaultAlias.Columns) != 1 || countDefaultAlias.Columns[0] != "count" {
+		t.Fatalf("expected default alias 'count', got %+v", countDefaultAlias.Columns)
+	}
+
+	noNumericValues, err := AggregateResults(results, []Aggregation{{Function: "SUM", Column: "label", Alias: "sum_label"}})
+	if err != nil {
+		t.Fatalf("expected SUM over non-numeric values to return 0, got %v", err)
+	}
+	if noNumericValues.Rows[0][0] != 0 {
+		t.Fatalf("expected zero SUM for non-numeric inputs, got %+v", noNumericValues.Rows)
+	}
+
+	if _, err := AggregateResults(nil, []Aggregation{{Function: "COUNT", Column: "*"}}); err == nil {
+		t.Fatalf("expected empty result validation error")
+	}
+	if _, err := AggregateResults(results, []Aggregation{{Function: "", Column: "*"}}); err == nil {
+		t.Fatalf("expected missing-function validation error")
+	}
+	if _, err := AggregateResults(results, []Aggregation{{Function: "COUNT", Column: "*", GroupBy: []string{"label"}}}); err == nil {
+		t.Fatalf("expected unsupported group_by error")
+	}
+	if _, err := AggregateResults(results, []Aggregation{{Function: "SUM", Column: "missing"}}); err == nil {
+		t.Fatalf("expected missing column error")
+	}
+	if _, err := AggregateResults(results, []Aggregation{{Function: "SUM", Column: "*"}}); err == nil {
+		t.Fatalf("expected numeric-column-required error for SUM(*)")
+	}
+	if _, err := AggregateResults(results, []Aggregation{{Function: "MEDIAN", Column: "total"}}); err == nil {
+		t.Fatalf("expected unsupported function error")
+	}
+}
+
+func TestNormalizeDataValueAdditionalTypes(t *testing.T) {
+	now := time.Date(2026, 2, 6, 12, 34, 56, 0, time.FixedZone("UTC+7", 7*60*60))
+	normalizedTime, ok := normalizeDataValue(now).(string)
+	if !ok {
+		t.Fatalf("expected time normalization to string, got %T", normalizeDataValue(now))
+	}
+	if normalizedTime != now.UTC().Format(time.RFC3339Nano) {
+		t.Fatalf("unexpected normalized time value: %s", normalizedTime)
+	}
+
+	if normalizeDataValue(uint8(7)) != int64(7) {
+		t.Fatalf("expected uint8 normalization to int64")
+	}
+	if normalizeDataValue(uint32(9)) != int64(9) {
+		t.Fatalf("expected uint32 normalization to int64")
+	}
+	if normalizeDataValue(float32(1.25)) != float64(1.25) {
+		t.Fatalf("expected float32 normalization to float64")
+	}
+
+	type customValue struct{ Label string }
+	input := customValue{Label: "x"}
+	if normalizeDataValue(input) != input {
+		t.Fatalf("expected custom type passthrough")
+	}
+
+	if rowValue(Row{1}, 2) != nil {
+		t.Fatalf("expected out-of-range row value to be nil")
+	}
+	if findColumnIndex([]string{"id"}, "missing") != -1 {
+		t.Fatalf("expected findColumnIndex miss to return -1")
+	}
+	if normalizeJoinKey(nil) != "__nil__" {
+		t.Fatalf("expected nil join key sentinel")
+	}
+	if columnFromQualified("id") != "id" {
+		t.Fatalf("expected unqualified column passthrough")
+	}
+}
+
+func TestExecuteSubQueryAndJoinValidationErrors(t *testing.T) {
+	ctx := context.Background()
+	profile := config.Profile{
+		ProfileName:  "p1",
+		DBType:       "sqlite",
+		DatabaseName: ":memory:",
+	}
+
+	if _, err := ExecuteSubQuery(ctx, SubQuery{Profile: "p1", Alias: "u", SQL: ""}, profile); err == nil {
+		t.Fatalf("expected empty SQL validation error")
+	}
+	if _, err := ExecuteSubQuery(ctx, SubQuery{Profile: "p1", Alias: "u", SQL: "DELETE FROM users"}, profile); err == nil {
+		t.Fatalf("expected read-only SQL validation error")
+	}
+
+	if _, err := ExecuteSubQuery(ctx, SubQuery{Profile: "p1", Alias: "u", SQL: "SELECT * FROM missing_table"}, profile); err == nil {
+		t.Fatalf("expected query error for missing sqlite table")
+	}
+
+	if _, err := ExecuteSubQuery(ctx, SubQuery{Profile: "p1", Alias: "u", SQL: "SELECT 1"}, config.Profile{DBType: "invalid"}); err == nil {
+		t.Fatalf("expected open connection error for invalid profile type")
+	}
+
+	if _, err := PerformHashJoin(nil, &SubQueryResult{}, JoinCondition{Left: "id", Right: "id", Type: FederationJoinInner}); err == nil {
+		t.Fatalf("expected nil-side validation error")
+	}
+	if _, err := PerformHashJoin(
+		&SubQueryResult{Columns: []string{"id"}, Rows: []Row{{1}}},
+		&SubQueryResult{Columns: []string{"id"}, Rows: []Row{{1}}},
+		JoinCondition{Left: "id", Right: "id", Type: "CROSS"},
+	); err == nil {
+		t.Fatalf("expected join type validation error")
+	}
+}
+
+func TestFederationJoinUtilityEdgeCases(t *testing.T) {
+	if _, err := AggregateResults([]SubQueryResult{
+		{Columns: []string{"id"}, Rows: []Row{{1}}},
+	}, nil); err != nil {
+		t.Fatalf("expected passthrough for empty aggregations, got %v", err)
+	}
+
+	if isFederationReadOnlySQL("") {
+		t.Fatalf("expected empty SQL to be rejected")
+	}
+	if !isFederationReadOnlySQL("SELECT 1;") {
+		t.Fatalf("expected single trailing semicolon to be accepted")
+	}
+	if isFederationReadOnlySQL("SELECT * FROM users UPDATE users SET name='x'") {
+		t.Fatalf("expected disallowed token detection for UPDATE")
+	}
+
+	minResult, err := AggregateResults([]SubQueryResult{
+		{Columns: []string{"total"}, Rows: []Row{{20}, {10}}},
+	}, []Aggregation{{Function: "MIN", Column: "total", Alias: "min_total"}})
+	if err != nil {
+		t.Fatalf("expected MIN aggregation success, got %v", err)
+	}
+	if minResult.Rows[0][0] != float64(10) {
+		t.Fatalf("unexpected MIN value: %+v", minResult.Rows)
+	}
+
+	if aggregationCount([]Row{{1}, {nil}}, 0) != 1 {
+		t.Fatalf("expected aggregationCount to count only non-nil column values")
+	}
+
+	if normalizeDataValue(int8(1)) != int64(1) {
+		t.Fatalf("expected int8 normalization to int64")
+	}
+	if normalizeDataValue(int16(2)) != int64(2) {
+		t.Fatalf("expected int16 normalization to int64")
+	}
+	if normalizeDataValue(int32(3)) != int64(3) {
+		t.Fatalf("expected int32 normalization to int64")
+	}
+	if normalizeDataValue(uint(4)) != int64(4) {
+		t.Fatalf("expected uint normalization to int64")
+	}
+	if normalizeDataValue(uint16(5)) != int64(5) {
+		t.Fatalf("expected uint16 normalization to int64")
+	}
+	if normalizeDataValue(float64(6.5)) != float64(6.5) {
+		t.Fatalf("expected float64 passthrough")
+	}
+
+	if parsed, ok := federationToFloat64(float64(7.5)); !ok || parsed != 7.5 {
+		t.Fatalf("expected float64 conversion path, got parsed=%v ok=%v", parsed, ok)
+	}
+
+	emptyUnion := unionWithoutJoin(nil)
+	if len(emptyUnion.Columns) != 0 || len(emptyUnion.Rows) != 0 {
+		t.Fatalf("expected empty union result for nil input")
 	}
 }

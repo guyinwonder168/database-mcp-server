@@ -178,6 +178,66 @@ func TestHandleFederatedQuery_SQLParserPath(t *testing.T) {
 	}
 }
 
+func TestHandleFederatedQuery_SQLParserPath_WithOverrides(t *testing.T) {
+	testConfig := "test_config_federation_sql_override.yaml"
+	defer os.Remove(testConfig)
+
+	cfg := &config.Config{
+		Profiles: []config.Profile{
+			{ProfileName: "profile1", DBType: "sqlite", DatabaseName: testSQLiteDBPath},
+			{ProfileName: "profile2", DBType: "sqlite", DatabaseName: testSQLiteDBPath},
+		},
+		MaxPoolSize: 5,
+	}
+	if err := config.SaveConfig(testConfig, cfg); err != nil {
+		t.Fatalf("failed to save federation sql-override config: %v", err)
+	}
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+
+	original := federationExecuteSubQuery
+	defer func() { federationExecuteSubQuery = original }()
+
+	federationExecuteSubQuery = func(_ context.Context, subquery SubQuery, _ config.Profile) (*SubQueryResult, error) {
+		switch subquery.Alias {
+		case "x":
+			return &SubQueryResult{
+				Profile: subquery.Profile,
+				Alias:   subquery.Alias,
+				Columns: []string{"id"},
+				Rows:    []Row{{1}},
+			}, nil
+		case "y":
+			return &SubQueryResult{
+				Profile: subquery.Profile,
+				Alias:   subquery.Alias,
+				Columns: []string{"user_id"},
+				Rows:    []Row{{1}},
+			}, nil
+		default:
+			return nil, errors.New("unexpected alias")
+		}
+	}
+
+	response, _, err := server.handleFederatedQuery(ctx, nil, FederatedQueryRequest{
+		SQL: "SELECT * FROM profile1.users u JOIN profile2.orders o ON u.id = o.user_id",
+		SubQueries: []SubQuery{
+			{Profile: "profile1", Alias: "x", SQL: "SELECT id FROM users"},
+			{Profile: "profile2", Alias: "y", SQL: "SELECT user_id FROM orders"},
+		},
+		Joins: []JoinCondition{
+			{Left: "x.id", Right: "y.user_id", Type: FederationJoinInner},
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected SQL parser path with overrides success, got %v", err)
+	}
+	if response == nil || len(response.Content) == 0 {
+		t.Fatalf("expected non-empty response content with overrides")
+	}
+}
+
 func TestHandleFederatedQuery_ProfileMissingAndInvalidRequest(t *testing.T) {
 	testConfig := "test_config_federation_invalid.yaml"
 	defer os.Remove(testConfig)
@@ -243,5 +303,157 @@ func TestValidateFederatedRequest_Errors(t *testing.T) {
 		},
 	}); err == nil {
 		t.Fatalf("expected invalid join type validation error")
+	}
+}
+
+func TestValidateFederatedRequest_FieldValidationErrors(t *testing.T) {
+	testCases := []struct {
+		name string
+		req  FederatedQueryRequest
+	}{
+		{
+			name: "negative limit",
+			req: FederatedQueryRequest{
+				SQL:   "SELECT 1",
+				Limit: -1,
+			},
+		},
+		{
+			name: "negative offset",
+			req: FederatedQueryRequest{
+				SQL:    "SELECT 1",
+				Offset: -1,
+			},
+		},
+		{
+			name: "negative max concurrency",
+			req: FederatedQueryRequest{
+				SQL:            "SELECT 1",
+				MaxConcurrency: -1,
+			},
+		},
+		{
+			name: "missing profile",
+			req: FederatedQueryRequest{
+				SubQueries: []SubQuery{{Alias: "u", SQL: "SELECT 1"}},
+			},
+		},
+		{
+			name: "missing alias",
+			req: FederatedQueryRequest{
+				SubQueries: []SubQuery{{Profile: "p1", SQL: "SELECT 1"}},
+			},
+		},
+		{
+			name: "missing sql",
+			req: FederatedQueryRequest{
+				SubQueries: []SubQuery{{Profile: "p1", Alias: "u"}},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			if err := validateFederatedRequest(tc.req); err == nil {
+				t.Fatalf("expected validation error for %s", tc.name)
+			}
+		})
+	}
+}
+
+func TestHandleFederatedQuery_ErrorPaths(t *testing.T) {
+	ctx := context.Background()
+
+	// Config load error branch.
+	serverMissingConfig := NewMCPServerWithConfig("does-not-exist.yaml")
+	result, _, err := serverMissingConfig.handleFederatedQuery(ctx, nil, FederatedQueryRequest{
+		SubQueries: []SubQuery{
+			{Profile: "p1", Alias: "u", SQL: "SELECT 1"},
+		},
+	})
+	if err == nil {
+		t.Fatalf("expected config load error")
+	}
+	if result == nil || len(result.Content) == 0 {
+		t.Fatalf("expected structured config error response content")
+	}
+
+	testConfig := "test_config_federation_errors.yaml"
+	defer os.Remove(testConfig)
+
+	cfg := &config.Config{
+		Profiles: []config.Profile{
+			{ProfileName: "p1", DBType: "sqlite", DatabaseName: testSQLiteDBPath},
+		},
+		MaxPoolSize: 5,
+	}
+	if saveErr := config.SaveConfig(testConfig, cfg); saveErr != nil {
+		t.Fatalf("failed to save federation error-path config: %v", saveErr)
+	}
+
+	server := NewMCPServerWithConfig(testConfig)
+
+	// SQL parse error branch.
+	parseErrRes, _, parseErr := server.handleFederatedQuery(ctx, nil, FederatedQueryRequest{
+		SQL: "DELETE FROM p1.users",
+	})
+	if parseErr != nil {
+		t.Fatalf("expected structured parse error response, got %v", parseErr)
+	}
+	if parseErrRes == nil || len(parseErrRes.Content) == 0 {
+		t.Fatalf("expected parse error content")
+	}
+
+	// Build subqueries error branch (profile not available).
+	buildErrRes, _, buildErr := server.handleFederatedQuery(ctx, nil, FederatedQueryRequest{
+		SQL: "SELECT * FROM missing.users u",
+	})
+	if buildErr != nil {
+		t.Fatalf("expected structured build-subqueries error response, got %v", buildErr)
+	}
+	if buildErrRes == nil || len(buildErrRes.Content) == 0 {
+		t.Fatalf("expected build-subqueries error content")
+	}
+
+	// Execution error branch.
+	original := federationExecuteSubQuery
+	defer func() { federationExecuteSubQuery = original }()
+	federationExecuteSubQuery = func(_ context.Context, _ SubQuery, _ config.Profile) (*SubQueryResult, error) {
+		return nil, errors.New("forced execution failure")
+	}
+
+	execErrRes, _, execErr := server.handleFederatedQuery(ctx, nil, FederatedQueryRequest{
+		SubQueries: []SubQuery{
+			{Profile: "p1", Alias: "u", SQL: "SELECT 1"},
+		},
+	})
+	if execErr != nil {
+		t.Fatalf("expected structured execution error response, got %v", execErr)
+	}
+	if execErrRes == nil || len(execErrRes.Content) == 0 {
+		t.Fatalf("expected execution error content")
+	}
+
+	// Response serialization error branch.
+	federationExecuteSubQuery = func(_ context.Context, subquery SubQuery, _ config.Profile) (*SubQueryResult, error) {
+		return &SubQueryResult{
+			Profile: subquery.Profile,
+			Alias:   subquery.Alias,
+			Columns: []string{"id"},
+			Rows:    []Row{{make(chan int)}},
+		}, nil
+	}
+
+	serializedRes, _, serializedErr := server.handleFederatedQuery(ctx, nil, FederatedQueryRequest{
+		SubQueries: []SubQuery{
+			{Profile: "p1", Alias: "u", SQL: "SELECT 1"},
+		},
+	})
+	if serializedErr == nil {
+		t.Fatalf("expected serialization error when response contains unsupported type")
+	}
+	if serializedRes != nil {
+		t.Fatalf("expected nil response when serialization fails")
 	}
 }
