@@ -149,3 +149,62 @@ When making technical decisions or changes:
 
 ### Approval Preference
 - Prefer compounded approval for multi-step operations (single approval covering the planned sequence), rather than per-step approvals.
+
+### Mistake #4: SonarCloud Refusal Patterns (2026-02-06)
+**What happened**: SonarCloud Quality Gate repeatedly failed despite addressing individual issues. Failed to understand the systemic patterns causing refusals.
+
+**Root cause**: Addressed issues individually without understanding the underlying quality gate requirements and test stability dependencies.
+
+**SonarCloud Refusal Patterns** (why it fails):
+
+1. **Cognitive Complexity Violations**
+   - Functions with cognitive complexity > 15 are rejected
+   - Solution: Extract complex logic into smaller, testable private methods
+   - Examples from our code:
+     - `processTrendInsights`, `processAnomalyInsights` - extracted from complex handlers
+     - `findAnomalies`, `calculateMean`, `calculateStdDev` - extracted from stats
+   - Pattern: Any function > 50 lines or with nested loops/conditions needs refactoring
+
+2. **Code Quality Issues**
+   - Unnecessary variable declarations in rows.Scan (godre:S8193)
+   - Duplicate string literals (should be package-level constants)
+   - Naming convention violations (go:S117) - `range_val` → `rangeValue`, `bucketIdx` → `bucketIndex`
+   - Pattern: Use constants for repeated strings, follow Go naming conventions
+
+3. **Test Stability Blocking Analysis**
+   - Failing tests prevent SonarCloud from analyzing code
+   - Solution: Fix test fixture collisions, ensure unique table names per test
+   - Example: TestSampleTableData_MySQL failed because test_users table was never created
+
+4. **Coverage Gate Requirement**
+   - Must achieve 80% coverage for Quality Gate pass
+   - Current: 64.3%, target: 80%
+   - Lowest coverage areas:
+     - Helper functions in insights_handler.go and insights_stats.go (newly extracted)
+     - Server initialization and MCP protocol handlers
+     - MySQL/Postgres-specific column getters (low test coverage)
+
+5. **Linting Pass Required**
+   - golangci-lint must have 0 issues before SonarCloud analysis
+   - We fixed 18 issues: errcheck, noctx, gofmt, staticcheck
+   - Pattern: Context-aware SQL operations (ExecContext vs Exec), check rows.Close()
+
+**Systematic Fix Approach**:
+1. Run `golangci-lint run ./...` → Fix all issues
+2. Run `go test ./...` → Fix all test failures
+3. Run `go test -cover ./...` → Identify coverage gaps
+4. Add tests for extracted helper functions → Increase coverage
+5. Verify build passes (`go build`)
+6. Push and let SonarCloud analyze
+
+**Lesson learned**:
+- SonarCloud Quality Gate is a holistic check, not individual issue tracker
+- Must address: complexity, code quality, test stability, and coverage simultaneously
+- Fixing one issue at a time without understanding patterns = wasted effort
+- Tests must pass for SonarCloud to even analyze the code
+- Coverage is the final gatekeeper - 80% is non-negotiable
+
+**Action taken**:
+- Documented SonarCloud refusal patterns in AGENTS.md
+- Will follow systematic approach: lint → tests → coverage → verify
+- Will add tests for all newly extracted helper functions to reach 80%
