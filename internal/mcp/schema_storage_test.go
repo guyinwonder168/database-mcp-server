@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -20,6 +21,8 @@ func tempStorageDir(t *testing.T) (string, func()) {
 }
 
 // Helper function to create a sample snapshot
+//
+//nolint:unparam // profile is used dynamically in tests
 func sampleSnapshot(profile string) SchemaSnapshot {
 	return SchemaSnapshot{
 		ID:         "snap-001",
@@ -86,6 +89,15 @@ func TestSaveSnapshot(t *testing.T) {
 			},
 			wantErr:     true,
 			errContains: "at least one table",
+		},
+		{
+			name: "snapshot_with_existing_hash",
+			snapshot: func() SchemaSnapshot {
+				s := sampleSnapshot("test-profile")
+				s.TablesHash = "existing-hash-123"
+				return s
+			}(),
+			wantErr: false,
 		},
 	}
 
@@ -168,6 +180,69 @@ func TestGetSnapshot(t *testing.T) {
 			want:        nil,
 			wantErr:     true,
 			errContains: "not found",
+		},
+		{
+			name: "invalid_json",
+			setup: func() (string, SchemaSnapshot) {
+				dir, _ := tempStorageDir(t)
+				profileDir := filepath.Join(dir, "test-profile")
+				os.MkdirAll(profileDir, 0750)
+
+				// Write invalid JSON
+				filename := filepath.Join(profileDir, "snap-001.json")
+				os.WriteFile(filename, []byte("{invalid json"), 0600)
+
+				return dir, SchemaSnapshot{}
+			},
+			profile:     "test-profile",
+			snapshotID:  "snap-001",
+			want:        nil,
+			wantErr:     true,
+			errContains: "failed to unmarshal",
+		},
+		{
+			name: "invalid_snapshot_content",
+			setup: func() (string, SchemaSnapshot) {
+				dir, _ := tempStorageDir(t)
+				profileDir := filepath.Join(dir, "test-profile")
+				os.MkdirAll(profileDir, 0750)
+
+				// Write valid JSON but invalid snapshot (missing ID)
+				invalidSnapshot := map[string]interface{}{
+					"timestamp": time.Now(),
+					"profile":   "test-profile",
+					"tables":    map[string]SimpleTableInfo{},
+				}
+				data, _ := json.Marshal(invalidSnapshot)
+				filename := filepath.Join(profileDir, "snap-001.json")
+				os.WriteFile(filename, data, 0600)
+
+				return dir, SchemaSnapshot{}
+			},
+			profile:     "test-profile",
+			snapshotID:  "snap-001",
+			want:        nil,
+			wantErr:     true,
+			errContains: "invalid",
+		},
+		{
+			name: "file_is_directory",
+			setup: func() (string, SchemaSnapshot) {
+				dir, _ := tempStorageDir(t)
+				profileDir := filepath.Join(dir, "test-profile")
+				os.MkdirAll(profileDir, 0750)
+
+				// Create a directory instead of a file
+				filename := filepath.Join(profileDir, "snap-002.json")
+				os.Mkdir(filename, 0750)
+
+				return dir, SchemaSnapshot{}
+			},
+			profile:     "test-profile",
+			snapshotID:  "snap-002",
+			want:        nil,
+			wantErr:     true,
+			errContains: "failed to read",
 		},
 	}
 
@@ -553,6 +628,122 @@ func TestCompareSnapshots(t *testing.T) {
 				RemovedTables:  []string{},
 				ModifiedTables: []TableDiff{},
 				Changes:        []SchemaChange{},
+			},
+		},
+		{
+			name: "nullable_to_not_nullable",
+			old: SchemaSnapshot{
+				ID:        "snap-old",
+				Timestamp: time.Now(),
+				Profile:   "test",
+				Tables: map[string]SimpleTableInfo{
+					"users": {
+						Name: "users",
+						Type: "table",
+						Columns: map[string]ColumnInfo{
+							"email": {Name: "email", Type: "VARCHAR(255)", Nullable: true},
+						},
+					},
+				},
+			},
+			new: SchemaSnapshot{
+				ID:        "snap-new",
+				Timestamp: time.Now(),
+				Profile:   "test",
+				Tables: map[string]SimpleTableInfo{
+					"users": {
+						Name: "users",
+						Type: "table",
+						Columns: map[string]ColumnInfo{
+							"email": {Name: "email", Type: "VARCHAR(255)", Nullable: false},
+						},
+					},
+				},
+			},
+			expected: SchemaDiff{
+				ModifiedTables: []TableDiff{
+					{
+						TableName: "users",
+						ModifiedCols: []SchemaChange{
+							{
+								Type:     ChangeTypeAlterConstraint,
+								Table:    "users",
+								Column:   "email",
+								OldValue: true,
+								NewValue: false,
+								Impact:   "breaking",
+							},
+						},
+					},
+				},
+				Changes: []SchemaChange{
+					{
+						Type:     ChangeTypeAlterConstraint,
+						Table:    "users",
+						Column:   "email",
+						OldValue: true,
+						NewValue: false,
+						Impact:   "breaking",
+					},
+				},
+			},
+		},
+		{
+			name: "not_nullable_to_nullable",
+			old: SchemaSnapshot{
+				ID:        "snap-old",
+				Timestamp: time.Now(),
+				Profile:   "test",
+				Tables: map[string]SimpleTableInfo{
+					"users": {
+						Name: "users",
+						Type: "table",
+						Columns: map[string]ColumnInfo{
+							"email": {Name: "email", Type: "VARCHAR(255)", Nullable: false},
+						},
+					},
+				},
+			},
+			new: SchemaSnapshot{
+				ID:        "snap-new",
+				Timestamp: time.Now(),
+				Profile:   "test",
+				Tables: map[string]SimpleTableInfo{
+					"users": {
+						Name: "users",
+						Type: "table",
+						Columns: map[string]ColumnInfo{
+							"email": {Name: "email", Type: "VARCHAR(255)", Nullable: true},
+						},
+					},
+				},
+			},
+			expected: SchemaDiff{
+				ModifiedTables: []TableDiff{
+					{
+						TableName: "users",
+						ModifiedCols: []SchemaChange{
+							{
+								Type:     ChangeTypeAlterConstraint,
+								Table:    "users",
+								Column:   "email",
+								OldValue: false,
+								NewValue: true,
+								Impact:   "compatible",
+							},
+						},
+					},
+				},
+				Changes: []SchemaChange{
+					{
+						Type:     ChangeTypeAlterConstraint,
+						Table:    "users",
+						Column:   "email",
+						OldValue: false,
+						NewValue: true,
+						Impact:   "compatible",
+					},
+				},
 			},
 		},
 	}
