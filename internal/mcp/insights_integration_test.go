@@ -166,6 +166,26 @@ func TestSampleTableData_EmptyTable(t *testing.T) {
 		t.Fatalf("Failed to create empty table: %v", err)
 	}
 
+	// Create test_users table
+	_, err = db.ExecContext(context.Background(), `
+		CREATE TABLE test_users (
+			id INTEGER PRIMARY KEY,
+			name TEXT,
+			email TEXT,
+			age INTEGER,
+			created_at TIMESTAMP
+		);
+	`)
+	if err != nil {
+		t.Fatalf("Failed to create test_users table: %v", err)
+	}
+
+	// Insert test data
+	_, err = db.ExecContext(context.Background(), `INSERT INTO test_users VALUES (1, 'test', 'test@example.com', 30, '2024-01-01')`)
+	if err != nil {
+		t.Fatalf("Failed to insert data: %v", err)
+	}
+
 	// Create test_users table and insert test data
 	_, err = db.ExecContext(context.Background(), `INSERT INTO test_users (id, name) SELECT 1, 'test'`)
 	if err != nil {
