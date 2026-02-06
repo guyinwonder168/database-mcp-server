@@ -242,3 +242,16 @@ jobs:
         with:
           name: mcp-server-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
           path: mcp-server-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
+
+  # Job 7: Build Binaries Summary (required status check for branch protection)
+  build-binaries-summary:
+    if: always()
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check matrix results
+        run: |
+          if [ "${{ needs.build-binaries.result }}" != "success" ]; then
+            echo "build-binaries matrix failed: ${{ needs.build-binaries.result }}"
+            exit 1
+          fi
