@@ -67,6 +67,12 @@ func TestErrorAnalyzerHandlers(t *testing.T) {
 			context: map[string]interface{}{"db_type": "oracle"},
 			code:    ErrorCodeUnsupportedDB,
 		},
+		{
+			name:    "SQLSyntaxError",
+			handler: analyzer.handleSQLSyntaxError,
+			context: map[string]interface{}{"error": "syntax error near SELECT", "sql": "SELEC * FROM users", "db_type": "mysql"},
+			code:    ErrorCodeSQLSyntax,
+		},
 	}
 
 	for _, tt := range tests {
