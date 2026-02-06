@@ -4,7 +4,7 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Version](https://img.shields.io/badge/Version-v1.0.4-blue.svg)](https://github.com/guyinwonder168/database-mcp-server/releases/tag/v1.0.4)
 
-A production-ready Model Context Protocol (MCP) provider for SQL databases, written in Go by guyinwonder. Supports MySQL, MariaDB, PostgreSQL, and SQLite. Features robust connection pooling, secure AES-GCM credential storage, structured JSON logging, comprehensive schema introspection, and a full suite of 15 MCP tools. Built and tested with Go 1.25.5.
+A production-ready Model Context Protocol (MCP) provider for SQL databases, built using various vibe coding tools. Supports MySQL, MariaDB, PostgreSQL, and SQLite. Features robust connection pooling, secure AES-GCM credential storage, structured JSON logging, comprehensive schema introspection, and a full suite of 15 MCP tools. Built and tested with Go 1.25.5.
 
 ## 🚀 Quick Start
 
@@ -113,7 +113,7 @@ go test ./...
 ## 📊 Project Status
 
 - **Version:** v1.0.4
-- **Author:** guyinwonder
+- **Built with:** Various vibe coding tools
 - **Status:** Production Ready ✅
 - All 15 MCP tools are fully implemented and OpenAPI-aligned.
 - Enhanced schema introspection and sample data features.
