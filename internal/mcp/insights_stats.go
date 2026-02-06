@@ -561,7 +561,7 @@ func extractAnomalyValues(column string, rows []map[string]interface{}) []float6
 	return values
 }
 
-func findAnomalies(column string, rows []map[string]interface{}, mean, stdDev, threshold float64) []AnomalyInsight {
+func findAnomalies(column string, rows []map[string]interface{}, mean, stdDev, threshold float64) ([]AnomalyInsight, error) {
 	var anomalies []AnomalyInsight
 	for _, row := range rows {
 		val, ok := row[column]
@@ -585,7 +585,7 @@ func findAnomalies(column string, rows []map[string]interface{}, mean, stdDev, t
 			})
 		}
 	}
-	return anomalies
+	return anomalies, nil
 }
 
 func determineAnomalySeverity(zScore float64) string {
