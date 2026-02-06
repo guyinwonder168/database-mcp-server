@@ -12,7 +12,6 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 COPY cmd ./cmd
 COPY internal ./internal
-COPY pkg ./pkg
 
 ARG TARGETOS
 ARG TARGETARCH
