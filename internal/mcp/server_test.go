@@ -1397,6 +1397,21 @@ func TestRegisterAllTools_IncludesTrackSchemaChanges(t *testing.T) {
 	t.Fatalf("track-schema-changes tool not found in tools registry")
 }
 
+func TestRegisterAllTools_IncludesFederatedQuery(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+
+	for _, tool := range server.toolsRegistry {
+		if tool.Name == "federated-query" {
+			return
+		}
+	}
+
+	t.Fatalf("federated-query tool not found in tools registry")
+}
+
 func TestSmartQueryBuilderMultiTurnFlow(t *testing.T) {
 	testConfig := setupTestConfigWithNLP(t, config.NLPConfig{Enabled: boolPtr(true), BusinessDomains: []string{"hr"}})
 	defer os.Remove(testConfig)

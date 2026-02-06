@@ -1419,23 +1419,28 @@ Track and analyze schema evolution over time with automated migration assistance
 
 ### 20. federated-query
 
-Execute queries across multiple database profiles with intelligent distributed execution.
+Execute read-only queries across multiple database profiles with optional cross-profile JOINs and aggregations.
 
 #### Parameters
 ```json
 {
-  "profile_names": "array (required)",
-  "query": "string (required)",
-  "join_strategy": "string (optional, default: 'auto')",
-  "result_limit": "integer (optional)"
+  "sql": "string (optional, profile.table syntax)",
+  "sub_queries": "array (optional if sql provided)",
+  "joins": "array (optional)",
+  "aggregations": "array (optional)",
+  "limit": "integer (optional)",
+  "offset": "integer (optional)",
+  "max_concurrency": "integer (optional)"
 }
 ```
 
 #### Parameter Details
-- **profile_names**: Array of profile names to include in federation
-- **query**: SQL query to execute across databases
-- **join_strategy**: Join execution strategy - one of: `local`, `remote`, `hybrid`, `auto`
-- **result_limit**: Maximum number of rows to return
+- **sql**: Optional federated SQL expression containing `profile.table` references
+- **sub_queries**: Explicit subquery list (`profile`, `sql`, `alias`) when not using `sql` parsing
+- **joins**: Join definitions (`left`, `right`, `type`) with types: `INNER`, `LEFT`, `RIGHT`, `FULL`
+- **aggregations**: Optional aggregate functions (`COUNT`, `SUM`, `AVG`, `MIN`, `MAX`)
+- **limit / offset**: Final result pagination controls
+- **max_concurrency**: Maximum number of subqueries to run in parallel
 
 #### Example Request
 ```json
@@ -1443,10 +1448,15 @@ Execute queries across multiple database profiles with intelligent distributed e
   "jsonrpc": "2.0",
   "method": "federated-query",
   "params": {
-    "profile_names": ["analytics_db", "crm_db"],
-    "query": "SELECT c.name, COUNT(o.id) as order_count FROM customers c LEFT JOIN analytics_db.orders o ON c.id = o.customer_id WHERE c.created_at >= '2024-01-01' GROUP BY c.id ORDER BY order_count DESC LIMIT 10",
-    "join_strategy": "hybrid",
-    "result_limit": 100
+    "sub_queries": [
+      {"profile": "crm_db", "sql": "SELECT id, name FROM users", "alias": "u"},
+      {"profile": "analytics_db", "sql": "SELECT user_id, total FROM orders", "alias": "o"}
+    ],
+    "joins": [
+      {"left": "u.id", "right": "o.user_id", "type": "INNER"}
+    ],
+    "limit": 100,
+    "max_concurrency": 4
   },
   "id": "federated_001"
 }
@@ -1457,28 +1467,17 @@ Execute queries across multiple database profiles with intelligent distributed e
 {
   "jsonrpc": "2.0",
   "result": {
-    "status": "success",
-    "query": "SELECT c.name, COUNT(o.id) as order_count FROM customers c LEFT JOIN analytics_db.orders o ON c.id = o.customer_id WHERE c.created_at >= '2024-01-01' GROUP BY c.id ORDER BY order_count DESC LIMIT 10",
-    "join_strategy": "hybrid",
-    "execution_plan": {
-      "strategy": "Hybrid execution with local aggregation",
-      "databases_involved": ["analytics_db", "crm_db"],
-      "data_transfer_volume": "2.3MB"
-    },
-    "results": [
-      ["Global Corp", 15],
-      ["Tech Solutions", 12],
-      ["Innovation Labs", 8]
-    ],
-    "performance_metrics": {
-      "total_execution_time": "3.2s",
-      "database_breakdown": {
-        "crm_db": "0.8s",
-        "analytics_db": "1.7s",
-        "data_transfer": "0.7s"
+    "columns": ["id", "name", "user_id", "total"],
+    "rows": [[1, "Alice", 1, 100]],
+    "metadata": {
+      "execution_time_ms": 32,
+      "rows_from_each": {
+        "u": 10,
+        "o": 25
       },
-      "rows_returned": 3,
-      "result_limit_reached": false
+      "errors": [
+        {"profile": "archive_db", "alias": "a", "code": "SUBQUERY_EXECUTION_FAILED", "message": "connection timeout"}
+      ]
     }
   },
   "id": "federated_001"
@@ -1486,9 +1485,9 @@ Execute queries across multiple database profiles with intelligent distributed e
 ```
 
 #### Error Responses
-- `FEDERATION_FAILED`: Cross-database query execution failed
-- `PROFILE_UNAVAILABLE`: One or more specified profiles are not accessible
-- `QUERY_TOO_COMPLEX`: Query too complex for federation
+- `INVALID_INPUT`: Request shape invalid or unsupported SQL
+- `PROFILE_NOT_FOUND`: Subquery references an unknown profile
+- `SQL_EXECUTION_ERROR`: Federated execution failed
 
 ---
 ## Version History

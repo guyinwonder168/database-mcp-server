@@ -11,9 +11,15 @@ All notable changes to this project will be documented in this file.
 - Advanced data profiling implementation for `analyze-schema` (F3): profiling types, statistical engine, and concurrent table profiling.
 - Optional `profiling` request parameter for `analyze-schema` with backward-compatible response payload.
 - New profiling tests: pattern detection, statistics, quality scoring, concurrent enhancer, and handler integration coverage.
+- `federated-query` MCP tool (F4) with planner, join engine, concurrent executor, and MCP handler.
+- Federation SQL parsing support for `profile.table` syntax with optional explicit `sub_queries`.
+- Cross-profile JOIN support (`INNER`, `LEFT`, `RIGHT`, `FULL`) and optional post-join aggregations.
+- Federated execution metadata with per-subquery row counts and partial-failure error payloads.
+- New federation tests: types, planner, join, executor, handler, and tool registration coverage.
 
 ### Changed
 - `analyze-schema` tool description and OpenAPI contract updated to document optional profiling output (`column_profiling`).
+- Tool registry/documentation updated from 17 to 18 tools to include `federated-query`.
 
 ## [v1.0.7] - 2026-02-06
 

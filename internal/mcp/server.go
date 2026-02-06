@@ -511,6 +511,20 @@ func (s *MCPServer) registerAllTools() {
 		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
 	}
 
+	// federated-query
+	{
+		tool := &mcp.Tool{
+			Name: "federated-query",
+			Description: `Execute read-only SQL across multiple profiles with optional cross-profile JOINs and aggregations.
+  Input: either sql (profile.table syntax) or explicit sub_queries, joins (optional), aggregations (optional), limit/offset (optional), max_concurrency (optional).
+  Returns: combined rows plus execution metadata (execution_time_ms, rows_from_each, partial errors).
+  Example:
+  {"sub_queries":[{"profile":"crm_db","sql":"SELECT id,name FROM users","alias":"u"},{"profile":"analytics_db","sql":"SELECT user_id,total FROM orders","alias":"o"}],"joins":[{"left":"u.id","right":"o.user_id","type":"INNER"}],"limit":100}`,
+		}
+		mcp.AddTool(s.server, tool, s.handleFederatedQuery)
+		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+	}
+
 	// discover-joins
 	{
 		tool := &mcp.Tool{

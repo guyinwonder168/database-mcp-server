@@ -8,7 +8,7 @@
 [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=guyinwonder168_database-mcp-server&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=guyinwonder168_database-mcp-server)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=guyinwonder168_database-mcp-server&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=guyinwonder168_database-mcp-server)
 
-A production-ready Model Context Protocol (MCP) provider for SQL databases, built using various vibe coding tools. Supports MySQL, MariaDB, PostgreSQL, and SQLite. Features robust connection pooling, secure AES-GCM credential storage, structured JSON logging, comprehensive schema introspection, and a full suite of 17 MCP tools. Built and tested with Go 1.25.7.
+A production-ready Model Context Protocol (MCP) provider for SQL databases, built using various vibe coding tools. Supports MySQL, MariaDB, PostgreSQL, and SQLite. Features robust connection pooling, secure AES-GCM credential storage, structured JSON logging, comprehensive schema introspection, and a full suite of 18 MCP tools. Built and tested with Go 1.25.7.
 
 ## 🚀 Quick Start
 
@@ -65,6 +65,7 @@ Package registry: `https://github.com/guyinwonder168/database-mcp-server/pkgs/co
 - 🧭 **Data Lineage** - Analyze upstream/downstream dependencies via `analyze-data-lineage`
 - 🧱 **Schema Evolution Tracking** - Track schema snapshots, detect drift, and generate migration scripts via `track-schema-changes`
 - 🧬 **Advanced Data Profiling** - Optional statistical/pattern profiling for `analyze-schema` via `profiling: true`
+- 🌐 **Multi-Database Federation** - Execute federated subqueries with cross-profile joins via `federated-query`
 
 ## 🛠️ Supported MCP Tools
 
@@ -84,6 +85,7 @@ Package registry: `https://github.com/guyinwonder168/database-mcp-server/pkgs/co
 | `sample-data` | Fetch sample rows to infer data formats |
 | `discover-insights` | Discover KPIs, trends, anomalies, and distribution patterns in database tables |
 | `track-schema-changes` | Track schema snapshots/history, generate migrations, and detect schema drift |
+| `federated-query` | Execute read-only cross-profile subqueries with optional JOINs, aggregation, and partial-failure metadata |
 | `list-tools` | List all available MCP tools and descriptions |
 | `analyze-schema` | Comprehensive schema analysis with AI query suggestions and optional advanced profiling (`profiling`) |
 | `mcp-info` | Show provider version and author |
@@ -144,7 +146,7 @@ go test ./...
 - **Version:** v1.0.7
 - **Built with:** Various vibe coding tools
 - **Status:** Production Ready ✅
-- All 17 MCP tools are fully implemented and OpenAPI-aligned.
+- All 18 MCP tools are fully implemented and OpenAPI-aligned.
 - Enhanced schema introspection and sample data features.
 - Optional advanced profiling in `analyze-schema` for column-level statistics, pattern detection, and quality scoring.
 - AES-GCM encryption, connection pooling, and structured error handling are enforced.
@@ -166,11 +168,12 @@ MIT
 **Implementation Phases**:
 - **Phase 1** (Completed): Query optimization, validation, and enhanced NLP
 - **Phase 2** (Completed): Data lineage and business intelligence
-- **Phase 3** (In progress): Schema evolution and advanced profiling completed; multi-database federation remains
+- **Phase 3** (Completed): Schema evolution, advanced profiling, and multi-database federation delivered
 
 **Current Progress**:
 - `track-schema-changes` is implemented with snapshot tracking, history, migration generation, and drift detection (F2 Phase 4 complete).
 - Advanced profiling for `analyze-schema` is implemented with optional `profiling` parameter and backward-compatible response shape (F3 complete).
+- `federated-query` is implemented with parser/planner/join/executor/handler modules and dedicated test coverage (F4 complete).
 
 **Planning Documents**:
 - [Enhancement Roadmap](docs/roadmap.md) - Strategic overview
