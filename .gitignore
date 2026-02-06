@@ -41,3 +41,4 @@ pkg/
 pkg/mcp-server
 pkg/log/*.log.*
 
+docs/plans/
