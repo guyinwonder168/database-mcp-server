@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.0.6] - 2026-02-06
+
+### Added
+- `track-schema-changes` Phase 2: Snapshot Storage (F2)
+- Schema snapshot persistence to filesystem (JSON format)
+- Snapshot retrieval by profile and ID
+- Snapshot listing with configurable limit
+- Schema comparison and diff detection (added/removed/modified tables and columns)
+- Schema drift detection between current state and last snapshot
+- SHA-256 hash generation for schema integrity verification
+- Column type and constraint change detection
+- Impact classification (breaking, compatible, informational)
+
+### Changed
+- Update tool count from 16 to 17
+
 ## [v1.0.5] - 2026-02-06
 
 ### Added
