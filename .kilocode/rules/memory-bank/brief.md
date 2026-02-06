@@ -1,42 +1,39 @@
 # Database MCP Server - Project Brief
 
 ## Project Overview
-A production-ready Model Context Protocol (MCP) provider for SQL databases, written in Go. This server enables AI agents and developers to interact with multiple database types through a unified conversational API. All 15 MCP tools (including analyze-schema, validate-query, optimize-query, and analyze-data-lineage) are implemented and comprehensively documented in the README, with configuration and usage examples for MySQL, MariaDB, PostgreSQL, and SQLite.
+
+Database MCP Server is a production-ready MCP provider for SQL databases, implemented in Go. It exposes a unified tool interface so AI agents and developers can safely interact with MySQL, MariaDB, PostgreSQL, and SQLite.
+
+Current implementation state:
+- Version: `v1.1.0`
+- MCP tools: `18` implemented and registered
+- Packaging: GitHub Releases + GHCR container images
 
 ## Core Mission
-Provide a secure, stateless, and unified interface for accessing MySQL, MariaDB, PostgreSQL, and SQLite databases via the Model Context Protocol, abstracting away database-specific complexities. Ensure robust documentation, easy onboarding, and safe credential management.
 
-## Key Requirements
+Provide a secure, practical, and discoverable MCP database interface that works consistently across supported SQL engines and coding clients.
 
-### Functional Requirements
-1. **Multi-Database Support**: MySQL, MariaDB, PostgreSQL, SQLite
-2. **Profile Management**: Create, update, list database connection profiles
-3. **SQL Execution**: Execute arbitrary SQL queries with read-only enforcement option
-4. **Schema Introspection**: List tables/views, describe table schemas, list databases
-5. **Sample Data Fetching**: Fetch sample rows from tables to infer data formats.
-6. **Query Validation**: `validate-query` tool for syntax, logic, and injection pattern checks before execution.
-7. **Interactive Setup**: CLI-based configuration wizard for first-time setup
-8. **Analyze-Schema**: Advanced schema analysis MCP tool supporting BASIC, DETAILED, and COMPREHENSIVE levels, business context inference, data quality metrics, relationship discovery, Smart Query Builder integration
-9. **MCP Actions**: Full suite of 15 MCP tools (including validate-query, optimize-query, and analyze-data-lineage) are documented in README.md
+## Functional Requirements (Current)
 
-### Non-Functional Requirements
-1. **Security**: AES-GCM encryption for stored passwords (32-char key)
-2. **Performance**: Connection pooling with configurable max pool size
-3. **Logging**: Structured JSON logging with file rotation (500KB limit)
-4. **Statelessness**: Each action opens/closes its own connection
-5. **Configuration**: Human-readable YAML configuration file with obsolete user_key/user_secret fields removed
+1. Multi-database connectivity (MySQL, MariaDB, PostgreSQL, SQLite)
+2. Profile configuration and listing (`configure-profile`, `list-profiles`)
+3. SQL execution with read-only policy enforcement (`execute-sql`)
+4. Schema discovery (`list-databases`, `list-tables`, `describe-table`, `discover-joins`)
+5. Data sampling and analysis (`sample-data`, `analyze-schema`, `discover-insights`)
+6. Query intelligence (`smart-query-builder`, `validate-query`, `optimize-query`)
+7. Governance and advanced workflows (`analyze-data-lineage`, `track-schema-changes`, `federated-query`)
+8. Runtime discovery and provider metadata (`list-tools`, `mcp-info`)
 
-## Project Constraints
-- Written in Go (Golang) using the official Go MCP SDK
-- Must work both locally and as a remote server
-- No GUI - CLI and MCP interface only
-- No transaction management beyond atomic operations
-- Relies on database-level permissions for access control
+## Non-Functional Requirements
+
+1. Security: encrypted credentials (AES-GCM), safe logging, read-only guardrails
+2. Performance: pooled connections and efficient stateless handlers
+3. Reliability: structured errors and regression-tested tool registration
+4. Operability: straightforward setup, documented release/package workflow
 
 ## Success Criteria
-- Seamless integration with Kilocode AI, Codex CLI, ClaudeCode and other MCP-compatible systems
-- Zero plaintext credential storage
-- Robust error handling with structured error responses
-- Easy setup process for non-technical users
-- Production-ready reliability and performance
-- Comprehensive documentation for all MCP tools and configuration scenarios
+
+- Reliable cross-client MCP integration (Codex, Claude Code, OpenCode, Kilo, Roo, Cline, Goose, etc.)
+- Zero plaintext credential persistence
+- Practical and accurate documentation aligned with runtime contracts
+- Stable production operation with clear troubleshooting paths

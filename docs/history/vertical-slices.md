@@ -1,5 +1,8 @@
 # Database MCP Server - Vertical Slices Definition
 
+> Historical snapshot note: this file preserves earlier planning/execution context and may not reflect the latest runtime contracts.
+
+
 ## Overview
 
 This document defines the vertical slices for implementing the Database MCP Server enhancements. Each vertical slice is designed to be a complete, end-to-end implementation that delivers immediate value while building toward the comprehensive roadmap goals.

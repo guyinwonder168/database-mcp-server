@@ -1,5 +1,8 @@
 # Database MCP Server - Enhancement Roadmap
 
+> Historical snapshot note: this file preserves earlier planning/execution context and may not reflect the latest runtime contracts.
+
+
 ## Executive Summary
 
 This roadmap outlines the enhancement plan for the Database MCP Server based on the PRD Analysis Report recommendations. The plan focuses on transforming the current production-ready MCP server into an AI-enhanced database interaction platform with advanced query optimization, natural language processing, and business intelligence capabilities.

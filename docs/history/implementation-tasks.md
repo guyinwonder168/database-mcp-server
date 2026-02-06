@@ -1,5 +1,8 @@
 # Database MCP Server - Detailed Implementation Tasks
 
+> Historical snapshot note: this file preserves earlier planning/execution context and may not reflect the latest runtime contracts.
+
+
 ## Overview
 
 This document provides detailed task breakdowns for each vertical slice, with specific subtasks that can be completed independently. Each task is designed to be small enough to be finished in one development session while delivering meaningful progress.

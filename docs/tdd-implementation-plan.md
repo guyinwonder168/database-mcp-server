@@ -12,7 +12,7 @@
 
 ## Executive Summary
 
-This document provides a Test-Driven Development (TDD) implementation plan for remaining planned capabilities in the Database MCP Server roadmap.
+This document records the Test-Driven Development (TDD) implementation for roadmap capabilities and tracks post-delivery hardening tasks.
 
 ### Current Implementation Status (Updated 2026-02-06)
 
@@ -28,7 +28,7 @@ This document provides a Test-Driven Development (TDD) implementation plan for r
 | Multi-Database Federation | `federated-query` | Phase 3 | ✅ **COMPLETED (Phases 1-5 complete)** | 2026-02-06 |
 
 **System Version**: v1.1.0 (Production Ready)  
-**Next Milestone**: Coverage hardening and release packaging for v1.0.8
+**Next Milestone**: Coverage hardening and release/package automation maintenance after v1.1.0.
 
 **F1 Completion Notes** (2026-02-06):
 - ✅ All TDD phases (1-4) completed for `discover-insights`
