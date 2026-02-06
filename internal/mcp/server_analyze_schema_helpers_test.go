@@ -1,8 +1,11 @@
 package mcp
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"math"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -346,6 +349,210 @@ func TestTruncateQualityIssues(t *testing.T) {
 	last := truncated[len(truncated)-1]
 	if !strings.Contains(last, "more issues truncated") {
 		t.Fatalf("expected truncation summary in last issue, got %q", last)
+	}
+}
+
+func TestApplyAnalyzeSchemaPatternsAndCorrelate(t *testing.T) {
+	server := &MCPServer{}
+	tableSchemas := map[string]TableInfo{
+		"users": {
+			ColumnCount: 2,
+			Columns: []SchemaColumnInfo{
+				{ColumnName: "user_id"},
+				{ColumnName: "email"},
+			},
+		},
+		"orders": {
+			ColumnCount: 1,
+			Columns: []SchemaColumnInfo{
+				{ColumnName: "user_id"},
+			},
+		},
+	}
+	sampleData := map[string][]map[string]interface{}{
+		"users": {
+			{"user_id": "1", "email": "alice@example.com"},
+			{"user_id": "2", "email": "bob@example.com"},
+		},
+		"orders": {
+			{"user_id": "1"},
+			{"user_id": "2"},
+		},
+	}
+
+	updated := server.applyAnalyzeSchemaPatterns(tableSchemas, sampleData)
+	if len(updated["users"].DataPatterns) == 0 {
+		t.Fatalf("expected detected data patterns for users table")
+	}
+
+	// Ensure no panic and path coverage for correlation helper.
+	server.correlateAnalyzeSchemaValueMatches(updated, sampleData)
+}
+
+func TestBuildAnalyzeSchemaQuerySuggestions(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+
+	conn, _, err := server.openConnection(ctx, "testsqlite", testSQLiteDBPath)
+	if err != nil {
+		t.Fatalf("failed to open sqlite connection for setup: %v", err)
+	}
+	defer conn.Close()
+
+	if _, err := conn.ExecContext(ctx, "DROP TABLE IF EXISTS users"); err != nil {
+		t.Fatalf("failed to drop users table: %v", err)
+	}
+	if _, err := conn.ExecContext(ctx, "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT)"); err != nil {
+		t.Fatalf("failed to create users table: %v", err)
+	}
+
+	params := AnalyzeSchemaParams{
+		ProfileName:    "testsqlite",
+		AnalysisLevel:  AnalysisLevelComprehensive,
+		IncludeQueries: true,
+	}
+	suggestions := server.buildAnalyzeSchemaQuerySuggestions(ctx, params, []string{"users"}, testSQLiteDBPath)
+	if len(suggestions.DataExploration) == 0 {
+		t.Fatalf("expected at least one query suggestion")
+	}
+}
+
+func TestScanAnalyzeSchemaColumnHelpers(t *testing.T) {
+	dbConn, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("failed to open sqlite memory db: %v", err)
+	}
+	defer dbConn.Close()
+	ctx := context.Background()
+
+	mysqlRows, err := dbConn.QueryContext(ctx, "SELECT 'id','bigint','NO','PRI','0','auto_increment'")
+	if err != nil {
+		t.Fatalf("failed mysql-mock query: %v", err)
+	}
+	if !mysqlRows.Next() {
+		t.Fatalf("expected mysql-mock row")
+	}
+	mysqlCol, err := scanAnalyzeSchemaMySQLColumn(mysqlRows)
+	if err != nil {
+		t.Fatalf("scanAnalyzeSchemaMySQLColumn failed: %v", err)
+	}
+	if !mysqlCol.IsPrimaryKey || mysqlCol.ColumnName != "id" {
+		t.Fatalf("unexpected mysql scanned column: %+v", mysqlCol)
+	}
+	_ = mysqlRows.Close()
+
+	postgresRows, err := dbConn.QueryContext(ctx, "SELECT 'user_id','text','YES',NULL,'FOREIGN KEY'")
+	if err != nil {
+		t.Fatalf("failed postgres-mock query: %v", err)
+	}
+	if !postgresRows.Next() {
+		t.Fatalf("expected postgres-mock row")
+	}
+	postgresCol, err := scanAnalyzeSchemaPostgresColumn(postgresRows)
+	if err != nil {
+		t.Fatalf("scanAnalyzeSchemaPostgresColumn failed: %v", err)
+	}
+	if !postgresCol.IsForeignKey || postgresCol.ColumnName != "user_id" {
+		t.Fatalf("unexpected postgres scanned column: %+v", postgresCol)
+	}
+	_ = postgresRows.Close()
+
+	sqliteRows, err := dbConn.QueryContext(ctx, "SELECT 0,'id','INTEGER',0,NULL,1")
+	if err != nil {
+		t.Fatalf("failed sqlite-mock query: %v", err)
+	}
+	if !sqliteRows.Next() {
+		t.Fatalf("expected sqlite-mock row")
+	}
+	sqliteCol, err := scanAnalyzeSchemaSQLiteColumn(sqliteRows)
+	if err != nil {
+		t.Fatalf("scanAnalyzeSchemaSQLiteColumn failed: %v", err)
+	}
+	if !sqliteCol.IsPrimaryKey || sqliteCol.ColumnName != "id" {
+		t.Fatalf("unexpected sqlite scanned column: %+v", sqliteCol)
+	}
+	_ = sqliteRows.Close()
+
+	if _, err := scanAnalyzeSchemaColumn(&sql.Rows{}, "oracle"); err == nil {
+		t.Fatalf("expected unsupported db type error from scanAnalyzeSchemaColumn")
+	}
+
+	// Ensure logging helper path is exercised.
+	logAnalyzeSchemaColumnScanError("mysql", "users", errors.New("scan error"))
+}
+
+func TestDescribeMySQLTableColumnsWithAttachedSQLiteSchema(t *testing.T) {
+	dbConn, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("failed to open sqlite memory db: %v", err)
+	}
+	defer dbConn.Close()
+
+	ctx := context.Background()
+	if _, err := dbConn.ExecContext(ctx, "ATTACH DATABASE ':memory:' AS INFORMATION_SCHEMA"); err != nil {
+		t.Fatalf("failed to attach INFORMATION_SCHEMA db: %v", err)
+	}
+
+	createSQL := `CREATE TABLE INFORMATION_SCHEMA.COLUMNS (
+		COLUMN_NAME TEXT,
+		COLUMN_TYPE TEXT,
+		IS_NULLABLE TEXT,
+		COLUMN_KEY TEXT,
+		COLUMN_DEFAULT TEXT,
+		COLUMN_COMMENT TEXT,
+		EXTRA TEXT,
+		CHARACTER_SET_NAME TEXT,
+		COLLATION_NAME TEXT,
+		CHARACTER_MAXIMUM_LENGTH INTEGER,
+		NUMERIC_PRECISION INTEGER,
+		NUMERIC_SCALE INTEGER,
+		TABLE_SCHEMA TEXT,
+		TABLE_NAME TEXT,
+		ORDINAL_POSITION INTEGER
+	)`
+	if _, err := dbConn.ExecContext(ctx, createSQL); err != nil {
+		t.Fatalf("failed to create INFORMATION_SCHEMA.COLUMNS: %v", err)
+	}
+
+	insertSQL := `INSERT INTO INFORMATION_SCHEMA.COLUMNS (
+		COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT, COLUMN_COMMENT, EXTRA,
+		CHARACTER_SET_NAME, COLLATION_NAME, CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, NUMERIC_SCALE,
+		TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err = dbConn.ExecContext(
+		ctx,
+		insertSQL,
+		"id", "bigint", "NO", "PRI", "0", "identifier", "auto_increment",
+		"utf8mb4", "utf8mb4_general_ci", 255, 20, 0,
+		"appdb", "users", 1,
+	)
+	if err != nil {
+		t.Fatalf("failed to insert INFORMATION_SCHEMA row: %v", err)
+	}
+
+	columns, err := describeMySQLTableColumns(ctx, dbConn, "appdb", "users")
+	if err != nil {
+		t.Fatalf("describeMySQLTableColumns failed: %v", err)
+	}
+	if len(columns) != 1 {
+		t.Fatalf("expected one column, got %d", len(columns))
+	}
+	if columns[0].Name != "id" || !columns[0].AutoIncrement {
+		t.Fatalf("unexpected described column: %+v", columns[0])
+	}
+}
+
+func TestMarshalAnalyzeSchemaResultError(t *testing.T) {
+	_, err := marshalAnalyzeSchemaResult(AnalyzeSchemaResult{
+		DataQualityMetrics: map[string]QualityMetrics{
+			"bad": {OverallScore: math.NaN()},
+		},
+	})
+	if err == nil {
+		t.Fatalf("expected marshal error for NaN quality score")
 	}
 }
 
