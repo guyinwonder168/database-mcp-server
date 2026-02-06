@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: Database MCP Provider API
-  version: "1.0.0"
+  version: "1.0.7"
   description: |
     OpenAPI documentation for all MCP tools exposed by the Database MCP Provider.
     This enables LLMs and clients to discover and use all available actions programmatically.
@@ -136,7 +136,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ListDatabasesResult'
- /smart-query-builder:
+  /smart-query-builder:
    post:
      summary: Generate optimized SQL from high-level intent and schema analysis
      description: |
@@ -162,7 +162,7 @@ paths:
              schema:
                $ref: '#/components/schemas/ErrorResponse'
 
- /analyze-schema:
+  /analyze-schema:
    post:
      summary: Perform comprehensive schema analysis
      description: |
@@ -187,7 +187,7 @@ paths:
            application/json:
              schema:
                $ref: '#/components/schemas/ErrorResponse'
- /track-schema-changes:
+  /track-schema-changes:
    post:
      summary: Track schema snapshots, migration plans, and drift
      description: |
@@ -363,7 +363,7 @@ components:
           items:
             type: string
           description: Optional specific table names to consider
-   SmartQueryBuilderResult:
+    SmartQueryBuilderResult:
      type: object
      properties:
        sql:
@@ -375,7 +375,7 @@ components:
          description: Explanation of how the query was generated
          example: "Selected table 'attendance' based on keywords from intent 'attendance dashboard'."
    
-   AnalyzeSchemaParams:
+    AnalyzeSchemaParams:
      type: object
      required:
        - profile_name
@@ -409,8 +409,12 @@ components:
          type: boolean
          description: Whether to include AI-generated query suggestions
          default: true
+       profiling:
+         type: boolean
+         description: Enable advanced profiling output (column statistics, pattern detection, and quality scores)
+         default: false
 
-   AnalyzeSchemaResult:
+    AnalyzeSchemaResult:
      type: object
      properties:
        analysis_metadata:
@@ -452,8 +456,10 @@ components:
              type: array
              items:
                $ref: '#/components/schemas/QuerySuggestion'
+       column_profiling:
+         $ref: '#/components/schemas/EnhancedSchemaAnalysis'
 
-   TrackSchemaChangesParams:
+    TrackSchemaChangesParams:
      type: object
      required:
        - profile_name
@@ -478,7 +484,7 @@ components:
        retention_days:
          type: integer
 
-   TrackSchemaChangesResult:
+    TrackSchemaChangesResult:
      type: object
      properties:
        operation:
@@ -511,7 +517,7 @@ components:
        summary:
          type: string
 
-   TableSchema:
+    TableSchema:
      type: object
      properties:
        column_count:
@@ -548,7 +554,7 @@ components:
                  ref_column:
                    type: string
 
-   ForeignKey:
+    ForeignKey:
      type: object
      properties:
        from_table:
@@ -564,7 +570,7 @@ components:
        suggested_join:
          type: string
 
-   QuerySuggestion:
+    QuerySuggestion:
      type: object
      properties:
        question:
@@ -572,7 +578,94 @@ components:
        sql:
          type: string
 
-   ErrorResponse:
+    EnhancedSchemaAnalysis:
+     type: object
+     properties:
+       enabled:
+         type: boolean
+       max_workers:
+         type: integer
+       profiled_at:
+         type: string
+         format: date-time
+       table_profiles:
+         type: array
+         items:
+           $ref: '#/components/schemas/TableProfile'
+
+    TableProfile:
+     type: object
+     properties:
+       table_name:
+         type: string
+       sample_row_count:
+         type: integer
+       columns:
+         type: array
+         items:
+           $ref: '#/components/schemas/ColumnProfile'
+
+    ColumnProfile:
+     type: object
+     properties:
+       column_name:
+         type: string
+       data_type:
+         type: string
+       statistics:
+         $ref: '#/components/schemas/ColumnStatistics'
+       patterns:
+         type: array
+         items:
+           $ref: '#/components/schemas/PatternMatch'
+       quality_score:
+         type: number
+       quality_metrics:
+         $ref: '#/components/schemas/DataQualityMetrics'
+
+    ColumnStatistics:
+     type: object
+     properties:
+       count:
+         type: integer
+       null_count:
+         type: integer
+       unique_count:
+         type: integer
+       min: {}
+       max: {}
+       mean:
+         type: number
+       median:
+         type: number
+       std_dev:
+         type: number
+
+    PatternMatch:
+     type: object
+     properties:
+       pattern:
+         type: string
+       regex:
+         type: string
+       coverage:
+         type: number
+       example:
+         type: string
+
+    DataQualityMetrics:
+     type: object
+     properties:
+       completeness:
+         type: number
+       uniqueness:
+         type: number
+       validity:
+         type: number
+       consistency:
+         type: number
+
+    ErrorResponse:
      type: object
      properties:
        status:

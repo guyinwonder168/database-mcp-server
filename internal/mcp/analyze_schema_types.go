@@ -38,6 +38,7 @@ type AnalyzeSchemaParams struct {
 	ExcludeTables  []string `json:"exclude_tables,omitempty" jsonschema:"tables to skip (optional)"`
 	SampleSize     int      `json:"sample_size,omitempty" jsonschema:"rows to sample per table (default 10)"`
 	IncludeQueries bool     `json:"include_queries,omitempty" jsonschema:"generate query suggestions (default true)"` // Optional: Generate query suggestions (default: true)
+	Profiling      bool     `json:"profiling,omitempty" jsonschema:"enable advanced data profiling (default false)"`  // Optional: Enable advanced profiling output
 }
 
 // Validate checks that required fields are present and valid.
@@ -71,6 +72,7 @@ type AnalyzeSchemaResult struct {
 	SemanticInsights        SemanticInsights          `json:"semantic_insights,omitempty"`         // Business processes, KPIs, etc.
 	PerformanceOptimization PerformanceOptimization   `json:"performance_optimization,omitempty"`  // Index and query hints
 	QuickInsights           []string                  `json:"quick_insights,omitempty"`            // Human-readable summary points
+	ColumnProfiling         *EnhancedSchemaAnalysis   `json:"column_profiling,omitempty"`          // Optional advanced table/column profiling
 }
 
 // AnalysisMetadata provides metadata about the analysis run.

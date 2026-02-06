@@ -414,6 +414,7 @@ func (s *MCPServer) registerAllTools() {
    - exclude_tables: Tables to exclude from analysis
    - sample_size: Rows to sample per table (default: 10)
    - include_queries: Generate query suggestions (default: true)
+   - profiling: Enable advanced statistical and pattern profiling (default: false)
   
   AI agents MUST specify analysis_level. Example:
   {"profile_name":"analytics_db","analysis_level":"detailed","database_name":"analytics_db"}`,
@@ -3401,6 +3402,13 @@ func (s *MCPServer) handleAnalyzeSchema(
 		AIQuerySuggestions:      aiQuerySuggestions,
 		DataQualityMetrics:      dataQualityMetrics,
 		QuickInsights:           []string{fmt.Sprintf("Schema analysis completed for %d tables.", len(filteredTables))},
+	}
+
+	if p.Profiling {
+		enhanced := enhanceSchemaAnalysis(ctx, tableSchemas, sampleDataMap, defaultProfilingWorkers)
+		if enhanced != nil {
+			mergeWithExistingSchema(&result, enhanced)
+		}
 	}
 
 	if businessCtx != nil {

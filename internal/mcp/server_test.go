@@ -1535,6 +1535,67 @@ func TestHandleAnalyzeSchema(t *testing.T) {
 	}
 }
 
+func TestHandleAnalyzeSchema_ProfilingEnabled(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+
+	_, _, err := server.handleExecuteSQL(ctx, nil, ExecuteSQLParams{
+		ProfileName:  "testsqlite",
+		DatabaseName: testSQLiteDBPath,
+		SQL:          "CREATE TABLE profile_users (id INTEGER PRIMARY KEY, email TEXT)",
+	})
+	if err != nil {
+		t.Fatalf("failed to create profiling test table: %v", err)
+	}
+
+	for _, email := range []string{"a@example.com", "b@example.com", "bad"} {
+		_, _, insertErr := server.handleExecuteSQL(ctx, nil, ExecuteSQLParams{
+			ProfileName:  "testsqlite",
+			DatabaseName: testSQLiteDBPath,
+			SQL:          "INSERT INTO profile_users (email) VALUES (?)",
+			Params:       []interface{}{email},
+		})
+		if insertErr != nil {
+			t.Fatalf("failed to seed profiling data: %v", insertErr)
+		}
+	}
+
+	params := AnalyzeSchemaParams{
+		ProfileName:   "testsqlite",
+		DatabaseName:  testSQLiteDBPath,
+		AnalysisLevel: AnalysisLevelDetailed,
+		IncludeTables: []string{"profile_users"},
+		SampleSize:    5,
+		Profiling:     true,
+	}
+	res, _, err := server.handleAnalyzeSchema(ctx, nil, params)
+	if err != nil {
+		t.Fatalf("handleAnalyzeSchema with profiling failed: %v", err)
+	}
+	if res == nil || len(res.Content) == 0 {
+		t.Fatalf("expected non-empty response content")
+	}
+
+	text, ok := res.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("expected text content, got %T", res.Content[0])
+	}
+
+	var parsed AnalyzeSchemaResult
+	if err := json.Unmarshal([]byte(text.Text), &parsed); err != nil {
+		t.Fatalf("failed to parse analyze-schema response: %v", err)
+	}
+	if parsed.ColumnProfiling == nil {
+		t.Fatalf("expected column_profiling in response when profiling=true")
+	}
+	if len(parsed.ColumnProfiling.TableProfiles) != 1 {
+		t.Fatalf("expected one table profile, got %d", len(parsed.ColumnProfiling.TableProfiles))
+	}
+}
+
 // --- AnalyzeSchema Helper Method Unit Tests ---
 
 func TestDetectDomain(t *testing.T) {

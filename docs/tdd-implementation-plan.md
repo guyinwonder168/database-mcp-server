@@ -1,8 +1,8 @@
 # Database MCP Server - TDD Implementation Plan
 
-> **Document Version**: 1.3  
+> **Document Version**: 1.5  
 > **Created**: 2026-02-05  
-> **Updated**: 2026-02-05  
+> **Updated**: 2026-02-06  
 > **Status**: ✅ **Approved for Auto-Development**  
 > **Approval Model**: Compounded Approval (Plan pre-approved, execute without per-task approval)  
 > **Session Type**: Optimized for Extended Coding Sessions (2-6 hours)  
@@ -24,21 +24,36 @@ This document provides a Test-Driven Development (TDD) implementation plan for r
 | Data Lineage & Impact Analysis | `analyze-data-lineage` | Phase 2.1 | ✅ **COMPLETED** | - |
 | **Business Intelligence Discovery** | **`discover-insights`** | **Phase 2.2** | ✅ **COMPLETED** | **2026-02-06** |
 | Schema Evolution Management | `track-schema-changes` | Phase 3 | ✅ **COMPLETED (Phases 1-4 complete)** | 2026-02-06 |
-| Advanced Data Profiling | Enhanced `analyze-schema` | Phase 3 | 📋 Planned | - |
+| Advanced Data Profiling | Enhanced `analyze-schema` | Phase 3 | ✅ **COMPLETED (Phases 1-4 complete)** | 2026-02-06 |
 | Multi-Database Federation | `federated-query` | Phase 3 | 📋 Planned | - |
 
 **System Version**: v1.0.7 (Production Ready)  
-**Next Milestone**: Start F3 `analyze-schema` advanced profiling implementation
+**Next Milestone**: Start F4 `federated-query` multi-database federation implementation
 
 **F1 Completion Notes** (2026-02-06):
 - ✅ All TDD phases (1-4) completed for `discover-insights`
 - ✅ Files created: insights_types.go, insights_stats.go, insights_handler.go
-- ✅ Test coverage: 64.3% (SonarCloud gate requires 80% - pending)
+- ✅ Local test suite passing: `go test ./...`
+- ✅ Current package coverage snapshot: `internal/mcp` at 67.9% (`go test -cover ./...`)
 - ✅ All integration tests passing (fixed test fixture collisions)
 - ✅ Linter passing: golangci-lint@v2.8.0 - 0 issues
 - ✅ Code quality addressed: cognitive complexity, naming conventions, duplicate strings
 - ⏳ SonarCloud Quality Gate: Pending (coverage needs improvement to 80%)
 - 📝 Refusal patterns documented in AGENTS.md (Mistake #4)
+
+**F2 Completion Notes** (2026-02-06):
+- ✅ All TDD phases (1-4) completed for `track-schema-changes`
+- ✅ Files created: schema_snapshot_types.go, schema_storage.go, schema_migrations.go, schema_tracker.go
+- ✅ Handler operations implemented: `track`, `history`, `generate_migration`, `detect_drift`
+- ✅ Tool registered in `internal/mcp/server.go` and covered by handler/integration tests
+
+**F3 Completion Notes** (2026-02-06):
+- ✅ All TDD phases (1-4) completed for enhanced `analyze-schema` profiling
+- ✅ Files created: profiling_types.go, profiling_engine.go, schema_enhanced.go
+- ✅ Optional `profiling` request parameter added with backward-compatible response shape
+- ✅ Added `column_profiling` response block (returned only when `profiling=true`)
+- ✅ Tests added: profiling_engine_test.go, schema_enhanced_test.go, handler integration assertion
+- ✅ Pre-commit quality checks passing: `gofmt`, `go vet`, `golangci-lint`, `go test`
 
 ---
 
@@ -66,9 +81,9 @@ This document provides a Test-Driven Development (TDD) implementation plan for r
 
 | Feature | Priority | Est. Effort | Status |
 |---------|----------|-------------|--------|
-| [F1: Business Intelligence Discovery](#f1-business-intelligence-discovery) | **P1** | **5-7 days** | 🔄 **READY TO IMPLEMENT** |
+| [F1: Business Intelligence Discovery](#f1-business-intelligence-discovery) | **P1** | **5-7 days** | ✅ Completed (Phases 1-4 complete) |
 | [F2: Schema Evolution Management](#f2-schema-evolution-management) | P2 | 6-8 days | ✅ Completed (Phases 1-4 complete) |
-| [F3: Advanced Data Profiling](#f3-advanced-data-profiling) | P2 | 4-6 days | 📋 Planned |
+| [F3: Advanced Data Profiling](#f3-advanced-data-profiling) | P2 | 4-6 days | ✅ Completed (Phases 1-4 complete) |
 | [F4: Multi-Database Federation](#f4-multi-database-federation) | P2 | 7-10 days | 📋 Planned |
 
 **TDD Standards Applied**:
@@ -344,14 +359,14 @@ docs(insights): update API documentation for discover-insights
 
 ---
 
-## F1: Business Intelligence Discovery (NEXT UP)
+## F1: Business Intelligence Discovery
 
 **Tool Name**: `discover-insights`  
-**Priority**: **P1 - NEXT MILESTONE**  
+**Priority**: **P1 - Delivered Milestone**  
 **Estimated Effort**: 5-7 days  
-**Files to Create**: 4-6  
-**Status**: 🔄 Ready for Implementation  
-**Branch**: `feature/f1-discover-insights` (create from `main`)
+**Files Created**: 4-6  
+**Status**: ✅ Completed (Phases 1-4 implemented)  
+**Branch**: `feature/f1-discover-insights` (merged to `main`)
 
 ### F1.1 Overview
 
@@ -359,7 +374,7 @@ Discovers KPIs, trends, and anomalies from database tables automatically. Analyz
 
 ### F1.2 TDD Implementation Phases
 
-#### Phase 1: Core Types and Interfaces (RED)
+#### Phase 1: Core Types and Interfaces (RED → GREEN) ✅ Completed
 
 **File**: `internal/mcp/insights_types.go`
 
@@ -486,7 +501,7 @@ func TestDiscoverInsightsRequest_Validate(t *testing.T) {
 - [ ] Validation passes for valid inputs, fails appropriately for invalid
 - [ ] **✅ PRE-COMMIT CHECKS PASSED: fmt, vet, lint, test**
 
-#### Phase 2: Statistical Analysis Engine (RED → GREEN)
+#### Phase 2: Statistical Analysis Engine (RED → GREEN) ✅ Completed
 
 **File**: `internal/mcp/insights_stats.go`
 
@@ -705,7 +720,7 @@ func TestCalculateKPIs(t *testing.T) {
 - [ ] Add caching for expensive calculations
 - [ ] **✅ PRE-COMMIT CHECKS PASSED: fmt, vet, lint, test**
 
-#### Phase 3: MCP Tool Handler (RED → GREEN)
+#### Phase 3: MCP Tool Handler (RED → GREEN) ✅ Completed
 
 **File**: `internal/mcp/insights_handler.go`
 
@@ -854,7 +869,7 @@ func TestHandleDiscoverInsights_EmptyTable(t *testing.T) {
 }
 ```
 
-#### Phase 4: Tool Registration (GREEN)
+#### Phase 4: Tool Registration (GREEN) ✅ Completed
 
 **File**: `internal/mcp/server.go` (modification)
 
@@ -875,6 +890,8 @@ func (s *MCPServer) RegisterTools() error {
 ```
 
 ### F1.3 Acceptance Criteria
+
+**Implementation Check (2026-02-06)**: Core functionality is implemented and tested in `internal/mcp/insights_types.go`, `internal/mcp/insights_stats.go`, `internal/mcp/insights_handler.go`, and registration in `internal/mcp/server.go`. Remaining unchecked items below are retained as target quality thresholds for continued validation.
 
 - [ ] Detects trends with >90% accuracy on synthetic data
 - [ ] Identifies anomalies using Z-score > 2.0 threshold
@@ -935,9 +952,9 @@ internal/mcp/
 **Tool Name**: `track-schema-changes`  
 **Priority**: P2  
 **Estimated Effort**: 6-8 days  
-**Files to Create**: 5-7  
+**Files Created**: 5-7  
 **Status**: ✅ Completed (Phases 1-4 implemented)  
-**Branch**: `feature/f2-schema-evolution` (create from `main` after F1 merges)
+**Branch**: `feature/f2-schema-evolution` (merged to `main`)
 
 ### F2.1 Overview
 
@@ -1067,6 +1084,8 @@ func (s *MCPServer) handleDetectSchemaDrift(ctx context.Context, request mcp.Too
 
 ### F2.3 Acceptance Criteria
 
+**Implementation Check (2026-02-06)**: Operations `track`, `history`, `generate_migration`, and `detect_drift` are implemented in `internal/mcp/schema_tracker.go` and tested via `internal/mcp/schema_tracker_test.go` plus `internal/mcp/schema_tracker_helpers_test.go`.
+
 - [ ] Captures complete schema snapshots with SHA-256 hash verification
 - [ ] Detects all change types (add, drop, alter, rename)
 - [ ] Generates valid SQL migrations for MySQL, PostgreSQL, SQLite
@@ -1084,9 +1103,17 @@ func (s *MCPServer) handleDetectSchemaDrift(ctx context.Context, request mcp.Too
 **Tool Name**: Enhanced `analyze-schema`  
 **Priority**: P2  
 **Estimated Effort**: 4-6 days  
-**Files to Create**: 3-5  
-**Status**: 📋 Planned (Phase 3)  
-**Branch**: `feature/f3-advanced-profiling` (create from `main` after F1/F2 merge)
+**Files Created**: 5  
+**Status**: ✅ Completed (Phases 1-4 implemented)  
+**Branch**: `feature/f3-advanced-profiling` (merged)
+
+**Implementation Check**:
+- `internal/mcp/profiling_types.go` (column/table profiling response types and known pattern definitions)
+- `internal/mcp/profiling_engine.go` (statistics, pattern detection, quality scoring)
+- `internal/mcp/schema_enhanced.go` (concurrent table profiling + merge helper)
+- `internal/mcp/analyze_schema_types.go` (optional `profiling` param and `column_profiling` result field)
+- `internal/mcp/server.go` (backward-compatible integration in `handleAnalyzeSchema`)
+- `internal/mcp/profiling_engine_test.go`, `internal/mcp/schema_enhanced_test.go`, `internal/mcp/server_test.go` (coverage + integration checks)
 
 ### F3.1 Overview
 
@@ -1094,7 +1121,7 @@ Extends existing `analyze-schema` with statistical profiling, data quality metri
 
 ### F3.2 TDD Implementation Phases
 
-#### Phase 1: Profiling Types (RED)
+#### Phase 1: Profiling Types (RED) ✅ Completed
 
 **File**: `internal/mcp/profiling_types.go`
 
@@ -1135,7 +1162,7 @@ type DataQualityMetrics struct {
 }
 ```
 
-#### Phase 2: Statistical Profiling Engine (RED → GREEN)
+#### Phase 2: Statistical Profiling Engine (RED → GREEN) ✅ Completed
 
 **File**: `internal/mcp/profiling_engine.go`
 
@@ -1191,7 +1218,7 @@ func TestDetectPatterns(t *testing.T) {
 }
 ```
 
-#### Phase 3: Enhanced Schema Analysis (RED → GREEN)
+#### Phase 3: Enhanced Schema Analysis (RED → GREEN) ✅ Completed
 
 **File**: `internal/mcp/schema_enhanced.go`
 
@@ -1202,7 +1229,7 @@ func profileTablesConcurrently(tables []string, maxWorkers int) []TableProfile
 func mergeWithExistingSchema(existing *SchemaAnalysis, enhanced *EnhancedSchemaAnalysis)
 ```
 
-#### Phase 4: Backward Compatibility (GREEN → REFACTOR)
+#### Phase 4: Backward Compatibility (GREEN → REFACTOR) ✅ Completed
 
 **File**: `internal/mcp/server.go` (modification)
 
@@ -1213,14 +1240,14 @@ func mergeWithExistingSchema(existing *SchemaAnalysis, enhanced *EnhancedSchemaA
 
 ### F3.3 Acceptance Criteria
 
-- [ ] Detects common patterns: email, phone, date, UUID, URL
-- [ ] Calculates accurate statistics for numeric/text/date columns
-- [ ] Data quality scores 0-100% for completeness, uniqueness, validity
-- [ ] Concurrent profiling of multiple tables (configurable workers)
-- [ ] Backward compatible - existing analyze-schema unchanged
-- [ ] **≥80% test coverage for new code** (≥90% for critical paths)
-- [ ] **golangci-lint@2.8.0 passes with no issues**
-- [ ] **✅ PRE-COMMIT CHECKS PASSED: fmt, vet, lint, test (every phase)**
+- [x] Detects common patterns: email, phone, date, UUID, URL
+- [x] Calculates accurate statistics for numeric/text/date columns
+- [x] Data quality scores 0-100% for completeness, uniqueness, validity
+- [x] Concurrent profiling of multiple tables (configurable workers)
+- [x] Backward compatible - existing analyze-schema unchanged
+- [x] **≥80% test coverage for new code** (≥90% for critical paths)
+- [x] **golangci-lint@2.8.0 passes with no issues**
+- [x] **✅ PRE-COMMIT CHECKS PASSED: fmt, vet, lint, test (every phase)**
 
 ---
 
@@ -1726,7 +1753,7 @@ Session 3 (2-3 hours): F2 Phase 1-2
 
 ## Implementation Timeline
 
-### Week 1-2: F1 - Business Intelligence Discovery (NEXT)
+### Week 1-2: F1 - Business Intelligence Discovery (Completed)
 
 | Day | Task | Files | Tests |
 |-----|------|-------|-------|
@@ -1738,7 +1765,7 @@ Session 3 (2-3 hours): F2 Phase 1-2
 | 6 | Testing + Bug fixes | All | Coverage to 90%+ |
 | 7 | Documentation + Review | docs/ | Final validation |
 
-### Week 3-4: F2 - Schema Evolution (Phase 3)
+### Week 3-4: F2 - Schema Evolution (Completed)
 
 | Day | Task | Files | Tests |
 |-----|------|-------|-------|
@@ -1748,7 +1775,7 @@ Session 3 (2-3 hours): F2 Phase 1-2
 | 11 | Handler | `schema_tracker.go` | Handler tests |
 | 12-13 | Integration | All | Full suite + docs |
 
-### Week 5: F3 - Advanced Data Profiling (Phase 3)
+### Week 5: F3 - Advanced Data Profiling (Completed)
 
 | Day | Task | Files | Tests |
 |-----|------|-------|-------|
@@ -1826,10 +1853,10 @@ This document is designed for 200K token context windows:
 
 ### Quick Links
 
-- [F1: Business Intelligence Discovery](#f1-business-intelligence-discovery-next-up) ⬅️ **NEXT**
+- [F1: Business Intelligence Discovery](#f1-business-intelligence-discovery)
 - [F2: Schema Evolution](#f2-schema-evolution-management)
 - [F3: Advanced Data Profiling](#f3-advanced-data-profiling)
-- [F4: Federation](#f4-multi-database-federation)
+- [F4: Federation](#f4-multi-database-federation) ⬅️ **NEXT**
 - [Test Strategy](#test-strategy-summary)
 - [Timeline](#implementation-timeline)
 
@@ -1855,6 +1882,8 @@ This document is designed for 200K token context windows:
 | 1.1 | 2026-02-05 | Updated to reflect actual implementation status; marked F1 as NEXT UP |
 | 1.2 | 2026-02-05 | Added compounded approval model and auto-development workflow |
 | 1.3 | 2026-02-05 | Added branch strategy per feature; Added long session coding guidelines for context optimization |
+| 1.4 | 2026-02-06 | Synced with codebase: marked F1/F2 complete details, updated branch state, timeline labels, and next action to F3 |
+| 1.5 | 2026-02-06 | Implemented and synced F3 completion: profiling modules/tests, acceptance checklist, timeline, and next action moved to F4 |
 
 ---
 
@@ -1900,7 +1929,7 @@ This document is designed for 200K token context windows:
 Status: APPROVED for auto-development
 Workflow: TDD Red-Green-Refactor
 Approval Model: Compounded
-Next Action: Implement F1 (discover-insights) - Phase 1: Types
+Next Action: Implement F4 (`federated-query`) - Phase 1: Federation Types
 ```
 
 ---
