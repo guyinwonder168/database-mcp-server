@@ -198,17 +198,21 @@ func CompareSnapshots(old, new SchemaSnapshot) SchemaDiff {
 
 // compareTableColumns compares columns of two tables and returns differences
 func compareTableColumns(tableName string, old, new SimpleTableInfo) TableDiff {
-	diff := TableDiff{
+	return TableDiff{
 		TableName:    tableName,
-		AddedCols:    []SchemaChange{},
-		DroppedCols:  []SchemaChange{},
-		ModifiedCols: []SchemaChange{},
+		AddedCols:    findAddedColumns(tableName, old, new),
+		DroppedCols:  findDroppedColumns(tableName, old, new),
+		ModifiedCols: findModifiedColumns(tableName, old, new),
 	}
+}
 
-	// Find added columns
+// findAddedColumns identifies columns present in new table but not in old table
+func findAddedColumns(tableName string, old, new SimpleTableInfo) []SchemaChange {
+	var changes []SchemaChange
+
 	for colName := range new.Columns {
 		if _, exists := old.Columns[colName]; !exists {
-			diff.AddedCols = append(diff.AddedCols, SchemaChange{
+			changes = append(changes, SchemaChange{
 				Type:   ChangeTypeAddColumn,
 				Table:  tableName,
 				Column: colName,
@@ -217,10 +221,16 @@ func compareTableColumns(tableName string, old, new SimpleTableInfo) TableDiff {
 		}
 	}
 
-	// Find dropped columns
+	return changes
+}
+
+// findDroppedColumns identifies columns present in old table but not in new table
+func findDroppedColumns(tableName string, old, new SimpleTableInfo) []SchemaChange {
+	var changes []SchemaChange
+
 	for colName := range old.Columns {
 		if _, exists := new.Columns[colName]; !exists {
-			diff.DroppedCols = append(diff.DroppedCols, SchemaChange{
+			changes = append(changes, SchemaChange{
 				Type:   ChangeTypeDropColumn,
 				Table:  tableName,
 				Column: colName,
@@ -229,39 +239,47 @@ func compareTableColumns(tableName string, old, new SimpleTableInfo) TableDiff {
 		}
 	}
 
-	// Find modified columns
-	for colName, newCol := range new.Columns {
-		if oldCol, exists := old.Columns[colName]; exists {
-			if oldCol.Type != newCol.Type {
-				diff.ModifiedCols = append(diff.ModifiedCols, SchemaChange{
-					Type:     ChangeTypeAlterType,
-					Table:    tableName,
-					Column:   colName,
-					OldValue: oldCol.Type,
-					NewValue: newCol.Type,
-					Impact:   "compatible", // Type changes are typically compatible
-				})
-			}
+	return changes
+}
 
-			// Check nullable change
-			if oldCol.Nullable != newCol.Nullable {
-				impact := "compatible"
-				if !newCol.Nullable {
-					impact = "breaking" // Making a column non-nullable is breaking
-				}
-				diff.ModifiedCols = append(diff.ModifiedCols, SchemaChange{
-					Type:     ChangeTypeAlterConstraint,
-					Table:    tableName,
-					Column:   colName,
-					OldValue: oldCol.Nullable,
-					NewValue: newCol.Nullable,
-					Impact:   impact,
-				})
+// findModifiedColumns identifies columns with type or constraint changes
+func findModifiedColumns(tableName string, old, new SimpleTableInfo) []SchemaChange {
+	var changes []SchemaChange
+
+	for colName, newCol := range new.Columns {
+		oldCol, exists := old.Columns[colName]
+		if !exists {
+			continue
+		}
+
+		if oldCol.Type != newCol.Type {
+			changes = append(changes, SchemaChange{
+				Type:     ChangeTypeAlterType,
+				Table:    tableName,
+				Column:   colName,
+				OldValue: oldCol.Type,
+				NewValue: newCol.Type,
+				Impact:   "compatible",
+			})
+		}
+
+		if oldCol.Nullable != newCol.Nullable {
+			impact := "compatible"
+			if !newCol.Nullable {
+				impact = "breaking"
 			}
+			changes = append(changes, SchemaChange{
+				Type:     ChangeTypeAlterConstraint,
+				Table:    tableName,
+				Column:   colName,
+				OldValue: oldCol.Nullable,
+				NewValue: newCol.Nullable,
+				Impact:   impact,
+			})
 		}
 	}
 
-	return diff
+	return changes
 }
 
 // DetectDrift compares current schema state with the last snapshot
