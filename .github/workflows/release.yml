@@ -35,6 +35,11 @@ jobs:
       - name: Fetch tags
         run: git fetch --tags
 
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
       - name: Verify version metadata sync
         run: |
           bash scripts/sync-version-from-server.sh
