@@ -9,6 +9,7 @@ bin/
 
 # IDE/editor files
 .opencode
+-old-.opencode
 .vscode/
 .idea/
 *.swp
