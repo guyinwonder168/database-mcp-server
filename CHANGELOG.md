@@ -19,6 +19,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - Raised schema tracker new-code coverage with additional helper and error-path tests to satisfy SonarCloud Quality Gate thresholds
 - Updated SonarCloud workflow to use `sonarqube-scan-action` and emit `report.json` for Go test report ingestion
+- Resolved 9 SonarCloud PR code-smell issues in schema tracker/migration logic (cognitive complexity, duplicated literals, and readability findings)
 
 ## [v1.0.6] - 2026-02-06
 

@@ -18,13 +18,30 @@ type MigrationImpact struct {
 	RequiresDowntime        bool   `json:"requires_downtime"`
 }
 
+const (
+	sqlStatementAlterTable   = "ALTER TABLE"
+	sqlStatementCreateTable  = "CREATE TABLE"
+	sqlStatementDropTable    = "DROP TABLE"
+	sqlStatementCreateIndex  = "CREATE INDEX"
+	sqlStatementDropIndex    = "DROP INDEX"
+	sqlStatementRenameTable  = "RENAME TABLE"
+	sqlKeywordAddColumn      = "ADD COLUMN"
+	sqlKeywordDropColumn     = "DROP COLUMN"
+	sqlKeywordModifyColumn   = " MODIFY COLUMN "
+	sqlKeywordAlterColumn    = "ALTER COLUMN"
+	sqlKeywordType           = " TYPE "
+	sqlKeywordSetNotNull     = " SET NOT NULL"
+	sqlKeywordRenameColumn   = "RENAME COLUMN"
+	errUnsupportedDialectFmt = "unsupported dialect: %s"
+)
+
 var statementPrefixes = []string{
-	"ALTER TABLE",
-	"CREATE TABLE",
-	"DROP TABLE",
-	"CREATE INDEX",
-	"DROP INDEX",
-	"RENAME TABLE",
+	sqlStatementAlterTable,
+	sqlStatementCreateTable,
+	sqlStatementDropTable,
+	sqlStatementCreateIndex,
+	sqlStatementDropIndex,
+	sqlStatementRenameTable,
 }
 
 var changePriorities = map[SchemaChangeType]int{
@@ -110,52 +127,59 @@ func ValidateMigration(script MigrationScript) []ValidationError {
 	}
 
 	for i, statement := range script.Statements {
-		lineNumber := i + 1
-		trimmed := strings.TrimSpace(statement)
+		validationErrors = append(
+			validationErrors,
+			validateMigrationStatement(statement, i+1, normalizedDialect, script.IsReversible)...,
+		)
+	}
 
-		if trimmed == "" {
-			validationErrors = append(validationErrors, ValidationError{
-				Code:      "EMPTY_STATEMENT",
-				Message:   "statement cannot be empty",
-				Statement: statement,
-				Line:      lineNumber,
-			})
-			continue
-		}
+	return validationErrors
+}
 
-		if isCommentStatement(trimmed) {
-			continue
-		}
+func validateMigrationStatement(statement string, lineNumber int, normalizedDialect string, isReversible bool) []ValidationError {
+	trimmed := strings.TrimSpace(statement)
+	if trimmed == "" {
+		return []ValidationError{{
+			Code:      "EMPTY_STATEMENT",
+			Message:   "statement cannot be empty",
+			Statement: statement,
+			Line:      lineNumber,
+		}}
+	}
 
-		if !isValidStatementPrefix(trimmed) {
-			validationErrors = append(validationErrors, ValidationError{
-				Code:      "INVALID_STATEMENT",
-				Message:   "statement must be a DDL command",
-				Statement: statement,
-				Line:      lineNumber,
-			})
-		}
+	if isCommentStatement(trimmed) {
+		return nil
+	}
 
-		upperStmt := strings.ToUpper(trimmed)
-		if normalizedDialect == "sqlite" &&
-			strings.Contains(upperStmt, "ALTER COLUMN") &&
-			strings.Contains(upperStmt, " TYPE ") {
-			validationErrors = append(validationErrors, ValidationError{
-				Code:      "UNSUPPORTED_OPERATION",
-				Message:   "sqlite does not support direct ALTER COLUMN TYPE",
-				Statement: statement,
-				Line:      lineNumber,
-			})
-		}
+	validationErrors := make([]ValidationError, 0, 3)
+	if !isValidStatementPrefix(trimmed) {
+		validationErrors = append(validationErrors, ValidationError{
+			Code:      "INVALID_STATEMENT",
+			Message:   "statement must be a DDL command",
+			Statement: statement,
+			Line:      lineNumber,
+		})
+	}
 
-		if script.IsReversible && statementIsNonReversible(upperStmt) {
-			validationErrors = append(validationErrors, ValidationError{
-				Code:      "NON_REVERSIBLE",
-				Message:   "script marked reversible but contains non-reversible operations",
-				Statement: statement,
-				Line:      lineNumber,
-			})
-		}
+	upperStmt := strings.ToUpper(trimmed)
+	if normalizedDialect == "sqlite" &&
+		strings.Contains(upperStmt, sqlKeywordAlterColumn) &&
+		strings.Contains(upperStmt, sqlKeywordType) {
+		validationErrors = append(validationErrors, ValidationError{
+			Code:      "UNSUPPORTED_OPERATION",
+			Message:   "sqlite does not support direct ALTER COLUMN TYPE",
+			Statement: statement,
+			Line:      lineNumber,
+		})
+	}
+
+	if isReversible && statementIsNonReversible(upperStmt) {
+		validationErrors = append(validationErrors, ValidationError{
+			Code:      "NON_REVERSIBLE",
+			Message:   "script marked reversible but contains non-reversible operations",
+			Statement: statement,
+			Line:      lineNumber,
+		})
 	}
 
 	return validationErrors
@@ -182,23 +206,23 @@ func EstimateMigrationImpact(script MigrationScript) MigrationImpact {
 
 		upperStmt := strings.ToUpper(trimmed)
 		switch {
-		case strings.Contains(upperStmt, "DROP TABLE"), strings.Contains(upperStmt, "DROP COLUMN"):
+		case strings.Contains(upperStmt, sqlStatementDropTable), strings.Contains(upperStmt, sqlKeywordDropColumn):
 			impact.BreakingChanges++
 			impact.NonReversibleOperations++
 			impact.RequiresDowntime = true
 			minutes += 3
-		case strings.Contains(upperStmt, "ALTER COLUMN") && strings.Contains(upperStmt, " TYPE "),
-			strings.Contains(upperStmt, " MODIFY COLUMN "),
-			strings.Contains(upperStmt, " SET NOT NULL"):
+		case strings.Contains(upperStmt, sqlKeywordAlterColumn) && strings.Contains(upperStmt, sqlKeywordType),
+			strings.Contains(upperStmt, sqlKeywordModifyColumn),
+			strings.Contains(upperStmt, sqlKeywordSetNotNull):
 			impact.BreakingChanges++
 			impact.NonReversibleOperations++
 			impact.RequiresDowntime = true
 			minutes += 2
-		case strings.Contains(upperStmt, "ADD COLUMN"),
-			strings.Contains(upperStmt, "CREATE TABLE"),
-			strings.Contains(upperStmt, "CREATE INDEX"),
-			strings.Contains(upperStmt, "DROP INDEX"),
-			strings.Contains(upperStmt, "RENAME COLUMN"):
+		case strings.Contains(upperStmt, sqlKeywordAddColumn),
+			strings.Contains(upperStmt, sqlStatementCreateTable),
+			strings.Contains(upperStmt, sqlStatementCreateIndex),
+			strings.Contains(upperStmt, sqlStatementDropIndex),
+			strings.Contains(upperStmt, sqlKeywordRenameColumn):
 			impact.CompatibleChanges++
 			minutes++
 		default:
@@ -229,64 +253,88 @@ func ConvertChangeToSQL(change SchemaChange, dialect string) (string, error) {
 	tableName := quoteIdentifier(change.Table, normalized)
 	columnName := quoteIdentifier(change.Column, normalized)
 
+	return convertChangeToDialectSQL(change, normalized, tableName, columnName)
+}
+
+func convertChangeToDialectSQL(change SchemaChange, dialect, tableName, columnName string) (string, error) {
 	switch change.Type {
 	case ChangeTypeAddTable:
-		if normalized == "sqlite" {
-			return fmt.Sprintf("CREATE TABLE %s (id INTEGER PRIMARY KEY);", tableName), nil
-		}
-		return fmt.Sprintf("CREATE TABLE %s (id BIGINT PRIMARY KEY);", tableName), nil
+		return buildAddTableSQL(dialect, tableName), nil
 
 	case ChangeTypeDropTable:
-		return fmt.Sprintf("DROP TABLE %s;", tableName), nil
+		return fmt.Sprintf("%s %s;", sqlStatementDropTable, tableName), nil
 
 	case ChangeTypeAddColumn:
-		if change.Column == "" {
-			return "", fmt.Errorf("column is required for add_column")
-		}
-		newType := extractSQLType(change.NewValue, "TEXT")
-		return fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s;", tableName, columnName, newType), nil
+		return buildAddColumnSQL(change, tableName, columnName)
 
 	case ChangeTypeDropColumn:
-		if change.Column == "" {
-			return "", fmt.Errorf("column is required for drop_column")
-		}
-		return fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s;", tableName, columnName), nil
+		return buildDropColumnSQL(change, tableName, columnName)
 
 	case ChangeTypeAlterType:
-		if change.Column == "" {
-			return "", fmt.Errorf("column is required for alter_type")
-		}
-		newType := extractSQLType(change.NewValue, "")
-		if newType == "" {
-			return "", fmt.Errorf("new SQL type is required for alter_type")
-		}
-
-		switch normalized {
-		case "mysql":
-			return fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s %s;", tableName, columnName, newType), nil
-		case "postgresql":
-			return fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s TYPE %s;", tableName, columnName, newType), nil
-		case "sqlite":
-			return "", fmt.Errorf("sqlite does not support direct ALTER COLUMN TYPE")
-		default:
-			return "", fmt.Errorf("unsupported dialect: %s", normalized)
-		}
+		return buildAlterTypeSQL(change, dialect, tableName, columnName)
 
 	case ChangeTypeRenameColumn:
-		oldName, newName, err := extractRenameColumns(change)
-		if err != nil {
-			return "", err
-		}
-		oldIdentifier := quoteIdentifier(oldName, normalized)
-		newIdentifier := quoteIdentifier(newName, normalized)
-		return fmt.Sprintf("ALTER TABLE %s RENAME COLUMN %s TO %s;", tableName, oldIdentifier, newIdentifier), nil
+		return buildRenameColumnSQL(change, dialect, tableName)
 
 	case ChangeTypeAlterConstraint:
-		return buildAlterConstraintSQL(change, normalized, tableName, columnName)
+		return buildAlterConstraintSQL(change, dialect, tableName, columnName)
 
 	default:
 		return "", fmt.Errorf("unsupported schema change type: %s", change.Type)
 	}
+}
+
+func buildAddTableSQL(dialect, tableName string) string {
+	if dialect == "sqlite" {
+		return fmt.Sprintf("%s %s (id INTEGER PRIMARY KEY);", sqlStatementCreateTable, tableName)
+	}
+	return fmt.Sprintf("%s %s (id BIGINT PRIMARY KEY);", sqlStatementCreateTable, tableName)
+}
+
+func buildAddColumnSQL(change SchemaChange, tableName, columnName string) (string, error) {
+	if change.Column == "" {
+		return "", fmt.Errorf("column is required for add_column")
+	}
+	newType := extractSQLType(change.NewValue, "TEXT")
+	return fmt.Sprintf("%s %s %s %s %s;", sqlStatementAlterTable, tableName, sqlKeywordAddColumn, columnName, newType), nil
+}
+
+func buildDropColumnSQL(change SchemaChange, tableName, columnName string) (string, error) {
+	if change.Column == "" {
+		return "", fmt.Errorf("column is required for drop_column")
+	}
+	return fmt.Sprintf("%s %s %s %s;", sqlStatementAlterTable, tableName, sqlKeywordDropColumn, columnName), nil
+}
+
+func buildAlterTypeSQL(change SchemaChange, dialect, tableName, columnName string) (string, error) {
+	if change.Column == "" {
+		return "", fmt.Errorf("column is required for alter_type")
+	}
+	newType := extractSQLType(change.NewValue, "")
+	if newType == "" {
+		return "", fmt.Errorf("new SQL type is required for alter_type")
+	}
+
+	switch dialect {
+	case "mysql":
+		return fmt.Sprintf("%s %s%s%s %s;", sqlStatementAlterTable, tableName, sqlKeywordModifyColumn, columnName, newType), nil
+	case "postgresql":
+		return fmt.Sprintf("%s %s %s %s%s;", sqlStatementAlterTable, tableName, sqlKeywordAlterColumn, columnName, sqlKeywordType+newType), nil
+	case "sqlite":
+		return "", fmt.Errorf("sqlite does not support direct ALTER COLUMN TYPE")
+	default:
+		return "", fmt.Errorf(errUnsupportedDialectFmt, dialect)
+	}
+}
+
+func buildRenameColumnSQL(change SchemaChange, dialect, tableName string) (string, error) {
+	oldName, newName, err := extractRenameColumns(change)
+	if err != nil {
+		return "", err
+	}
+	oldIdentifier := quoteIdentifier(oldName, dialect)
+	newIdentifier := quoteIdentifier(newName, dialect)
+	return fmt.Sprintf("%s %s %s %s TO %s;", sqlStatementAlterTable, tableName, sqlKeywordRenameColumn, oldIdentifier, newIdentifier), nil
 }
 
 func normalizeDialect(dialect string) (string, error) {
@@ -298,7 +346,7 @@ func normalizeDialect(dialect string) (string, error) {
 	case "sqlite", "sqlite3":
 		return "sqlite", nil
 	default:
-		return "", fmt.Errorf("unsupported dialect: %s", dialect)
+		return "", fmt.Errorf(errUnsupportedDialectFmt, dialect)
 	}
 }
 
@@ -390,7 +438,7 @@ func buildAlterConstraintSQL(change SchemaChange, dialect, tableName, columnName
 	case "sqlite":
 		return "", fmt.Errorf("sqlite requires table rebuild for constraint changes")
 	default:
-		return "", fmt.Errorf("unsupported dialect: %s", dialect)
+		return "", fmt.Errorf(errUnsupportedDialectFmt, dialect)
 	}
 }
 
@@ -409,10 +457,10 @@ func isNonReversibleChange(change SchemaChange) bool {
 }
 
 func statementIsNonReversible(statement string) bool {
-	return strings.Contains(statement, "DROP TABLE") ||
-		strings.Contains(statement, "DROP COLUMN") ||
-		strings.Contains(statement, " MODIFY COLUMN ") ||
-		(strings.Contains(statement, "ALTER COLUMN") && strings.Contains(statement, " TYPE "))
+	return strings.Contains(statement, sqlStatementDropTable) ||
+		strings.Contains(statement, sqlKeywordDropColumn) ||
+		strings.Contains(statement, sqlKeywordModifyColumn) ||
+		(strings.Contains(statement, sqlKeywordAlterColumn) && strings.Contains(statement, sqlKeywordType))
 }
 
 func isCommentStatement(statement string) bool {

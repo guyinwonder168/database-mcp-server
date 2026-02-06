@@ -362,7 +362,7 @@ func listSchemaObjectsMySQL(ctx context.Context, conn *sql.DB) ([]schemaObject, 
 	var objects []schemaObject
 	for rows.Next() {
 		var name, objectType string
-		if scanErr := rows.Scan(&name, &objectType); scanErr != nil {
+		if rows.Scan(&name, &objectType) != nil {
 			continue
 		}
 		objects = append(objects, schemaObject{Name: name, Type: strings.ToLower(objectType)})
@@ -386,7 +386,7 @@ func listSchemaObjectsPostgreSQL(ctx context.Context, conn *sql.DB) ([]schemaObj
 	var objects []schemaObject
 	for rows.Next() {
 		var name, objectType string
-		if scanErr := rows.Scan(&name, &objectType); scanErr != nil {
+		if rows.Scan(&name, &objectType) != nil {
 			continue
 		}
 		objects = append(objects, schemaObject{Name: name, Type: strings.ToLower(objectType)})
@@ -410,7 +410,7 @@ func listSchemaObjectsSQLite(ctx context.Context, conn *sql.DB) ([]schemaObject,
 	var objects []schemaObject
 	for rows.Next() {
 		var name, objectType string
-		if scanErr := rows.Scan(&name, &objectType); scanErr != nil {
+		if rows.Scan(&name, &objectType) != nil {
 			continue
 		}
 		objects = append(objects, schemaObject{Name: name, Type: strings.ToLower(objectType)})
