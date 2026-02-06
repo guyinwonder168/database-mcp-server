@@ -6,6 +6,7 @@ on:
       - main
 
 permissions:
+  actions: write
   contents: write
 
 jobs:
@@ -105,3 +106,14 @@ jobs:
             database-mcp-server_${{ steps.version.outputs.version }}_darwin_amd64.tar.gz
             database-mcp-server_${{ steps.version.outputs.version }}_windows_amd64.zip
           body_path: release-notes.md
+
+      - name: Trigger package publish workflow
+        if: steps.tag.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh workflow run package.yml \
+            --ref main \
+            -f tag="$VERSION" \
+            -f publish_latest=true
