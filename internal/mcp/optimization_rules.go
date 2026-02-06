@@ -48,47 +48,59 @@ func (e *OptimizationRuleEngine) Evaluate(plan *ExplainPlan) []OptimizationFindi
 func missingIndexRule(plan *ExplainPlan) []OptimizationFinding {
 	var findings []OptimizationFinding
 	for _, step := range plan.Steps {
-		op := strings.ToUpper(step.Operation)
-		access := strings.ToUpper(step.Detail)
 		if step.Target == "" {
 			continue
 		}
-		// Skip if an index is already being used.
-		if strings.Contains(op, "INDEX") ||
-			strings.Contains(access, "USING INDEX") ||
-			(step.Extra != nil && (step.Extra["index_name"] != nil || step.Extra["used_index"] != nil)) {
+		op := strings.ToUpper(step.Operation)
+		access := strings.ToUpper(step.Detail)
+		if stepUsesIndex(step, op, access) {
 			continue
 		}
-
-		isScan := op == "SEQ SCAN" || op == "SCAN" || strings.Contains(access, "ALL")
-		hasFilter := false
-		if step.Extra != nil {
-			if cond, ok := step.Extra["attached_condition"]; ok && cond != nil {
-				hasFilter = true
-			}
-			if filter, ok := step.Extra["filter"]; ok && filter != nil {
-				hasFilter = true
-			}
-		}
-		if !hasFilter && strings.Contains(strings.ToUpper(step.Detail), "USING WHERE") {
-			hasFilter = true
-		}
-
-		if isScan && hasFilter {
-			findings = append(findings, OptimizationFinding{
-				Rule:       "missing_index",
-				Severity:   "warn",
-				Message:    "Full table scan with filter detected; an index may be missing.",
-				Suggestion: "Add an index on the columns used in the filter for table " + step.Target,
-				Evidence: map[string]interface{}{
-					"operation": step.Operation,
-					"target":    step.Target,
-					"detail":    step.Detail,
-				},
-			})
+		if isScanStep(op, access) && stepHasFilter(step, access) {
+			findings = append(findings, missingIndexFinding(step))
 		}
 	}
 	return findings
+}
+
+func stepUsesIndex(step PlanStep, op, access string) bool {
+	if strings.Contains(op, "INDEX") || strings.Contains(access, "USING INDEX") {
+		return true
+	}
+	if step.Extra == nil {
+		return false
+	}
+	return step.Extra["index_name"] != nil || step.Extra["used_index"] != nil
+}
+
+func isScanStep(op, access string) bool {
+	return op == "SEQ SCAN" || op == "SCAN" || strings.Contains(access, "ALL")
+}
+
+func stepHasFilter(step PlanStep, access string) bool {
+	if step.Extra != nil {
+		if condition, ok := step.Extra["attached_condition"]; ok && condition != nil {
+			return true
+		}
+		if filter, ok := step.Extra["filter"]; ok && filter != nil {
+			return true
+		}
+	}
+	return strings.Contains(access, "USING WHERE")
+}
+
+func missingIndexFinding(step PlanStep) OptimizationFinding {
+	return OptimizationFinding{
+		Rule:       "missing_index",
+		Severity:   "warn",
+		Message:    "Full table scan with filter detected; an index may be missing.",
+		Suggestion: "Add an index on the columns used in the filter for table " + step.Target,
+		Evidence: map[string]interface{}{
+			"operation": step.Operation,
+			"target":    step.Target,
+			"detail":    step.Detail,
+		},
+	}
 }
 
 // inefficientJoinRule flags joins where multiple scans are combined without indexed access.

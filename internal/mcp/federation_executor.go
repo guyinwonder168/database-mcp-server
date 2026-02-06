@@ -121,68 +121,7 @@ func executeConcurrentlyWithContext(
 		wg.Add(1)
 		go func(resultIndex int, sq SubQuery) {
 			defer wg.Done()
-
-			if ctx.Err() != nil {
-				appendError(FederationError{
-					Profile: sq.Profile,
-					Alias:   sq.Alias,
-					Code:    "CONTEXT_CANCELED",
-					Message: ctx.Err().Error(),
-				})
-				return
-			}
-
-			select {
-			case semaphore <- struct{}{}:
-				defer func() { <-semaphore }()
-			case <-ctx.Done():
-				appendError(FederationError{
-					Profile: sq.Profile,
-					Alias:   sq.Alias,
-					Code:    "CONTEXT_CANCELED",
-					Message: ctx.Err().Error(),
-				})
-				return
-			}
-
-			profile, ok := profiles[sq.Profile]
-			if !ok {
-				appendError(FederationError{
-					Profile: sq.Profile,
-					Alias:   sq.Alias,
-					Code:    "PROFILE_NOT_FOUND",
-					Message: fmt.Sprintf("profile %s not found", sq.Profile),
-				})
-				return
-			}
-
-			subResult, err := federationExecuteSubQuery(ctx, sq, profile)
-			if err != nil {
-				appendError(FederationError{
-					Profile: sq.Profile,
-					Alias:   sq.Alias,
-					Code:    "SUBQUERY_EXECUTION_FAILED",
-					Message: err.Error(),
-				})
-				return
-			}
-			if subResult == nil {
-				appendError(FederationError{
-					Profile: sq.Profile,
-					Alias:   sq.Alias,
-					Code:    "EMPTY_SUBQUERY_RESULT",
-					Message: "subquery returned nil result",
-				})
-				return
-			}
-
-			if strings.TrimSpace(subResult.Alias) == "" {
-				subResult.Alias = sq.Alias
-			}
-			if strings.TrimSpace(subResult.Profile) == "" {
-				subResult.Profile = sq.Profile
-			}
-			results[resultIndex] = subResult
+			executeSubQueryWorker(ctx, sq, resultIndex, profiles, semaphore, results, appendError)
 		}(idx, subquery)
 	}
 	wg.Wait()
@@ -202,6 +141,103 @@ func executeConcurrentlyWithContext(
 	})
 
 	return finalResults, errors
+}
+
+func executeSubQueryWorker(
+	ctx context.Context,
+	sq SubQuery,
+	resultIndex int,
+	profiles map[string]config.Profile,
+	semaphore chan struct{},
+	results []*SubQueryResult,
+	appendError func(FederationError),
+) {
+	if err := ctx.Err(); err != nil {
+		appendError(contextCanceledError(sq, err))
+		return
+	}
+	if !acquireExecutionSlot(ctx, semaphore, sq, appendError) {
+		return
+	}
+	defer releaseExecutionSlot(semaphore)
+
+	subResult, federationError := runSubQuery(ctx, sq, profiles)
+	if federationError != nil {
+		appendError(*federationError)
+		return
+	}
+	fillSubQueryIdentity(subResult, sq)
+	results[resultIndex] = subResult
+}
+
+func acquireExecutionSlot(ctx context.Context, semaphore chan struct{}, sq SubQuery, appendError func(FederationError)) bool {
+	select {
+	case semaphore <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		appendError(contextCanceledError(sq, ctx.Err()))
+		return false
+	}
+}
+
+func releaseExecutionSlot(semaphore chan struct{}) {
+	<-semaphore
+}
+
+func runSubQuery(ctx context.Context, sq SubQuery, profiles map[string]config.Profile) (*SubQueryResult, *FederationError) {
+	profile, ok := profiles[sq.Profile]
+	if !ok {
+		err := FederationError{
+			Profile: sq.Profile,
+			Alias:   sq.Alias,
+			Code:    "PROFILE_NOT_FOUND",
+			Message: fmt.Sprintf("profile %s not found", sq.Profile),
+		}
+		return nil, &err
+	}
+
+	subResult, executeErr := federationExecuteSubQuery(ctx, sq, profile)
+	if executeErr != nil {
+		err := FederationError{
+			Profile: sq.Profile,
+			Alias:   sq.Alias,
+			Code:    "SUBQUERY_EXECUTION_FAILED",
+			Message: executeErr.Error(),
+		}
+		return nil, &err
+	}
+	if subResult == nil {
+		err := FederationError{
+			Profile: sq.Profile,
+			Alias:   sq.Alias,
+			Code:    "EMPTY_SUBQUERY_RESULT",
+			Message: "subquery returned nil result",
+		}
+		return nil, &err
+	}
+	return subResult, nil
+}
+
+func contextCanceledError(sq SubQuery, err error) FederationError {
+	message := "context canceled"
+	if err != nil {
+		message = err.Error()
+	}
+	return FederationError{
+		Profile: sq.Profile,
+		Alias:   sq.Alias,
+		Code:    "CONTEXT_CANCELED",
+		Message: message,
+	}
+}
+
+func fillSubQueryIdentity(subResult *SubQueryResult, sq SubQuery) {
+	if strings.TrimSpace(subResult.Alias) == "" {
+		subResult.Alias = sq.Alias
+	}
+	if strings.TrimSpace(subResult.Profile) == "" {
+		subResult.Profile = sq.Profile
+	}
 }
 
 // HandlePartialFailure returns a partial success result when at least one subquery succeeded.
@@ -275,92 +311,114 @@ func executeJoinPipeline(results []SubQueryResult, joins []JoinCondition) (*Join
 		return &unioned, nil
 	}
 
+	resultByAlias := mapResultsByAlias(results)
+	current, joinedAliases, err := initializeJoinState(resultByAlias, joins[0])
+	if err != nil {
+		return nil, err
+	}
+
+	for _, join := range joins[1:] {
+		current, err = applyJoinStep(current, join, joinedAliases, resultByAlias)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return current, nil
+}
+
+func mapResultsByAlias(results []SubQueryResult) map[string]*SubQueryResult {
 	resultByAlias := make(map[string]*SubQueryResult, len(results))
 	for idx := range results {
 		copyResult := results[idx]
 		resultByAlias[copyResult.Alias] = &copyResult
 	}
+	return resultByAlias
+}
 
-	firstJoin := joins[0]
+func initializeJoinState(resultByAlias map[string]*SubQueryResult, firstJoin JoinCondition) (*JoinResult, map[string]struct{}, error) {
 	leftAlias := aliasFromQualified(firstJoin.Left)
 	rightAlias := aliasFromQualified(firstJoin.Right)
 	leftResult, leftOK := resultByAlias[leftAlias]
 	rightResult, rightOK := resultByAlias[rightAlias]
 	if !leftOK || !rightOK {
-		return nil, fmt.Errorf("join references unknown aliases: %s <-> %s", leftAlias, rightAlias)
+		return nil, nil, fmt.Errorf("join references unknown aliases: %s <-> %s", leftAlias, rightAlias)
+	}
+	current, err := PerformJoin(leftResult, rightResult, normalizedJoinCondition(firstJoin))
+	if err != nil {
+		return nil, nil, err
+	}
+	return current, map[string]struct{}{
+		leftAlias:  {},
+		rightAlias: {},
+	}, nil
+}
+
+func applyJoinStep(
+	current *JoinResult,
+	join JoinCondition,
+	joinedAliases map[string]struct{},
+	resultByAlias map[string]*SubQueryResult,
+) (*JoinResult, error) {
+	leftAlias := aliasFromQualified(join.Left)
+	rightAlias := aliasFromQualified(join.Right)
+
+	switch {
+	case isJoined(joinedAliases, leftAlias) && !isJoined(joinedAliases, rightAlias):
+		return joinWithAlias(current, join, rightAlias, true, joinedAliases, resultByAlias)
+	case !isJoined(joinedAliases, leftAlias) && isJoined(joinedAliases, rightAlias):
+		return joinWithAlias(current, join, leftAlias, false, joinedAliases, resultByAlias)
+	case isJoined(joinedAliases, leftAlias) && isJoined(joinedAliases, rightAlias):
+		return current, nil
+	default:
+		return nil, fmt.Errorf("join ordering requires at least one previously joined alias (%s <-> %s)", leftAlias, rightAlias)
+	}
+}
+
+func joinWithAlias(
+	current *JoinResult,
+	join JoinCondition,
+	alias string,
+	currentIsLeft bool,
+	joinedAliases map[string]struct{},
+	resultByAlias map[string]*SubQueryResult,
+) (*JoinResult, error) {
+	nextSide, ok := resultByAlias[alias]
+	if !ok {
+		return nil, fmt.Errorf("join references unknown alias: %s", alias)
+	}
+	joined := joinedSubQuery(current)
+	condition := normalizedJoinCondition(join)
+	left := joined
+	right := nextSide
+	if !currentIsLeft {
+		left = nextSide
+		right = joined
 	}
 
-	current, err := PerformJoin(leftResult, rightResult, JoinCondition{
-		Left:  columnFromQualified(firstJoin.Left),
-		Right: columnFromQualified(firstJoin.Right),
-		Type:  firstJoin.Type,
-	})
+	result, err := PerformJoin(left, right, condition)
 	if err != nil {
 		return nil, err
 	}
+	joinedAliases[alias] = struct{}{}
+	return result, nil
+}
 
-	joinedAliases := map[string]struct{}{
-		leftAlias:  {},
-		rightAlias: {},
+func joinedSubQuery(current *JoinResult) *SubQueryResult {
+	return &SubQueryResult{
+		Alias:   "joined",
+		Profile: "joined",
+		Columns: current.Columns,
+		Rows:    current.Rows,
 	}
+}
 
-	for _, join := range joins[1:] {
-		nextLeftAlias := aliasFromQualified(join.Left)
-		nextRightAlias := aliasFromQualified(join.Right)
-
-		switch {
-		case isJoined(joinedAliases, nextLeftAlias) && !isJoined(joinedAliases, nextRightAlias):
-			rightSide, ok := resultByAlias[nextRightAlias]
-			if !ok {
-				return nil, fmt.Errorf("join references unknown alias: %s", nextRightAlias)
-			}
-			leftSide := &SubQueryResult{
-				Alias:   "joined",
-				Profile: "joined",
-				Columns: current.Columns,
-				Rows:    current.Rows,
-			}
-			current, err = PerformJoin(leftSide, rightSide, JoinCondition{
-				Left:  columnFromQualified(join.Left),
-				Right: columnFromQualified(join.Right),
-				Type:  join.Type,
-			})
-			if err != nil {
-				return nil, err
-			}
-			joinedAliases[nextRightAlias] = struct{}{}
-
-		case !isJoined(joinedAliases, nextLeftAlias) && isJoined(joinedAliases, nextRightAlias):
-			leftSide, ok := resultByAlias[nextLeftAlias]
-			if !ok {
-				return nil, fmt.Errorf("join references unknown alias: %s", nextLeftAlias)
-			}
-			rightSide := &SubQueryResult{
-				Alias:   "joined",
-				Profile: "joined",
-				Columns: current.Columns,
-				Rows:    current.Rows,
-			}
-			current, err = PerformJoin(leftSide, rightSide, JoinCondition{
-				Left:  columnFromQualified(join.Left),
-				Right: columnFromQualified(join.Right),
-				Type:  join.Type,
-			})
-			if err != nil {
-				return nil, err
-			}
-			joinedAliases[nextLeftAlias] = struct{}{}
-
-		case isJoined(joinedAliases, nextLeftAlias) && isJoined(joinedAliases, nextRightAlias):
-			// Already part of current joined set; skip redundant join.
-			continue
-
-		default:
-			return nil, fmt.Errorf("join ordering requires at least one previously joined alias (%s <-> %s)", nextLeftAlias, nextRightAlias)
-		}
+func normalizedJoinCondition(join JoinCondition) JoinCondition {
+	return JoinCondition{
+		Left:  columnFromQualified(join.Left),
+		Right: columnFromQualified(join.Right),
+		Type:  join.Type,
 	}
-
-	return current, nil
 }
 
 func isJoined(joined map[string]struct{}, alias string) bool {

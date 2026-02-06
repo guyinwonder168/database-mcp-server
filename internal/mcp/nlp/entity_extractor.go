@@ -20,36 +20,52 @@ var (
 // ExtractEntities pulls simple table and column hints from natural text or SQL.
 func ExtractEntities(text string) EntityExtractionResult {
 	t := strings.ToLower(text)
-	res := EntityExtractionResult{}
+	result := EntityExtractionResult{
+		Tables:  extractTableHints(t),
+		Columns: extractColumnHints(t),
+	}
+	if len(result.Tables) == 0 {
+		result.Tables = inferPluralTableTokens(t, result.Tables)
+	}
+	return result
+}
 
-	for _, m := range tableHintRe.FindAllStringSubmatch(t, -1) {
-		if len(m) >= 3 {
-			res.Tables = appendIfMissing(res.Tables, m[2])
+func extractTableHints(text string) []string {
+	tables := make([]string, 0)
+	for _, match := range tableHintRe.FindAllStringSubmatch(text, -1) {
+		if len(match) >= 3 {
+			tables = appendIfMissing(tables, match[2])
 		}
 	}
+	return tables
+}
 
-	if m := columnHintRe.FindStringSubmatch(t); len(m) >= 2 {
-		cols := strings.Split(m[1], ",")
-		for _, c := range cols {
-			token := strings.TrimSpace(c)
-			if token != "" {
-				res.Columns = appendIfMissing(res.Columns, cleanToken(token))
-			}
+func extractColumnHints(text string) []string {
+	match := columnHintRe.FindStringSubmatch(text)
+	if len(match) < 2 {
+		return nil
+	}
+	columns := make([]string, 0)
+	for _, column := range strings.Split(match[1], ",") {
+		token := strings.TrimSpace(column)
+		if token == "" {
+			continue
+		}
+		columns = appendIfMissing(columns, cleanToken(token))
+	}
+	return columns
+}
+
+func inferPluralTableTokens(text string, tables []string) []string {
+	for _, token := range wordRe.FindAllString(text, -1) {
+		if token == "table" || token == "tables" {
+			continue
+		}
+		if strings.HasSuffix(token, "s") && len(token) > 4 {
+			tables = appendIfMissing(tables, token)
 		}
 	}
-
-	// Fallback: use keywords like "table <name>" or raw tokens if none found
-	if len(res.Tables) == 0 {
-		for _, w := range wordRe.FindAllString(t, -1) {
-			if w == "table" || w == "tables" {
-				continue
-			}
-			if strings.HasSuffix(w, "s") && len(w) > 4 {
-				res.Tables = appendIfMissing(res.Tables, w)
-			}
-		}
-	}
-	return res
+	return tables
 }
 
 func appendIfMissing(slice []string, val string) []string {

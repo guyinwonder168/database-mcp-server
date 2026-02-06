@@ -72,51 +72,75 @@ func validateSQL(sqlText string) ValidationResult {
 
 // analyzeLogic performs lightweight semantic checks based on the AST.
 func analyzeLogic(stmt sqlparser.Statement) []ValidationIssue {
-	var issues []ValidationIssue
-
 	switch node := stmt.(type) {
 	case *sqlparser.Select:
-		if len(node.From) == 0 {
-			issues = append(issues, ValidationIssue{
-				Rule:       "missing_from",
-				Severity:   "warn",
-				Message:    "SELECT has no FROM clause; may return database-dependent constant result.",
-				Suggestion: "Add a FROM clause when querying tables or views.",
-			})
-		}
-		for _, expr := range node.From {
-			if joinTbl, ok := expr.(*sqlparser.JoinTableExpr); ok {
-				if joinTbl.On == nil && !strings.Contains(strings.ToLower(joinTbl.Join), "natural") {
-					issues = append(issues, ValidationIssue{
-						Rule:       "join_without_condition",
-						Severity:   "warn",
-						Message:    "JOIN without ON/USING condition detected.",
-						Suggestion: "Specify join conditions to avoid Cartesian products.",
-					})
-				}
-			}
-		}
+		return analyzeSelectLogic(node)
 	case *sqlparser.Update:
-		if node.Where == nil {
-			issues = append(issues, ValidationIssue{
-				Rule:       "update_without_where",
-				Severity:   "warn",
-				Message:    "UPDATE without WHERE may affect all rows.",
-				Suggestion: "Add a WHERE clause to target specific rows.",
-			})
-		}
+		return analyzeUpdateLogic(node)
 	case *sqlparser.Delete:
-		if node.Where == nil {
-			issues = append(issues, ValidationIssue{
-				Rule:       "delete_without_where",
-				Severity:   "warn",
-				Message:    "DELETE without WHERE may remove all rows.",
-				Suggestion: "Add a WHERE clause to target specific rows.",
-			})
-		}
+		return analyzeDeleteLogic(node)
 	}
+	return nil
+}
 
+func analyzeSelectLogic(selectStmt *sqlparser.Select) []ValidationIssue {
+	issues := make([]ValidationIssue, 0)
+	if len(selectStmt.From) == 0 {
+		issues = append(issues, ValidationIssue{
+			Rule:       "missing_from",
+			Severity:   "warn",
+			Message:    "SELECT has no FROM clause; may return database-dependent constant result.",
+			Suggestion: "Add a FROM clause when querying tables or views.",
+		})
+	}
+	for _, expr := range selectStmt.From {
+		joinTable, ok := expr.(*sqlparser.JoinTableExpr)
+		if !ok || hasExplicitJoinCondition(joinTable) {
+			continue
+		}
+		issues = append(issues, ValidationIssue{
+			Rule:       "join_without_condition",
+			Severity:   "warn",
+			Message:    "JOIN without ON/USING condition detected.",
+			Suggestion: "Specify join conditions to avoid Cartesian products.",
+		})
+	}
 	return issues
+}
+
+func hasExplicitJoinCondition(joinTable *sqlparser.JoinTableExpr) bool {
+	if joinTable.On != nil {
+		return true
+	}
+	return strings.Contains(strings.ToLower(joinTable.Join), "natural")
+}
+
+func analyzeUpdateLogic(updateStmt *sqlparser.Update) []ValidationIssue {
+	if updateStmt.Where != nil {
+		return nil
+	}
+	return []ValidationIssue{
+		{
+			Rule:       "update_without_where",
+			Severity:   "warn",
+			Message:    "UPDATE without WHERE may affect all rows.",
+			Suggestion: "Add a WHERE clause to target specific rows.",
+		},
+	}
+}
+
+func analyzeDeleteLogic(deleteStmt *sqlparser.Delete) []ValidationIssue {
+	if deleteStmt.Where != nil {
+		return nil
+	}
+	return []ValidationIssue{
+		{
+			Rule:       "delete_without_where",
+			Severity:   "warn",
+			Message:    "DELETE without WHERE may remove all rows.",
+			Suggestion: "Add a WHERE clause to target specific rows.",
+		},
+	}
 }
 
 // scanSecurity flags common SQL injection patterns in raw SQL text.

@@ -7,6 +7,7 @@ package main
 import (
 	"database-mcp-provider/internal/log"
 	"database-mcp-provider/internal/mcp"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,92 +17,130 @@ import (
 )
 
 func main() {
-	// Ensure log directory exists in the same folder as the binary
-	exePath, err := os.Executable()
+	exeDir, err := executableDir()
 	if err != nil {
-		log.JSONLog("fatal", "Failed to get executable path", map[string]interface{}{"error": err.Error()})
-		os.Exit(1)
+		fatalWithError("Failed to resolve executable directory", err, nil)
 	}
-	exeDir := filepath.Dir(exePath)
-	logDir := filepath.Join(exeDir, "log")
-	if err := os.MkdirAll(logDir, 0750); err != nil {
-		log.JSONLog("fatal", "Failed to create log directory", map[string]interface{}{"error": err.Error()})
-		os.Exit(1)
-	}
-	logPath := logDir + "/mcp-provider.log"
-	// Initialize structured JSON logger with rotation
-	if err := log.Init(logPath); err != nil {
-		log.JSONLog("fatal", "Failed to initialize logger", map[string]interface{}{"error": err.Error()})
-		os.Exit(1)
+	if err := initLogger(exeDir); err != nil {
+		fatalWithError("Failed to initialize logger", err, nil)
 	}
 
 	log.JSONLog("info", "Database MCP Provider starting...", nil)
 
-	// Use config.yaml in the same directory as the binary
 	configPath := filepath.Join(exeDir, "config.yaml")
 	log.JSONLog("debug", "Resolved config.yaml path", map[string]interface{}{"configPath": configPath})
-	// Do not block on interactive setup at startup.
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		log.JSONLog("warn", "config.yaml not found at startup. MCP server will start and allow configuration via MCP actions only; no interactive prompt will be triggered.", map[string]interface{}{"configPath": configPath})
-		// Self-healing: create a minimal config.yaml if missing, so server always has a valid config file
-		// Generate a random 32-character ASCII AES key for config.yaml
-		const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-		aesKey := make([]byte, 32)
-		{
-			f, err := os.Open("/dev/urandom")
-			if err == nil {
-				defer f.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
-				b := make([]byte, 32)
-				_, _ = f.Read(b)
-				for i := range aesKey {
-					aesKey[i] = charset[int(b[i])%len(charset)]
-				}
-			} else {
-				// fallback: deterministic but not secure, for environments without urandom
-				for i := range aesKey {
-					aesKey[i] = charset[i%len(charset)]
-				}
-			}
-		}
-		minimalConfig := []byte("profiles: []\nmax_pool_size: 5\naes_key: \"" + string(aesKey) + "\"\n")
-		if err := os.WriteFile(configPath, minimalConfig, 0600); err != nil {
-			log.JSONLog("error", "Failed to auto-create minimal config.yaml", map[string]interface{}{"error": err.Error(), "configPath": configPath})
-		} else {
-			log.JSONLog("info", "Auto-created minimal config.yaml for self-healing", map[string]interface{}{"configPath": configPath})
-		}
-	} else {
-		log.JSONLog("debug", "config.yaml found, proceeding with startup", map[string]interface{}{"configPath": configPath})
+	if err := ensureConfigFile(configPath); err != nil {
+		fatalWithError("Failed during config self-healing", err, map[string]interface{}{"configPath": configPath})
 	}
 
-	// Start MCP server
 	log.JSONLog("debug", "About to initialize MCP server", nil)
 	server := mcp.NewMCPServerWithConfig(configPath)
-
-	// Optional SSE transport (HTTP) for MCP.
-	if sseAddr := os.Getenv("MCP_SSE_ADDR"); sseAddr != "" {
-		go func() {
-			handler := mcpsdk.NewSSEHandler(func(_ *http.Request) *mcpsdk.Server {
-				return server.Server()
-			}, nil)
-			log.JSONLog("info", "Starting MCP SSE server", map[string]interface{}{"addr": sseAddr})
-			server := &http.Server{
-				Addr:         sseAddr,
-				Handler:      handler,
-				ReadTimeout:  30 * time.Second,
-				WriteTimeout: 30 * time.Second,
-				IdleTimeout:  120 * time.Second,
-			}
-			if err := server.ListenAndServe(); err != nil {
-				log.JSONLog("fatal", "Failed to start MCP SSE server", map[string]interface{}{"error": err.Error(), "addr": sseAddr})
-				os.Exit(1)
-			}
-		}()
-	}
+	startSSEIfEnabled(server)
 
 	log.JSONLog("debug", "MCP server instance created, starting server...", map[string]interface{}{"configPath": configPath})
 	if err := server.Start(); err != nil {
-		log.JSONLog("fatal", "Failed to start MCP server", map[string]interface{}{"error": err.Error()})
-		os.Exit(1)
+		fatalWithError("Failed to start MCP server", err, nil)
 	}
 	log.JSONLog("info", "MCP server exited normally", nil)
+}
+
+func executableDir() (string, error) {
+	exePath, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Dir(exePath), nil
+}
+
+func initLogger(exeDir string) error {
+	logDir := filepath.Join(exeDir, "log")
+	if err := os.MkdirAll(logDir, 0750); err != nil {
+		return err
+	}
+	return log.Init(filepath.Join(logDir, "mcp-provider.log"))
+}
+
+func ensureConfigFile(configPath string) error {
+	if _, err := os.Stat(configPath); err == nil {
+		log.JSONLog("debug", "config.yaml found, proceeding with startup", map[string]interface{}{"configPath": configPath})
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	log.JSONLog("warn", "config.yaml not found at startup. MCP server will start and allow configuration via MCP actions only; no interactive prompt will be triggered.", map[string]interface{}{"configPath": configPath})
+	minimalConfig := buildMinimalConfigPayload()
+	if err := os.WriteFile(configPath, minimalConfig, 0600); err != nil {
+		return err
+	}
+	log.JSONLog("info", "Auto-created minimal config.yaml for self-healing", map[string]interface{}{"configPath": configPath})
+	return nil
+}
+
+func buildMinimalConfigPayload() []byte {
+	return []byte(fmt.Sprintf("profiles: []\nmax_pool_size: 5\naes_key: %q\n", randomASCIIKey(32)))
+}
+
+func randomASCIIKey(length int) string {
+	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+	f, err := os.Open("/dev/urandom")
+	if err != nil {
+		return deterministicASCIIKey(length, charset)
+	}
+	defer f.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
+
+	buf := make([]byte, length)
+	if _, err := f.Read(buf); err != nil {
+		return deterministicASCIIKey(length, charset)
+	}
+	key := make([]byte, length)
+	for idx := range key {
+		key[idx] = charset[int(buf[idx])%len(charset)]
+	}
+	return string(key)
+}
+
+func deterministicASCIIKey(length int, charset string) string {
+	key := make([]byte, length)
+	for idx := range key {
+		key[idx] = charset[idx%len(charset)]
+	}
+	return string(key)
+}
+
+func startSSEIfEnabled(server *mcp.MCPServer) {
+	sseAddr := os.Getenv("MCP_SSE_ADDR")
+	if sseAddr == "" {
+		return
+	}
+	go runSSEServer(sseAddr, server)
+}
+
+func runSSEServer(sseAddr string, server *mcp.MCPServer) {
+	handler := mcpsdk.NewSSEHandler(func(_ *http.Request) *mcpsdk.Server {
+		return server.Server()
+	}, nil)
+	log.JSONLog("info", "Starting MCP SSE server", map[string]interface{}{"addr": sseAddr})
+	httpServer := &http.Server{
+		Addr:         sseAddr,
+		Handler:      handler,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+	if err := httpServer.ListenAndServe(); err != nil {
+		fatalWithError("Failed to start MCP SSE server", err, map[string]interface{}{"addr": sseAddr})
+	}
+}
+
+func fatalWithError(message string, err error, fields map[string]interface{}) {
+	payload := map[string]interface{}{}
+	for key, value := range fields {
+		payload[key] = value
+	}
+	if err != nil {
+		payload["error"] = err.Error()
+	}
+	log.JSONLog("fatal", message, payload)
+	os.Exit(1)
 }

@@ -453,37 +453,45 @@ func extractDataPoints(timeColumn, valueColumn string, rows []map[string]interfa
 	var minTime, maxTime time.Time
 
 	for _, row := range rows {
-		timeVal, ok := row[timeColumn]
-		if !ok || timeVal == nil {
+		point, ok := dataPointFromRow(timeColumn, valueColumn, row)
+		if !ok {
 			continue
 		}
-
-		valueVal, ok := row[valueColumn]
-		if !ok || valueVal == nil {
-			continue
-		}
-
-		t, err := parseTime(timeVal)
-		if err != nil {
-			continue
-		}
-
-		v, err := toFloat64(valueVal)
-		if err != nil {
-			continue
-		}
-
-		points = append(points, dataPoint{time: t, value: v})
-
-		if minTime.IsZero() || t.Before(minTime) {
-			minTime = t
-		}
-		if maxTime.IsZero() || t.After(maxTime) {
-			maxTime = t
-		}
+		points = append(points, point)
+		minTime, maxTime = updateTimeBounds(minTime, maxTime, point.time)
 	}
 
 	return points, minTime, maxTime
+}
+
+func dataPointFromRow(timeColumn, valueColumn string, row map[string]interface{}) (dataPoint, bool) {
+	timeVal, ok := row[timeColumn]
+	if !ok || timeVal == nil {
+		return dataPoint{}, false
+	}
+	valueVal, ok := row[valueColumn]
+	if !ok || valueVal == nil {
+		return dataPoint{}, false
+	}
+	parsedTime, err := parseTime(timeVal)
+	if err != nil {
+		return dataPoint{}, false
+	}
+	parsedValue, err := toFloat64(valueVal)
+	if err != nil {
+		return dataPoint{}, false
+	}
+	return dataPoint{time: parsedTime, value: parsedValue}, true
+}
+
+func updateTimeBounds(minTime, maxTime, current time.Time) (time.Time, time.Time) {
+	if minTime.IsZero() || current.Before(minTime) {
+		minTime = current
+	}
+	if maxTime.IsZero() || current.After(maxTime) {
+		maxTime = current
+	}
+	return minTime, maxTime
 }
 
 func calculateLinearRegression(points []dataPoint) (slope float64, confidence float64) {

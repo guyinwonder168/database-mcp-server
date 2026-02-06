@@ -26,17 +26,35 @@ func ParseFederatedQuery(sqlText string) (*FederatedQueryPlan, error) {
 	if trimmed == "" {
 		return nil, fmt.Errorf("sql is required")
 	}
-
-	lower := strings.ToLower(trimmed)
-	if !strings.HasPrefix(lower, "select") && !strings.HasPrefix(lower, "with") {
-		return nil, fmt.Errorf("only SELECT/CTE statements are supported for federation")
+	if err := validateFederatedSQLPrefix(trimmed); err != nil {
+		return nil, err
 	}
 
-	tableMatches := federationTablePattern.FindAllStringSubmatch(trimmed, -1)
-	if len(tableMatches) == 0 {
+	tables := extractFederatedTables(trimmed)
+	if len(tables) == 0 {
 		return nil, fmt.Errorf("no federated table references found; expected profile.table syntax")
 	}
 
+	plan := &FederatedQueryPlan{
+		SQL:    trimmed,
+		Tables: tables,
+		Joins:  extractFederatedJoins(trimmed),
+	}
+	plan.Limit = parseOptionalInt(federationLimitPattern, trimmed)
+	plan.Offset = parseOptionalInt(federationOffPattern, trimmed)
+	return plan, nil
+}
+
+func validateFederatedSQLPrefix(sqlText string) error {
+	lower := strings.ToLower(sqlText)
+	if strings.HasPrefix(lower, "select") || strings.HasPrefix(lower, "with") {
+		return nil
+	}
+	return fmt.Errorf("only SELECT/CTE statements are supported for federation")
+}
+
+func extractFederatedTables(sqlText string) []FederatedTable {
+	tableMatches := federationTablePattern.FindAllStringSubmatch(sqlText, -1)
 	tables := make([]FederatedTable, 0, len(tableMatches))
 	seenAliases := make(map[string]struct{}, len(tableMatches))
 	for _, match := range tableMatches {
@@ -56,36 +74,32 @@ func ParseFederatedQuery(sqlText string) (*FederatedQueryPlan, error) {
 			Alias:   alias,
 		})
 	}
+	return tables
+}
 
-	joins := make([]JoinCondition, 0)
-	joinMatches := federationJoinPattern.FindAllStringSubmatch(trimmed, -1)
+func extractFederatedJoins(sqlText string) []JoinCondition {
+	joinMatches := federationJoinPattern.FindAllStringSubmatch(sqlText, -1)
+	joins := make([]JoinCondition, 0, len(joinMatches))
 	for _, match := range joinMatches {
-		joinType := normalizeJoinType(match[1])
 		joins = append(joins, JoinCondition{
 			Left:  match[2],
 			Right: match[3],
-			Type:  joinType,
+			Type:  normalizeJoinType(match[1]),
 		})
 	}
+	return joins
+}
 
-	plan := &FederatedQueryPlan{
-		SQL:    trimmed,
-		Tables: tables,
-		Joins:  joins,
+func parseOptionalInt(pattern *regexp.Regexp, sqlText string) int {
+	match := pattern.FindStringSubmatch(sqlText)
+	if len(match) != 2 {
+		return 0
 	}
-
-	if limitMatch := federationLimitPattern.FindStringSubmatch(trimmed); len(limitMatch) == 2 {
-		if limit, err := strconv.Atoi(limitMatch[1]); err == nil {
-			plan.Limit = limit
-		}
+	value, err := strconv.Atoi(match[1])
+	if err != nil {
+		return 0
 	}
-	if offsetMatch := federationOffPattern.FindStringSubmatch(trimmed); len(offsetMatch) == 2 {
-		if offset, err := strconv.Atoi(offsetMatch[1]); err == nil {
-			plan.Offset = offset
-		}
-	}
-
-	return plan, nil
+	return value
 }
 
 // BuildSubQueries converts parsed plan tables into executable subqueries.
