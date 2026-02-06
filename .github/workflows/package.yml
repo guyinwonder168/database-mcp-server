@@ -54,6 +54,38 @@ jobs:
         id: git
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+      - name: Ensure Dockerfile for legacy tags
+        run: |
+          if [ -f Dockerfile ]; then
+            exit 0
+          fi
+
+          cat > Dockerfile <<'EOF'
+          FROM --platform=$BUILDPLATFORM golang:1.25.5-alpine AS builder
+          WORKDIR /src
+          COPY . .
+          ARG TARGETOS TARGETARCH
+          RUN CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH" \
+              go build -trimpath -ldflags="-s -w" -o /out/database-mcp-server ./cmd/server/main.go
+
+          FROM alpine:3.21
+          RUN apk add --no-cache ca-certificates tzdata
+          WORKDIR /app
+          COPY --from=builder /out/database-mcp-server /usr/local/bin/database-mcp-server
+          ENTRYPOINT ["/usr/local/bin/database-mcp-server"]
+          EOF
+
+          cat > .dockerignore <<'EOF'
+          .git
+          .github
+          .kilocode
+          .claude
+          -old-.opencode
+          tmp
+          log
+          coverage.out
+          EOF
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
