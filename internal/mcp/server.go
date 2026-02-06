@@ -693,7 +693,7 @@ func (s *MCPServer) handleDiscoverJoins(
 			}
 			for rows.Next() {
 				var name string
-				if err := rows.Scan(&name); err == nil {
+				if rows.Scan(&name) == nil {
 					tables = append(tables, name)
 				}
 			}
@@ -754,7 +754,7 @@ func (s *MCPServer) handleDiscoverJoins(
 		defer rows.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 		for rows.Next() {
 			var fromTable, fromCol, toTable, toCol string
-			if err := rows.Scan(&fromTable, &fromCol, &toTable, &toCol); err == nil {
+			if rows.Scan(&fromTable, &fromCol, &toTable, &toCol) == nil {
 				if len(tableSet) == 0 || tableSet[strings.ToLower(fromTable)] || tableSet[strings.ToLower(toTable)] {
 					joins = append(joins, JoinSuggestion{
 						FromTable:        fromTable,
@@ -1188,7 +1188,7 @@ func extractKeywords(intent string) []string {
 	return keywords
 }
 
-func matchTableByKeywords(tables []string, keywords []string) string {
+func matchTableByKeywords(tables, keywords []string) string {
 	bestScore := 0
 	selected := ""
 	for _, t := range tables {
@@ -1210,7 +1210,7 @@ func matchTableByKeywords(tables []string, keywords []string) string {
 	return selected
 }
 
-func appendUnique(target []string, values []string) []string {
+func appendUnique(target, values []string) []string {
 	for _, val := range values {
 		if !stringInSlice(target, val) {
 			target = append(target, val)
@@ -1411,8 +1411,8 @@ func (s *MCPServer) handleSmartQueryBuilder(ctx context.Context, _ *mcp.CallTool
 				}
 			case "sqlite":
 				var cid int
-				var typ, notnull, dflt_value, pk interface{}
-				if err := rows.Scan(&cid, &colName, &typ, &notnull, &dflt_value, &pk); err != nil {
+				var typ, notnull, dfltValue, pk interface{}
+				if err := rows.Scan(&cid, &colName, &typ, &notnull, &dfltValue, &pk); err != nil {
 					log.JSONLog("warn", "Failed to scan SQLite column metadata", map[string]interface{}{"table": table, "error": err.Error(), "operation": "smart_query_builder_columns"})
 					continue
 				}
@@ -1640,7 +1640,7 @@ func (s *MCPServer) handleAnalyzeDataLineage(ctx context.Context, _ *mcp.CallToo
 		defer rows.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 		for rows.Next() {
 			var tbl, ref string
-			if err := rows.Scan(&tbl, &ref); err == nil {
+			if rows.Scan(&tbl, &ref) == nil {
 				edges = append(edges, lineage.Edge{From: tbl, To: ref})
 			}
 		}
@@ -1662,7 +1662,7 @@ func (s *MCPServer) handleAnalyzeDataLineage(ctx context.Context, _ *mcp.CallToo
 		defer rows.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 		for rows.Next() {
 			var from, to string
-			if err := rows.Scan(&from, &to); err == nil {
+			if rows.Scan(&from, &to) == nil {
 				edges = append(edges, lineage.Edge{From: from, To: to})
 			}
 		}
@@ -1675,7 +1675,7 @@ func (s *MCPServer) handleAnalyzeDataLineage(ctx context.Context, _ *mcp.CallToo
 		}
 		for tRows.Next() {
 			var name string
-			if err := tRows.Scan(&name); err == nil {
+			if tRows.Scan(&name) == nil {
 				tables = append(tables, name)
 			}
 		}
@@ -1690,7 +1690,7 @@ func (s *MCPServer) handleAnalyzeDataLineage(ctx context.Context, _ *mcp.CallToo
 			for rows.Next() {
 				var id, seq int
 				var refTable, fromCol, toCol, onUpd, onDel, match string
-				if err := rows.Scan(&id, &seq, &refTable, &fromCol, &toCol, &onUpd, &onDel, &match); err == nil {
+				if rows.Scan(&id, &seq, &refTable, &fromCol, &toCol, &onUpd, &onDel, &match) == nil {
 					edges = append(edges, lineage.Edge{From: tbl, To: refTable})
 				}
 			}
@@ -2110,7 +2110,7 @@ func (s *MCPServer) handleExecuteSQL(ctx context.Context, _ *mcp.CallToolRequest
 			if err == nil {
 				for typeRows.Next() {
 					var field, typ, null, key, def, extra string
-					if err := typeRows.Scan(&field, &typ, &null, &key, &def, &extra); err == nil {
+					if typeRows.Scan(&field, &typ, &null, &key, &def, &extra) == nil {
 						typeMap[field] = typ
 					}
 				}

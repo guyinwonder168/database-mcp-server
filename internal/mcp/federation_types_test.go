@@ -34,19 +34,19 @@ func TestValidateJoinCondition(t *testing.T) {
 		t.Fatalf("expected valid join, got %v", err)
 	}
 
-	if err := validateJoinCondition(JoinCondition{
+	if validateJoinCondition(JoinCondition{
 		Left:  "",
 		Right: "o.user_id",
 		Type:  "INNER",
-	}); err == nil {
+	}) == nil {
 		t.Fatalf("expected error for missing join left expression")
 	}
 
-	if err := validateJoinCondition(JoinCondition{
+	if validateJoinCondition(JoinCondition{
 		Left:  "u.id",
 		Right: "o.user_id",
 		Type:  "CROSS",
-	}); err == nil {
+	}) == nil {
 		t.Fatalf("expected error for unsupported join type")
 	}
 }

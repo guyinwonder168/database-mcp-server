@@ -277,31 +277,31 @@ func TestHandleFederatedQuery_ProfileMissingAndInvalidRequest(t *testing.T) {
 }
 
 func TestValidateFederatedRequest_Errors(t *testing.T) {
-	if err := validateFederatedRequest(FederatedQueryRequest{
+	if validateFederatedRequest(FederatedQueryRequest{
 		SubQueries: []SubQuery{
 			{Profile: "p1", Alias: "dup", SQL: "SELECT 1"},
 			{Profile: "p1", Alias: "dup", SQL: "SELECT 1"},
 		},
-	}); err == nil {
+	}) == nil {
 		t.Fatalf("expected duplicate alias validation error")
 	}
 
-	if err := validateFederatedRequest(FederatedQueryRequest{
+	if validateFederatedRequest(FederatedQueryRequest{
 		SubQueries: []SubQuery{
 			{Profile: "p1", Alias: "u", SQL: "DELETE FROM users"},
 		},
-	}); err == nil {
+	}) == nil {
 		t.Fatalf("expected unsafe SQL validation error")
 	}
 
-	if err := validateFederatedRequest(FederatedQueryRequest{
+	if validateFederatedRequest(FederatedQueryRequest{
 		SubQueries: []SubQuery{
 			{Profile: "p1", Alias: "u", SQL: "SELECT 1"},
 		},
 		Joins: []JoinCondition{
 			{Left: "u.id", Right: "o.user_id", Type: "CROSS"},
 		},
-	}); err == nil {
+	}) == nil {
 		t.Fatalf("expected invalid join type validation error")
 	}
 }
@@ -355,7 +355,7 @@ func TestValidateFederatedRequest_FieldValidationErrors(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			if err := validateFederatedRequest(tc.req); err == nil {
+			if validateFederatedRequest(tc.req) == nil {
 				t.Fatalf("expected validation error for %s", tc.name)
 			}
 		})

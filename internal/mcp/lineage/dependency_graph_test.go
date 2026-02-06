@@ -27,7 +27,7 @@ func TestAnalyzeScope(t *testing.T) {
 	}
 }
 
-func containsAll(set []string, want []string) bool {
+func containsAll(set, want []string) bool {
 	m := map[string]bool{}
 	for _, s := range set {
 		m[s] = true

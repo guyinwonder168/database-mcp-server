@@ -6,8 +6,11 @@ import (
 	"database/sql"
 	"fmt"
 
+	// Register MySQL/MariaDB driver for database/sql.
 	_ "github.com/go-sql-driver/mysql"
+	// Register PostgreSQL driver for database/sql.
 	_ "github.com/lib/pq"
+	// Register SQLite driver for database/sql.
 	_ "github.com/mattn/go-sqlite3"
 )
 
