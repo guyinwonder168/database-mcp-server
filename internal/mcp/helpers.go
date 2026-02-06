@@ -73,7 +73,7 @@ func (s *MCPServer) switchMySQLDatabase(ctx context.Context, conn *sql.DB, prof 
 		})
 		return errorResult(structErr)
 	}
-	if _, err := conn.ExecContext(ctx, "USE "+databaseName); err != nil { //nolint:gosec // NOSONAR - databaseName from internal config, not user SQL input
+	if _, err := conn.ExecContext(ctx, "USE "+databaseName); err != nil { // NOSONAR - databaseName from internal config, not user SQL input
 		structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
 			"profile_name": profileName,
 			"operation":    "switch_database",
