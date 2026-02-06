@@ -6,7 +6,7 @@ This document tracks the current implementation status of all features and requi
 
 ## Project Information
 
-- **Version:** v1.0.4
+- **Version:** v1.0.5
 - **Status:** Production Ready with Phase 2 Enhancements in Progress
 - **Author:** guyinwonder
 - **Created Using:** OpenAI GPT-4.1 via VSCode Kilocode AI code assistant extension
@@ -258,10 +258,10 @@ This document tracks the current implementation status of all features and requi
 
 ### Phase 2: Business Intelligence Layer (In Progress)
 - **Slice 2.1**: Data Lineage and Impact Analysis - `analyze-data-lineage` MCP tool - ✅ **COMPLETED**
-- **Slice 2.2**: Business Intelligence Discovery - `discover-insights` MCP tool - 🔄 **PLANNED**
+- **Slice 2.2**: Business Intelligence Discovery - `discover-insights` MCP tool - ✅ **COMPLETED**
 
 ### Phase 3: Advanced Capabilities (90+ Days)
-- **Slice 3.1**: Schema Evolution Management - `track-schema-changes` MCP tool
+- **Slice 3.1**: Schema Evolution Management - `track-schema-changes` MCP tool - 🔄 **IN PROGRESS**
 - **Slice 3.2**: Advanced Data Profiling - Enhanced `analyze-schema`
 - **Slice 3.3**: Multi-Database Federation - `federated-query` MCP tool
 

@@ -4,7 +4,7 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Version](https://img.shields.io/badge/Version-v1.0.4-blue.svg)](https://github.com/guyinwonder168/database-mcp-server/releases/tag/v1.0.4)
 
-A production-ready Model Context Protocol (MCP) provider for SQL databases, written in Go by guyinwonder. Supports MySQL, MariaDB, PostgreSQL, and SQLite. Features robust connection pooling, secure AES-GCM credential storage, structured JSON logging, comprehensive schema introspection, and a full suite of 15 MCP tools. Built and tested with Go 1.25.5.
+A production-ready Model Context Protocol (MCP) provider for SQL databases, built using various vibe coding tools. Supports MySQL, MariaDB, PostgreSQL, and SQLite. Features robust connection pooling, secure AES-GCM credential storage, structured JSON logging, comprehensive schema introspection, and a full suite of 16 MCP tools. Built and tested with Go 1.25.5.
 
 ## 🚀 Quick Start
 
@@ -37,7 +37,9 @@ go build -o mcp-server ./cmd/server/main.go
 - 📝 **Structured Logging & Error Handling** - All actions and errors are logged as structured JSON; actionable error responses
 - 🛠️ **Tool Discovery** - `list-tools` MCP action returns a machine-readable list of all available tools/actions
 - 🔌 **Official MCP Protocol** - Communication via stdio (not HTTP server; JSON is exchanged over stdio via official Go MCP SDK)
+- 📈 **Business Intelligence** - Discover KPIs, trends, anomalies, and distribution patterns via `discover-insights`
 - 🧭 **Data Lineage** - Analyze upstream/downstream dependencies via `analyze-data-lineage`
+- 📈 **Business Intelligence** - Discover KPIs, trends, anomalies, and distribution patterns via `discover-insights`
 
 ## 🛠️ Supported MCP Tools
 
@@ -55,6 +57,7 @@ go build -o mcp-server ./cmd/server/main.go
 | `analyze-data-lineage` | Trace FK-based upstream/downstream table dependencies |
 | `discover-joins` | Discover foreign key relationships and suggest JOINs |
 | `sample-data` | Fetch sample rows to infer data formats |
+| `discover-insights` | Discover KPIs, trends, anomalies, and distribution patterns in database tables |
 | `list-tools` | List all available MCP tools and descriptions |
 | `analyze-schema` | Comprehensive schema analysis with AI query suggestions |
 | `mcp-info` | Show provider version and author |
@@ -113,21 +116,15 @@ go test ./...
 ## 📊 Project Status
 
 - **Version:** v1.0.4
-- **Author:** guyinwonder
+- **Built with:** Various vibe coding tools
 - **Status:** Production Ready ✅
-- All 15 MCP tools are fully implemented and OpenAPI-aligned.
+- All 16 MCP tools are fully implemented and OpenAPI-aligned.
 - Enhanced schema introspection and sample data features.
 - AES-GCM encryption, connection pooling, and structured error handling are enforced.
 - Comprehensive unit and integration tests included.
 - Ready for production use.
 
-### Recent Enhancements (v1.0.4)
-- **Smart Query Builder**: Added multi-turn context, domain hints, and configurable NLP settings
-- **Context Manager**: Dedicated conversation types and improved context persistence controls
-- **Testing Coverage**: Added smart-query-builder context, domain, and flow tests
-- **Query Optimization**: Added `optimize-query` tool with EXPLAIN-based analysis
-- **Query Validation**: Added `validate-query` tool for syntax and security checks
-- **Data Lineage**: Added `analyze-data-lineage` tool for dependency tracking
+ - **Business Intelligence Discovery**: Added `discover-insights` tool for automatic KPI, trend, anomaly, and distribution analysis
 
 ---
 

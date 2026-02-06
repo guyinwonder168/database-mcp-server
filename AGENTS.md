@@ -81,6 +81,23 @@
 
 **Action taken**: Documented this principle in AGENTS.md to ensure all future tasks follow verification-first approach.
 
+### Mistake #3: Installing Wrong Tool Version Without Checking CI Configuration (2026-02-06)
+**What happened**: Installed golangci-lint v1.64.8 (latest) when the CI workflow specifically uses v2.8.0. The installation failed because golangci-lint v2 has a different module path and versioning scheme than v1.
+
+**Root cause**: Did not check the CI workflow configuration (`.github/workflows/ci.yml`) before attempting to install the tool locally. Assumed "latest" was the correct version without verifying what the project actually uses.
+
+**Lesson learned**:
+- ALWAYS check CI/workflow configuration files first to determine correct tool versions
+- Don't assume "latest" is correct - projects often pin specific versions for compatibility
+- CI configuration is the source of truth for tool versions (lint, format, security scanners)
+- For golangci-lint v2.x, the module path changed from `github.com/golangci/golangci-lint` to `github.com/golangci/golangci-lint/v2`
+- When working with GitHub Actions, check both the action version AND the tool version specified in `with: version:`
+
+**Action taken**: 
+- Documented this mistake in AGENTS.md
+- Will check `.github/workflows/*.yml` for tool versions before installing any development tools
+- Will verify module paths and versioning schemes match the CI configuration
+
 ---
 
 ## Critical Rules for All Agents
