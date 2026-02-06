@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -23,7 +24,7 @@ func main() {
 	}
 	exeDir := filepath.Dir(exePath)
 	logDir := filepath.Join(exeDir, "log")
-	if err := os.MkdirAll(logDir, 0755); err != nil {
+	if err := os.MkdirAll(logDir, 0750); err != nil {
 		log.JSONLog("fatal", "Failed to create log directory", map[string]interface{}{"error": err.Error()})
 		os.Exit(1)
 	}
@@ -49,7 +50,7 @@ func main() {
 		{
 			f, err := os.Open("/dev/urandom")
 			if err == nil {
-				defer f.Close()
+				defer f.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 				b := make([]byte, 32)
 				_, _ = f.Read(b)
 				for i := range aesKey {
@@ -63,7 +64,7 @@ func main() {
 			}
 		}
 		minimalConfig := []byte("profiles: []\nmax_pool_size: 5\naes_key: \"" + string(aesKey) + "\"\n")
-		if err := os.WriteFile(configPath, minimalConfig, 0644); err != nil {
+		if err := os.WriteFile(configPath, minimalConfig, 0600); err != nil {
 			log.JSONLog("error", "Failed to auto-create minimal config.yaml", map[string]interface{}{"error": err.Error(), "configPath": configPath})
 		} else {
 			log.JSONLog("info", "Auto-created minimal config.yaml for self-healing", map[string]interface{}{"configPath": configPath})
@@ -83,7 +84,14 @@ func main() {
 				return server.Server()
 			}, nil)
 			log.JSONLog("info", "Starting MCP SSE server", map[string]interface{}{"addr": sseAddr})
-			if err := http.ListenAndServe(sseAddr, handler); err != nil {
+			server := &http.Server{
+				Addr:         sseAddr,
+				Handler:      handler,
+				ReadTimeout:  30 * time.Second,
+				WriteTimeout: 30 * time.Second,
+				IdleTimeout:  120 * time.Second,
+			}
+			if err := server.ListenAndServe(); err != nil {
 				log.JSONLog("fatal", "Failed to start MCP SSE server", map[string]interface{}{"error": err.Error(), "addr": sseAddr})
 				os.Exit(1)
 			}

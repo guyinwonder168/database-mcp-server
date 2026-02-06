@@ -9,6 +9,7 @@ bin/
 
 # IDE/editor files
 .opencode
+-old-.opencode
 .vscode/
 .idea/
 *.swp
@@ -40,3 +41,4 @@ pkg/
 pkg/mcp-server
 pkg/log/*.log.*
 
+docs/plans/

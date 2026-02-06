@@ -38,9 +38,9 @@ The Database MCP Server follows a layered architecture pattern with clear separa
 
 #### MCP Server (internal/mcp/)
 - **server.go**: MCP server implementation
-  - Registers all MCP tools/actions (12 total, fully documented in README)
+  - Registers all MCP tools/actions (15 total, fully documented in README)
   - Routes requests to appropriate handlers
-  - Uses official Go MCP SDK
+  - Uses official Go MCP SDK (v1.2.0)
   - Enhanced error handling with structured error responses and actionable suggestions
   - Registers MCP resources:
     - `tools://list` (JSON snapshot of tools registry)
@@ -79,7 +79,7 @@ The Database MCP Server follows a layered architecture pattern with clear separa
   - Schema analysis validation tests
 - **tools_list_integration_test.go**: MCP tool discovery regression tests
   - Prevents future tools/list bugs
-  - Verifies all 12 tools are discoverable by MCP clients
+  - Verifies all 15 tools are discoverable by MCP clients
   - Tests capabilities advertisement and tool registry functionality
 
 #### Configuration Management (internal/config/)
@@ -196,7 +196,7 @@ database-mcp-provider/
 
 ## Documentation and Error Handling
 
-- All 12 MCP tools are fully documented in README.md, including analyze-schema configuration and usage for all supported databases.
+- All 15 MCP tools are fully documented in README.md, including analyze-schema configuration and usage for all supported databases.
 - Enhanced schema introspection, schema analysis, and structured error handling are implemented and documented.
 - Configuration cleanup ensures only relevant fields are present, improving security and maintainability.
-- MCP tool detection fix implemented: Upgraded to Go SDK v1.1.0 to resolve critical tools/list bug, with comprehensive regression tests to prevent future issues.
+- MCP tool detection fix implemented: Upgraded to Go SDK v1.2.0 (fixing earlier SDK bugs), with comprehensive regression tests to prevent future issues.

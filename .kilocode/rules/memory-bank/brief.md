@@ -1,7 +1,7 @@
 # Database MCP Server - Project Brief
 
 ## Project Overview
-A production-ready Model Context Protocol (MCP) provider for SQL databases, written in Go. This server enables AI agents and developers to interact with multiple database types through a unified conversational API. All 12 MCP tools (including analyze-schema) are implemented and comprehensively documented in the README, with configuration and usage examples for MySQL, MariaDB, PostgreSQL, and SQLite.
+A production-ready Model Context Protocol (MCP) provider for SQL databases, written in Go. This server enables AI agents and developers to interact with multiple database types through a unified conversational API. All 15 MCP tools (including analyze-schema, validate-query, optimize-query, and analyze-data-lineage) are implemented and comprehensively documented in the README, with configuration and usage examples for MySQL, MariaDB, PostgreSQL, and SQLite.
 
 ## Core Mission
 Provide a secure, stateless, and unified interface for accessing MySQL, MariaDB, PostgreSQL, and SQLite databases via the Model Context Protocol, abstracting away database-specific complexities. Ensure robust documentation, easy onboarding, and safe credential management.
@@ -17,7 +17,7 @@ Provide a secure, stateless, and unified interface for accessing MySQL, MariaDB,
 6. **Query Validation**: `validate-query` tool for syntax, logic, and injection pattern checks before execution.
 7. **Interactive Setup**: CLI-based configuration wizard for first-time setup
 8. **Analyze-Schema**: Advanced schema analysis MCP tool supporting BASIC, DETAILED, and COMPREHENSIVE levels, business context inference, data quality metrics, relationship discovery, Smart Query Builder integration
-9. **MCP Actions**: Full suite of MCP tools (including validate-query, optimize-query) are documented in README.md
+9. **MCP Actions**: Full suite of 15 MCP tools (including validate-query, optimize-query, and analyze-data-lineage) are documented in README.md
 
 ### Non-Functional Requirements
 1. **Security**: AES-GCM encryption for stored passwords (32-char key)

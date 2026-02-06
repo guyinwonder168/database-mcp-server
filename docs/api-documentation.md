@@ -175,6 +175,9 @@ Delete a database connection profile.
 }
 ```
 
+Notes:
+- `params` are positional values for prepared statements. BLOB/BINARY values must be base64-encoded strings.
+
 #### Example Request
 ```json
 {
@@ -256,15 +259,17 @@ Execute SQL queries on a database profile.
 ```json
 {
   "profile_name": "string (required)",
-  "sql_query": "string (required)",
-  "database_name": "string (optional)"
+  "database_name": "string (required)",
+  "sql": "string (required)",
+  "params": ["string|number|boolean|null", "... optional"]
 }
 ```
 
 #### Parameter Details
 - **profile_name**: Name of the profile to use
-- **sql_query**: SQL query to execute
-- **database_name**: Override default database (for cross-database queries)
+- **database_name**: Target database/schema (required)
+- **sql**: SQL query to execute
+- **params**: Optional positional parameters for prepared statements. BLOB/BINARY values must be base64-encoded strings.
 
 #### Example Request
 ```json
@@ -273,7 +278,8 @@ Execute SQL queries on a database profile.
   "method": "execute-sql",
   "params": {
     "profile_name": "production_db",
-    "sql_query": "SELECT id, name, email FROM users WHERE active = true LIMIT 10"
+    "database_name": "production_db",
+    "sql": "SELECT id, name, email FROM users WHERE active = true LIMIT 10"
   },
   "id": "query_001"
 }
@@ -595,7 +601,7 @@ Run EXPLAIN for a statement, apply optimization rules, and return a performance 
   "profile_name": "string (required)",
   "database_name": "string (required)",
   "sql": "string (required)",
-  "params": ["any", "... optional"]
+  "params": ["string|number|boolean|null", "... optional"]
 }
 ```
 
@@ -1105,7 +1111,7 @@ Validate SQL syntax, logic, and basic security patterns without execution.
   "profile_name": "string (required)",
   "database_name": "string (optional)",
   "sql": "string (required)",
-  "params": ["any", "... optional"]
+  "params": ["string|number|boolean|null", "... optional"]
 }
 ```
 
@@ -1113,7 +1119,7 @@ Validate SQL syntax, logic, and basic security patterns without execution.
 - **profile_name**: Name of the profile to use for validation
 - **database_name**: Override default database (optional)
 - **sql**: SQL query to validate (not executed)
-- **params**: Optional parameters for context (not executed)
+- **params**: Optional parameters for context (not executed). BLOB/BINARY values must be base64-encoded strings.
 
 #### Example Request
 ```json

@@ -47,17 +47,17 @@ func (s *MCPServer) executeExplain(ctx context.Context, prof config.Profile, max
 	}
 
 	dsn := db.DSN(prof.DBType, prof.Host, prof.Port, prof.Username, prof.Password, prof.DatabaseName, prof.SSLMode)
-	conn, err := db.OpenConnectionWithPool(prof.DBType, dsn, maxPool)
+	conn, err := db.OpenConnectionWithPool(ctx, prof.DBType, dsn, maxPool)
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 
 	rows, err := conn.QueryContext(ctx, stmt, params...)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 
 	columns, values, err := collectRows(rows)
 	if err != nil {

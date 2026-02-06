@@ -1,0 +1,56 @@
+version: "2"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - dogsled
+    - errcheck
+    - exhaustive
+    - gochecknoinits
+    - goprintffuncname
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - nakedret
+    - noctx
+    - nolintlint
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+    - whitespace
+
+  settings:
+    misspell:
+      locale: US
+    nolintlint:
+      allow-unused: false
+      require-explanation: false
+      require-specific: false
+
+  exclusions:
+    generated: lax
+    paths:
+      - vendor
+      - \.git
+      - ".*\\.pb\\.go$"
+    rules:
+      - path: _test\.go
+        linters:
+          - gocyclo
+          - errcheck
+          - dupl
+          - gosec
+      - text: "weak cryptographic primitive"
+        linters:
+          - gosec
+      - path: _test\.go
+        linters:
+          - shadow

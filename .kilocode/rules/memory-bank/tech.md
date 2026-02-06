@@ -8,11 +8,11 @@
   - Toolchain: go1.25.5 (gvm default; 1.25.4 removed)
 
 ### MCP Framework
-- **Official Go MCP SDK** (github.com/modelcontextprotocol/go-sdk v1.1.0)
+- **Official Go MCP SDK** (github.com/modelcontextprotocol/go-sdk v1.2.0)
   - Model Context Protocol implementation
   - Stdio transport for local communication
   - JSON-RPC protocol support
-  - Upgraded from v0.2.0 to fix critical tools/list bug preventing tool discovery
+  - Upgraded to v1.2.0 for latest features and stability
 
 ### Database Drivers
 - **MySQL/MariaDB**: github.com/go-sql-driver/mysql v1.9.3

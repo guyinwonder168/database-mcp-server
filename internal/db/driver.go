@@ -2,6 +2,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
@@ -11,7 +12,7 @@ import (
 )
 
 // OpenConnection opens a DB connection and applies pooling config if provided.
-func OpenConnectionWithPool(profileType, dsn string, maxPoolSize int) (*sql.DB, error) {
+func OpenConnectionWithPool(ctx context.Context, profileType, dsn string, maxPoolSize int) (*sql.DB, error) {
 	driverName := profileType
 	switch profileType {
 	case "mariadb":
@@ -27,7 +28,7 @@ func OpenConnectionWithPool(profileType, dsn string, maxPoolSize int) (*sql.DB, 
 		db.SetMaxOpenConns(maxPoolSize)
 		db.SetMaxIdleConns(maxPoolSize / 2)
 	}
-	if err := db.Ping(); err != nil {
+	if err := db.PingContext(ctx); err != nil {
 		return nil, err
 	}
 	return db, nil

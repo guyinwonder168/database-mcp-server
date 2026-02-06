@@ -183,7 +183,7 @@ func (a *ErrorAnalyzer) handleProfileNotFound(context map[string]interface{}) *S
 		"The specified database profile does not exist in the configuration",
 	).WithContext("profile_name", profileName)
 
-	err.WithSuggestions(
+	err.WithSuggestions( //nolint:errcheck // Builder modifies in-place, return value not needed
 		ErrorSuggestion{
 			Action:      "List available profiles",
 			Description: "Use the list-profiles tool to see all configured profiles",
@@ -216,7 +216,7 @@ func (a *ErrorAnalyzer) handleTableNotFound(context map[string]interface{}) *Str
 	profileName := ""
 	if pn, ok := context["profile_name"].(string); ok {
 		profileName = pn
-		err.WithContext("profile_name", profileName)
+		err.WithContext("profile_name", profileName) //nolint:errcheck // Builder modifies in-place, return value not needed
 	}
 
 	suggestions := []ErrorSuggestion{
@@ -237,10 +237,10 @@ func (a *ErrorAnalyzer) handleTableNotFound(context map[string]interface{}) *Str
 			Description: fmt.Sprintf("Ensure you're connected to the correct database (%s)", dbName),
 			Example:     fmt.Sprintf(`{"tool": "list-tables", "profile_name": "%s", "database_name": "%s"}`, profileName, dbName),
 		})
-		err.WithContext("database_name", dbName)
+		err.WithContext("database_name", dbName) //nolint:errcheck // Builder modifies in-place, return value not needed
 	}
 
-	err.WithSuggestions(suggestions...)
+	err.WithSuggestions(suggestions...) //nolint:errcheck // Builder modifies in-place, return value not needed
 	return err
 }
 
@@ -266,7 +266,7 @@ func (a *ErrorAnalyzer) handleColumnNotFound(context map[string]interface{}) *St
 	profileName := ""
 	if pn, ok := context["profile_name"].(string); ok {
 		profileName = pn
-		err.WithContext("profile_name", profileName)
+		err.WithContext("profile_name", profileName) //nolint:errcheck // Builder modifies in-place, return value not needed
 	}
 
 	suggestions := []ErrorSuggestion{
@@ -290,7 +290,7 @@ func (a *ErrorAnalyzer) handleColumnNotFound(context map[string]interface{}) *St
 		})
 	}
 
-	err.WithSuggestions(suggestions...)
+	err.WithSuggestions(suggestions...) //nolint:errcheck // Builder modifies in-place, return value not needed
 	return err
 }
 
@@ -305,13 +305,13 @@ func (a *ErrorAnalyzer) handleSQLSyntaxError(context map[string]interface{}) *St
 	sql := ""
 	if s, ok := context["sql"].(string); ok {
 		sql = s
-		err.WithContext("sql", sql)
+		err.WithContext("sql", sql) //nolint:errcheck // Builder modifies in-place, return value not needed
 	}
 
 	dbType := ""
 	if dt, ok := context["db_type"].(string); ok {
 		dbType = dt
-		err.WithContext("db_type", dbType)
+		err.WithContext("db_type", dbType) //nolint:errcheck // Builder modifies in-place, return value not needed
 	}
 
 	suggestions := []ErrorSuggestion{
@@ -349,7 +349,7 @@ func (a *ErrorAnalyzer) handleSQLSyntaxError(context map[string]interface{}) *St
 		}
 	}
 
-	err.WithSuggestions(suggestions...)
+	err.WithSuggestions(suggestions...) //nolint:errcheck // Builder modifies in-place, return value not needed
 	return err
 }
 
@@ -362,14 +362,14 @@ func (a *ErrorAnalyzer) handleReadOnlyViolation(context map[string]interface{}) 
 	)
 
 	if sql, ok := context["sql"].(string); ok {
-		err.WithContext("attempted_sql", sql)
+		err.WithContext("attempted_sql", sql) //nolint:errcheck // Builder modifies in-place, return value not needed
 	}
 
 	if profileName, ok := context["profile_name"].(string); ok {
-		err.WithContext("profile_name", profileName)
+		err.WithContext("profile_name", profileName) //nolint:errcheck // Builder modifies in-place, return value not needed
 	}
 
-	err.WithSuggestions(
+	err.WithSuggestions( //nolint:errcheck // Builder modifies in-place, return value not needed
 		ErrorSuggestion{
 			Action:      "Use a different profile",
 			Description: "Switch to a profile that allows write operations",
@@ -435,7 +435,7 @@ func (a *ErrorAnalyzer) handlePermissionDenied(context map[string]interface{}) *
 		fmt.Sprint(context["error"]),
 	)
 
-	err.WithSuggestions(
+	err.WithSuggestions( //nolint:errcheck // Builder modifies in-place, return value not needed
 		ErrorSuggestion{
 			Action:      "Check database permissions",
 			Description: "Verify the database user has the necessary permissions for this operation",
@@ -456,7 +456,7 @@ func (a *ErrorAnalyzer) handleConstraintViolation(context map[string]interface{}
 		fmt.Sprint(context["error"]),
 	)
 
-	err.WithSuggestions(
+	err.WithSuggestions( //nolint:errcheck // Builder modifies in-place, return value not needed
 		ErrorSuggestion{
 			Action:      "Check foreign key relationships",
 			Description: "Use the discover-joins tool to understand table relationships",
@@ -477,7 +477,7 @@ func (a *ErrorAnalyzer) handleConnectionError(context map[string]interface{}) *S
 		fmt.Sprint(context["error"]),
 	)
 
-	err.WithSuggestions(
+	err.WithSuggestions( //nolint:errcheck // Builder modifies in-place, return value not needed
 		ErrorSuggestion{
 			Action:      "Check database server",
 			Description: "Verify the database server is running and accessible",
@@ -512,7 +512,7 @@ func (a *ErrorAnalyzer) handleDatabaseNotFound(context map[string]interface{}) *
 		profileName = pn
 	}
 
-	err.WithSuggestions(
+	err.WithSuggestions( //nolint:errcheck // Builder modifies in-place, return value not needed
 		ErrorSuggestion{
 			Action:      "List available databases",
 			Description: "Use the list-databases tool to see all databases",
@@ -559,7 +559,7 @@ func (a *ErrorAnalyzer) handleDataTypeMismatch(context map[string]interface{}) *
 		})
 	}
 
-	err.WithSuggestions(suggestions...)
+	err.WithSuggestions(suggestions...) //nolint:errcheck // Builder modifies in-place, return value not needed
 	return err
 }
 
@@ -574,9 +574,9 @@ func (a *ErrorAnalyzer) handleDecryptionFailed(context map[string]interface{}) *
 		"Encrypted password could not be decrypted with the provided AES key",
 	)
 	if profileName != "" {
-		err.WithContext("profile_name", profileName)
+		err.WithContext("profile_name", profileName) //nolint:errcheck // Builder modifies in-place, return value not needed
 	}
-	err.WithSuggestions(
+	err.WithSuggestions( //nolint:errcheck // Builder modifies in-place, return value not needed
 		ErrorSuggestion{
 			Action:      "Verify AES key",
 			Description: "Ensure the aes_key in config.yaml matches the one originally used (32 characters)",
@@ -606,7 +606,7 @@ func (a *ErrorAnalyzer) handleUnsupportedDatabase(context map[string]interface{}
 		"This database type is not supported by the MCP server",
 	).WithContext("db_type", dbType)
 
-	err.WithSuggestions(
+	err.WithSuggestions( //nolint:errcheck // Builder modifies in-place, return value not needed
 		ErrorSuggestion{
 			Action:      "Use a supported database",
 			Description: "Supported databases: mysql, mariadb, postgres, sqlite",
