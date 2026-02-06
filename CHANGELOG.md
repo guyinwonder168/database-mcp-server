@@ -5,15 +5,28 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+
+## [v1.1.0] - 2026-02-06
+
+### Added
 - GHCR container package publishing workflow (`.github/workflows/package.yml`) for version tags and manual backfill.
 - Multi-stage production Dockerfile for publishing `database-mcp-server` images to GitHub Packages.
 - Container usage guidance in README for pulling and running released package images.
 - Advanced data profiling implementation for `analyze-schema` (F3): profiling types, statistical engine, and concurrent table profiling.
 - Optional `profiling` request parameter for `analyze-schema` with backward-compatible response payload.
 - New profiling tests: pattern detection, statistics, quality scoring, concurrent enhancer, and handler integration coverage.
+- `federated-query` MCP tool (F4) with planner, join engine, concurrent executor, and MCP handler.
+- Federation SQL parsing support for `profile.table` syntax with optional explicit `sub_queries`.
+- Cross-profile JOIN support (`INNER`, `LEFT`, `RIGHT`, `FULL`) and optional post-join aggregations.
+- Federated execution metadata with per-subquery row counts and partial-failure error payloads.
+- New federation tests: types, planner, join, executor, handler, and tool registration coverage.
+- Version sync helper script: `scripts/sync-version-from-server.sh` (syncs README/OpenAPI from `MCPVersion`).
 
 ### Changed
 - `analyze-schema` tool description and OpenAPI contract updated to document optional profiling output (`column_profiling`).
+- Tool registry/documentation updated from 17 to 18 tools to include `federated-query`.
+- Release/CI version source-of-truth standardized to `internal/mcp/server.go` (`MCPVersion`).
+- README/OpenAPI version sync is now enforced by CI/release workflows.
 
 ## [v1.0.7] - 2026-02-06
 

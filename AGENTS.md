@@ -150,6 +150,28 @@ When making technical decisions or changes:
 ### Approval Preference
 - Prefer compounded approval for multi-step operations (single approval covering the planned sequence), rather than per-step approvals.
 
+### Versioning & Release Sync (MANDATORY)
+When preparing any release/version bump:
+
+1. **Source of truth is `internal/mcp/server.go`**
+   - Update `const MCPVersion = "vX.Y.Z"` first.
+   - Release workflows must read version from this constant.
+
+2. **Always sync versioned artifacts in the same PR**
+   - `README.md` version badge, release link, and version text
+   - `docs/mcp-openapi.yaml` `info.version`
+   - `CHANGELOG.md` section header for the same version (for release notes extraction)
+   - Any container/docs references to version tags
+
+3. **Never create a release/tag with mismatched versions**
+   - If `MCPVersion`, changelog header, and docs versions are not aligned, fix first, then release.
+
+4. **Release flow expectation**
+   - Release pipeline determines the release tag/version from `MCPVersion` in `internal/mcp/server.go`.
+   - Therefore, every version bump MUST include updating `MCPVersion`.
+   - Use `scripts/sync-version-from-server.sh` to sync `README.md` and `docs/mcp-openapi.yaml`.
+   - CI/release checks enforce this sync; do not update those version fields manually.
+
 ### Mistake #4: SonarCloud Refusal Patterns (2026-02-06)
 **What happened**: SonarCloud Quality Gate repeatedly failed despite addressing individual issues. Failed to understand the systemic patterns causing refusals.
 

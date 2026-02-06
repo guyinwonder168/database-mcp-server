@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: Database MCP Provider API
-  version: "1.0.7"
+  version: "1.1.0"
   description: |
     OpenAPI documentation for all MCP tools exposed by the Database MCP Provider.
     This enables LLMs and clients to discover and use all available actions programmatically.
@@ -211,6 +211,31 @@ paths:
                $ref: '#/components/schemas/TrackSchemaChangesResult'
        '400':
          description: Error - Invalid parameters
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/ErrorResponse'
+  /federated-query:
+   post:
+     summary: Execute read-only SQL across multiple database profiles
+     description: |
+       Runs explicit subqueries or parsed federated SQL across profiles, then joins and aggregates results.
+       Supports INNER/LEFT/RIGHT/FULL joins, partial failures, and final limit/offset.
+     requestBody:
+       required: true
+       content:
+         application/json:
+           schema:
+             $ref: '#/components/schemas/FederatedQueryRequest'
+     responses:
+       '200':
+         description: Success
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/FederatedQueryResult'
+       '400':
+         description: Error - Invalid federated request
          content:
            application/json:
              schema:
@@ -515,6 +540,119 @@ components:
              impact:
                type: string
        summary:
+         type: string
+
+    FederatedQueryRequest:
+     type: object
+     properties:
+       sql:
+         type: string
+         description: Optional federated SQL using profile.table references
+       sub_queries:
+         type: array
+         items:
+           $ref: '#/components/schemas/SubQuery'
+       joins:
+         type: array
+         items:
+           $ref: '#/components/schemas/JoinCondition'
+       aggregations:
+         type: array
+         items:
+           $ref: '#/components/schemas/Aggregation'
+       limit:
+         type: integer
+       offset:
+         type: integer
+       max_concurrency:
+         type: integer
+
+    SubQuery:
+     type: object
+     required:
+       - profile
+       - sql
+       - alias
+     properties:
+       profile:
+         type: string
+       sql:
+         type: string
+       alias:
+         type: string
+
+    JoinCondition:
+     type: object
+     required:
+       - left
+       - right
+     properties:
+       left:
+         type: string
+         description: Left expression (alias.column)
+       right:
+         type: string
+         description: Right expression (alias.column)
+       type:
+         type: string
+         enum: ["INNER", "LEFT", "RIGHT", "FULL"]
+
+    Aggregation:
+     type: object
+     required:
+       - function
+     properties:
+       function:
+         type: string
+         enum: ["COUNT", "SUM", "AVG", "MIN", "MAX"]
+       column:
+         type: string
+       alias:
+         type: string
+       group_by:
+         type: array
+         items:
+           type: string
+
+    FederatedQueryResult:
+     type: object
+     properties:
+       columns:
+         type: array
+         items:
+           type: string
+       rows:
+         type: array
+         items:
+           type: array
+           items: {}
+       metadata:
+         $ref: '#/components/schemas/FederationMetadata'
+
+    FederationMetadata:
+     type: object
+     properties:
+       execution_time_ms:
+         type: integer
+       rows_from_each:
+         type: object
+         additionalProperties:
+           type: integer
+       errors:
+         type: array
+         items:
+           $ref: '#/components/schemas/FederationError'
+
+    FederationError:
+     type: object
+     properties:
+       profile:
+         type: string
+       alias:
+         type: string
+       code:
+         type: string
+       message:
          type: string
 
     TableSchema:
