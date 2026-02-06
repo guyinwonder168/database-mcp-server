@@ -2,13 +2,43 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.0.5] - 2026-02-06
+
+### Added
+- `discover-insights` MCP tool for automatic business intelligence discovery
+- KPI detection (total, average, min, max) for numeric columns
+- Trend analysis using linear regression with R² confidence scoring
+- Anomaly detection using Z-score threshold
+- Distribution analysis with histogram bucketing
+- Time-series column detection for automatic trend analysis
+- Insight prioritization (anomalies > trends > KPIs > distributions)
+
+### Changed
+- Update README to include discover-insights tool documentation
+- Update tool count from 15 to 16
+
 ## [v1.0.4] - 2026-02-04
+
+### Added
+- CI summary job (`build-binaries-summary`) for reliable branch protection with matrix builds.
+- SonarCloud, CodeQL, dependency review, and gosec CI workflows.
+- Makefile for common development commands.
+- AGENTS.md with contributor guidelines.
+- Comprehensive unit and integration test coverage for helpers, errors, SQLite lineage, and connection overrides.
+- `sonar-project.properties` for SonarCloud integration.
 
 ### Changed
 - Upgrade `github.com/modelcontextprotocol/go-sdk` to v1.2.0.
+- Refactor MCP handlers to use shared helper functions, reducing code duplication.
+- Extract `sqlite_master` query to constant to satisfy linter (go:S1192).
+- Update README attribution to reflect vibe coding tools.
+- Update memory bank documentation to v1.0.4 status.
 
 ### Fixed
 - Provide valid JSON Schema for tool params arrays and document base64-encoded BLOB/BINARY values.
+- Resolve SonarCloud security hotspots and improve new code coverage.
+- Remove unused `nolint:gosec` directive in helpers.go.
+- Pin Go version to 1.25.7 across all CI workflows for consistency.
 
 ## [v1.0.3] - 2026-01-18
 
