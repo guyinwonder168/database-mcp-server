@@ -14,9 +14,6 @@ jobs:
   # Job 1: Build and Test
   build-and-test:
     runs-on: ubuntu-latest
-    env:
-      GOMODCACHE: ${{ github.workspace }}/.gomodcache
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -37,24 +34,30 @@ jobs:
         run: go build -v ./...
 
       - name: Run unit tests
-        run: go test -v -race -coverprofile=coverage.out -covermode=atomic -json ./... > report.json
+        run: |
+          set -o pipefail
+          go test -v -race -coverprofile=coverage.out -covermode=atomic -json ./... 2>&1 | tee report.json
 
       - name: Upload test report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-report
           path: report.json
 
       - name: Generate coverage report
+        if: success()
         run: go tool cover -html=coverage.out -o coverage.html
 
       - name: Upload coverage report
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: coverage.html
 
       - name: Upload coverage data
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-data
@@ -63,8 +66,6 @@ jobs:
   # Job 2: Lint and Format Check
   lint:
     runs-on: ubuntu-latest
-    env:
-      GOMODCACHE: ${{ github.workspace }}/.gomodcache
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -95,8 +96,6 @@ jobs:
     permissions:
       contents: read
       security-events: write
-    env:
-      GOMODCACHE: ${{ github.workspace }}/.gomodcache
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -112,6 +111,7 @@ jobs:
           args: '-fmt sarif -out results.sarif ./...'
 
       - name: Upload SARIF file
+        if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: results.sarif
@@ -124,8 +124,6 @@ jobs:
   # Job 4: Database Compatibility Tests
   integration-test:
     runs-on: ubuntu-latest
-    env:
-      GOMODCACHE: ${{ github.workspace }}/.gomodcache
     services:
       postgres:
         image: postgres:15
@@ -204,8 +202,6 @@ jobs:
   # Job 6: Binary Build Verification
   build-binaries:
     runs-on: ubuntu-latest
-    env:
-      GOMODCACHE: ${{ github.workspace }}/.gomodcache
     strategy:
       matrix:
         include:
