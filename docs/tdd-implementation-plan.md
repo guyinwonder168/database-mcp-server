@@ -102,6 +102,39 @@ This document provides a Test-Driven Development (TDD) implementation plan for r
 - **Dependency Injection**: Explicit dependencies
 - **Small Functions**: < 50 lines per function
 
+### ⚠️ MANDATORY: Pre-Commit Quality Checks
+
+**At the end of EVERY phase (before commit), ALWAYS run these checks in order:**
+
+```bash
+# Step 1: Format check
+gofmt -l .
+# Expected: No output (if files are listed, run: gofmt -w .)
+
+# Step 2: Vet check
+go vet ./...
+# Expected: No errors or warnings
+
+# Step 3: Linter check
+golangci-lint@2.8.0 run ./...
+# Expected: "0 issues" (if issues found, fix them before proceeding)
+
+# Step 4: Test check (redundant but verifies)
+go test ./...
+# Expected: All tests passing
+```
+
+**COMMIT RULE**: 
+- ✅ **ONLY commit after ALL 4 checks pass**
+- ❌ **NEVER commit if any check fails**
+- 📝 **Document fixes in commit message** (e.g., "fix lint: resolve godre:S8193")
+
+**Why this matters:**
+- Every commit must have pipeline passing
+- Prevents broken code from being pushed
+- Reduces CI/PR failures
+- Maintains code quality standards
+
 ### 3. Testing Standards
 
 - **AAA Pattern**: Arrange → Act → Assert
@@ -140,22 +173,26 @@ Since this plan operates under **compounded approval**, the execution workflow f
 └──────────────────────┬──────────────────────────────────────┘
                        │
                        ▼
-┌─────────────────────────────────────────────────────────────┐
-│  PHASE: Refactor & optimize                                 │
-│  ├─ No approval needed                                      │
-│  ├─ Improve code quality                                    │
-│  ├─ Run: go test (still pass)                               │
-│  └─ Run: golangci-lint@2.8.0 (check for issues)             │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│  PHASE: Integration & documentation                         │
-│  ├─ No approval needed                                      │
-│  ├─ Wire into server.go                                     │
-│  ├─ Update docs                                             │
-│  └─ Run: full test suite                                    │
-└──────────────────────┬──────────────────────────────────────┘
+ ┌─────────────────────────────────────────────────────────────┐
+ │  PHASE: Refactor & optimize                                 │
+ │  ├─ No approval needed                                      │
+ │  ├─ Improve code quality                                    │
+ │  ├─ Run: go test (still pass)                               │
+ │  └─ Run: golangci-lint@2.8.0 (check for issues)             │
+ └──────────────────────┬──────────────────────────────────────┘
+                        │
+                        ▼
+ ┌─────────────────────────────────────────────────────────────┐
+ │  PHASE: Integration & documentation                         │
+ │  ├─ No approval needed                                      │
+ │  ├─ Wire into server.go                                     │
+ │  ├─ Update docs                                             │
+ │  ├─ Run: full test suite                                    │
+ │  └─ *** MANDATORY: Pre-commit Quality Checks ***                │
+ │      ├─ gofmt -l . (no output = clean)                       │
+ │      ├─ go vet ./... (no errors)                              │
+ │      └─ golangci-lint@2.8.0 run ./... (0 issues)          │
+ └──────────────────────┬──────────────────────────────────────┘
                        │
                        ▼
 ┌─────────────────────────────────────────────────────────────┐
@@ -447,6 +484,7 @@ func TestDiscoverInsightsRequest_Validate(t *testing.T) {
 - [ ] All types compile successfully
 - [ ] JSON marshaling/unmarshaling works correctly
 - [ ] Validation passes for valid inputs, fails appropriately for invalid
+- [ ] **✅ PRE-COMMIT CHECKS PASSED: fmt, vet, lint, test**
 
 #### Phase 2: Statistical Analysis Engine (RED → GREEN)
 
@@ -665,6 +703,7 @@ func TestCalculateKPIs(t *testing.T) {
 - [ ] Extract common statistical utilities (mean, stddev, z-score)
 - [ ] Optimize for large datasets (streaming/chunking)
 - [ ] Add caching for expensive calculations
+- [ ] **✅ PRE-COMMIT CHECKS PASSED: fmt, vet, lint, test**
 
 #### Phase 3: MCP Tool Handler (RED → GREEN)
 
@@ -846,6 +885,7 @@ func (s *MCPServer) RegisterTools() error {
 - [ ] **≥80% test coverage for new code** (≥90% for critical paths)
 - [ ] **golangci-lint@2.8.0 passes with no issues**
 - [ ] Integration tests pass with PostgreSQL, MySQL, and SQLite
+- [ ] **✅ PRE-COMMIT CHECKS PASSED: fmt, vet, lint, test (every phase)**
 
 ### F1.4 Test Commands
 
@@ -863,9 +903,16 @@ DB_MCP_IT_PG_HOST=localhost DB_MCP_IT_PG_DB=testdb \
 # All tests including benchmarks
 go test ./internal/mcp -run "TestInsight|BenchmarkInsight" -v -bench=.
 
-# Run linter (after each phase and before PR)
-# Install: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.8.0
-golangci-lint run --timeout=5m
+# *** MANDATORY: Pre-commit quality checks (run after EACH phase) ***
+# Step 1: Format
+gofmt -l .
+# Step 2: Vet
+go vet ./...
+# Step 3: Linter
+golangci-lint@2.8.0 run ./...
+# Step 4: Test verification
+go test ./...
+# ONLY COMMIT IF ALL 4 CHECKS PASS
 ```
 
 ### F1.5 File Structure
@@ -1028,6 +1075,7 @@ func (s *MCPServer) handleDetectSchemaDrift(ctx context.Context, request mcp.Too
 - [ ] Classifies changes by impact (breaking, compatible, informational)
 - [ ] **≥80% test coverage for new code** (≥90% for critical paths)
 - [ ] **golangci-lint@2.8.0 passes with no issues**
+- [ ] **✅ PRE-COMMIT CHECKS PASSED: fmt, vet, lint, test (every phase)**
 
 ---
 
@@ -1172,6 +1220,7 @@ func mergeWithExistingSchema(existing *SchemaAnalysis, enhanced *EnhancedSchemaA
 - [ ] Backward compatible - existing analyze-schema unchanged
 - [ ] **≥80% test coverage for new code** (≥90% for critical paths)
 - [ ] **golangci-lint@2.8.0 passes with no issues**
+- [ ] **✅ PRE-COMMIT CHECKS PASSED: fmt, vet, lint, test (every phase)**
 
 ---
 
@@ -1346,6 +1395,7 @@ func buildFederationResponse(result *FederatedQueryResult) ([]byte, error)
 - [ ] Returns results within 10 seconds for 3-profile queries
 - [ ] **≥80% test coverage for new code** (≥90% for critical paths)
 - [ ] **golangci-lint@2.8.0 passes with no issues**
+- [ ] **✅ PRE-COMMIT CHECKS PASSED: fmt, vet, lint, test (every phase)**
 
 ---
 
