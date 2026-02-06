@@ -43,7 +43,7 @@ go build -o mcp-server ./cmd/server/main.go
 - 🔌 **Official MCP Protocol** - Communication via stdio (not HTTP server; JSON is exchanged over stdio via official Go MCP SDK)
 - 📈 **Business Intelligence** - Discover KPIs, trends, anomalies, and distribution patterns via `discover-insights`
 - 🧭 **Data Lineage** - Analyze upstream/downstream dependencies via `analyze-data-lineage`
-- 📈 **Business Intelligence** - Discover KPIs, trends, anomalies, and distribution patterns via `discover-insights`
+- 🧱 **Schema Evolution Foundations** - Snapshot persistence/diff and migration generation engine for upcoming `track-schema-changes`
 
 ## 🛠️ Supported MCP Tools
 
@@ -145,6 +145,9 @@ MIT
 - **Phase 2** (60-90 Days): Data lineage and business intelligence
 - **Phase 3** (90+ Days): Schema evolution, advanced profiling, and multi-database federation
 
+**Current Progress**:
+- `track-schema-changes` foundation is in progress: F2 Phase 1 (snapshot types), Phase 2 (snapshot storage), and Phase 3 (migration generator) are implemented and tested.
+
 **Planning Documents**:
 - [Enhancement Roadmap](docs/roadmap.md) - Strategic overview
 - [Project Plan (History)](docs/history/project-plan-roadmap.md) - Comprehensive implementation strategy
@@ -152,4 +155,3 @@ MIT
 - [Architecture Validation (History)](docs/history/architecture-validation.md) - Technical compatibility analysis
 
 **Ready for immediate enhancement development while maintaining production stability.**
-

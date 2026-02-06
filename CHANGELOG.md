@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - `track-schema-changes` Phase 2: Snapshot Storage (F2)
+- `track-schema-changes` Phase 3: Migration Generator (F2)
+- Dialect-aware SQL generation for schema changes (`mysql`, `postgresql`, `sqlite`)
+- Migration validation with structured validation errors
+- Migration impact estimation (risk level, downtime heuristic, estimated duration)
+- Manual-action fallback comments for dialect-limited operations
+- Comprehensive unit tests for migration conversion/generation/validation/impact estimation
 - Schema snapshot persistence to filesystem (JSON format)
 - Snapshot retrieval by profile and ID
 - Snapshot listing with configurable limit

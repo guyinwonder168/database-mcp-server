@@ -6,7 +6,7 @@ This roadmap consolidates the strategic enhancement plan for the Database MCP Se
 
 ## Current State
 
-- Production-ready MCP server with 14 MCP tools implemented and documented
+- Production-ready MCP server with 16 MCP tools implemented and documented
 - Multi-database support (MySQL, MariaDB, PostgreSQL, SQLite)
 - Robust security (AES-GCM credential encryption, read-only enforcement)
 - Structured logging, connection pooling, and comprehensive schema introspection
@@ -20,8 +20,8 @@ This roadmap consolidates the strategic enhancement plan for the Database MCP Se
 | Query Validation Framework | Complete | `validate-query` MCP tool delivered |
 | Data Lineage & Impact Analysis | Complete | `analyze-data-lineage` MCP tool delivered |
 | Enhanced Natural Language Processing | Complete | Context-aware `smart-query-builder` with config, multi-turn tests, and domain hints |
-| Business Intelligence Discovery | Planned | KPI/trend/anomaly discovery |
-| Schema Evolution Management | Planned | Change tracking + migration assistance |
+| Business Intelligence Discovery | Complete | `discover-insights` delivered with KPI/trend/anomaly/distribution analysis |
+| Schema Evolution Management | In Progress | F2 Phase 1-3 complete (snapshot types/storage + migration generator) |
 | Advanced Data Profiling | Planned | Enhanced `analyze-schema` profiling |
 | Multi-Database Federation | Planned | Cross-profile query execution |
 
@@ -33,20 +33,20 @@ This roadmap consolidates the strategic enhancement plan for the Database MCP Se
 
 - Query optimization insights (`optimize-query`) - Complete
 - Query validation framework (`validate-query`) - Complete
-- Enhanced natural language processing for `smart-query-builder` - In progress
+- Enhanced natural language processing for `smart-query-builder` - Complete
 
 ### Phase 2: Intelligence Layer
 
 **Goal**: Add data lineage and business insight capabilities.
 
 - Data lineage and impact analysis (`analyze-data-lineage`) - Complete
-- Business intelligence discovery (`discover-insights`) - Planned
+- Business intelligence discovery (`discover-insights`) - Complete
 
 ### Phase 3: Advanced Capabilities
 
 **Goal**: Support enterprise-scale schema evolution and federation.
 
-- Schema evolution management (`track-schema-changes`) - Planned
+- Schema evolution management (`track-schema-changes`) - In progress (handler integration pending)
 - Advanced data profiling (enhanced `analyze-schema`) - Planned
 - Multi-database federation (`federated-query`) - Planned
 
