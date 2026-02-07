@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+## [v1.1.1] - 2026-02-07
+
+### Fixed
+- Resolved remaining SonarCloud new-code findings in analyze-schema helpers (`S8193`, `S107`).
+- Refactored analyze-schema result assembly to use a structured input object for maintainability.
+
 ## [v1.1.0] - 2026-02-06
 
 ### Added

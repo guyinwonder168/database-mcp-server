@@ -12,6 +12,8 @@ import (
 	"strings"
 )
 
+const errEmptyExplainResult = "empty EXPLAIN result"
+
 // ExplainPlan captures a normalized view of an execution plan across engines.
 type ExplainPlan struct {
 	DBType  string          `json:"db_type"`
@@ -140,7 +142,7 @@ func parseExplainRows(dbType string, columns []string, rows [][]interface{}) (*E
 
 func parsePostgresPlan(plan *ExplainPlan, rows [][]interface{}) (*ExplainPlan, error) {
 	if len(rows) == 0 || len(rows[0]) == 0 {
-		return plan, errors.New("empty EXPLAIN result")
+		return plan, errors.New(errEmptyExplainResult)
 	}
 	raw := normalizeJSONCell(rows[0][0])
 	if len(raw) == 0 {
@@ -191,7 +193,7 @@ func walkPostgresPlan(node map[string]interface{}) []PlanStep {
 
 func parseMySQLPlan(plan *ExplainPlan, rows [][]interface{}) (*ExplainPlan, error) {
 	if len(rows) == 0 || len(rows[0]) == 0 {
-		return plan, errors.New("empty EXPLAIN result")
+		return plan, errors.New(errEmptyExplainResult)
 	}
 	raw := normalizeJSONCell(rows[0][0])
 	if len(raw) == 0 {
@@ -246,7 +248,7 @@ func walkMySQLBlock(node map[string]interface{}, key string) []PlanStep {
 
 func parseSQLitePlan(plan *ExplainPlan, columns []string, rows [][]interface{}) (*ExplainPlan, error) {
 	if len(rows) == 0 {
-		return plan, errors.New("empty EXPLAIN result")
+		return plan, errors.New(errEmptyExplainResult)
 	}
 	colIndex := map[string]int{}
 	for i, c := range columns {

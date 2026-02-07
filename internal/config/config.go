@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -97,111 +98,113 @@ func SaveConfig(path string, cfg *Config) error {
 
 // PromptForProfiles interactively collects one or more profiles from the user via CLI, with validation.
 func PromptForProfiles() ([]Profile, int, string) {
-	var profiles []Profile
 	scanner := bufio.NewScanner(os.Stdin)
 	fmt.Println("No config.yaml found. Let's create one or more database connection profiles.")
+	return collectProfiles(scanner), promptMaxPoolSize(scanner), promptAESKey(scanner)
+}
+
+func collectProfiles(scanner *bufio.Scanner) []Profile {
+	profiles := make([]Profile, 0)
 	for {
-		var p Profile
-		fmt.Print("Profile name: ")
-		scanner.Scan()
-		p.ProfileName = scanner.Text()
-		if p.ProfileName == "" {
-			fmt.Println("Profile name cannot be empty.")
+		profile, ok := promptProfile(scanner)
+		if !ok {
 			continue
 		}
-
-		for {
-			fmt.Print("Database type (mysql/mariadb/postgres/sqlite): ")
-			scanner.Scan()
-			p.DBType = scanner.Text()
-			switch p.DBType {
-			case "mysql", "mariadb", "postgres", "sqlite":
-				// valid
-			default:
-				fmt.Println("Invalid database type. Please enter one of: mysql, mariadb, postgres, sqlite.")
-				continue
-			}
-			break
-		}
-
-		if p.DBType != "sqlite" {
-			fmt.Print("Host: ")
-			scanner.Scan()
-			p.Host = scanner.Text()
-			for {
-				fmt.Print("Port: ")
-				scanner.Scan()
-				if _, err := fmt.Sscanf(scanner.Text(), "%d", &p.Port); err != nil {
-					fmt.Println("Invalid port. Please enter a number.")
-					continue
-				}
-				break
-			}
-			fmt.Print("Username: ")
-			scanner.Scan()
-			p.Username = scanner.Text()
-			fmt.Print("Password: ")
-			scanner.Scan()
-			p.Password = scanner.Text()
-			fmt.Print("Database name: ")
-			scanner.Scan()
-			p.DatabaseName = scanner.Text()
-		} else {
-			fmt.Print("SQLite file path: ")
-			scanner.Scan()
-			p.DatabaseName = scanner.Text()
-		}
-
-		for {
-			fmt.Print("Readonly profile? (true/false): ")
-			scanner.Scan()
-			readonlyInput := scanner.Text()
-			if readonlyInput == "true" {
-				p.Readonly = true
-				break
-			} else if readonlyInput == "false" {
-				p.Readonly = false
-				break
-			} else {
-				fmt.Println("Please enter 'true' or 'false'.")
-			}
-		}
-
-		profiles = append(profiles, p)
-
-		fmt.Print("Add another profile? (y/n): ")
-		scanner.Scan()
-		if scanner.Text() != "y" {
-			break
+		profiles = append(profiles, profile)
+		if readInput(scanner, "Add another profile? (y/n): ") != "y" {
+			return profiles
 		}
 	}
+}
 
-	// Prompt for max pool size
-	var maxPoolSize int
-	for {
-		fmt.Print("Set maximum database pool size (recommended 5-50): ")
-		scanner.Scan()
-		_, err := fmt.Sscanf(scanner.Text(), "%d", &maxPoolSize)
-		if err != nil || maxPoolSize < 1 {
-			fmt.Println("Please enter a valid positive integer.")
-			continue
-		}
-		break
+func promptProfile(scanner *bufio.Scanner) (Profile, bool) {
+	profileName := strings.TrimSpace(readInput(scanner, "Profile name: "))
+	if profileName == "" {
+		fmt.Println("Profile name cannot be empty.")
+		return Profile{}, false
 	}
 
-	// Prompt for AES key
-	var aesKey string
+	profile := Profile{
+		ProfileName: profileName,
+		DBType:      promptDBType(scanner),
+	}
+
+	if profile.DBType == "sqlite" {
+		profile.DatabaseName = readInput(scanner, "SQLite file path: ")
+	} else {
+		profile.Host = readInput(scanner, "Host: ")
+		profile.Port = promptPort(scanner)
+		profile.Username = readInput(scanner, "Username: ")
+		profile.Password = readInput(scanner, "Password: ")
+		profile.DatabaseName = readInput(scanner, "Database name: ")
+	}
+
+	profile.Readonly = promptReadonly(scanner)
+	return profile, true
+}
+
+func promptDBType(scanner *bufio.Scanner) string {
 	for {
-		fmt.Print("Set AES key for password encryption (32 chars, leave blank for insecure): ")
-		scanner.Scan()
-		aesKey = scanner.Text()
+		dbType := readInput(scanner, "Database type (mysql/mariadb/postgres/sqlite): ")
+		switch dbType {
+		case "mysql", "mariadb", "postgres", "sqlite":
+			return dbType
+		default:
+			fmt.Println("Invalid database type. Please enter one of: mysql, mariadb, postgres, sqlite.")
+		}
+	}
+}
+
+func promptPort(scanner *bufio.Scanner) int {
+	for {
+		input := readInput(scanner, "Port: ")
+		var port int
+		if _, err := fmt.Sscanf(input, "%d", &port); err == nil {
+			return port
+		}
+		fmt.Println("Invalid port. Please enter a number.")
+	}
+}
+
+func promptReadonly(scanner *bufio.Scanner) bool {
+	for {
+		readonlyInput := readInput(scanner, "Readonly profile? (true/false): ")
+		switch readonlyInput {
+		case "true":
+			return true
+		case "false":
+			return false
+		default:
+			fmt.Println("Please enter 'true' or 'false'.")
+		}
+	}
+}
+
+func promptMaxPoolSize(scanner *bufio.Scanner) int {
+	for {
+		input := readInput(scanner, "Set maximum database pool size (recommended 5-50): ")
+		var maxPoolSize int
+		if _, err := fmt.Sscanf(input, "%d", &maxPoolSize); err == nil && maxPoolSize > 0 {
+			return maxPoolSize
+		}
+		fmt.Println("Please enter a valid positive integer.")
+	}
+}
+
+func promptAESKey(scanner *bufio.Scanner) string {
+	for {
+		aesKey := readInput(scanner, "Set AES key for password encryption (32 chars, leave blank for insecure): ")
 		if aesKey == "" || len(aesKey) == 32 {
-			break
+			return aesKey
 		}
 		fmt.Println("AES key must be exactly 32 characters (256 bits).")
 	}
+}
 
-	return profiles, maxPoolSize, aesKey
+func readInput(scanner *bufio.Scanner, prompt string) string {
+	fmt.Print(prompt)
+	scanner.Scan()
+	return scanner.Text()
 }
 
 // AES-GCM helpers for password encryption

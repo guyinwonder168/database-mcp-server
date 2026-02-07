@@ -93,50 +93,16 @@ func PerformHashJoin(left, right *SubQueryResult, join JoinCondition) (*JoinResu
 
 	leftColumn := columnFromQualified(join.Left)
 	rightColumn := columnFromQualified(join.Right)
-
-	leftIndex := findColumnIndex(left.Columns, leftColumn)
-	rightIndex := findColumnIndex(right.Columns, rightColumn)
-	if leftIndex == -1 || rightIndex == -1 {
-		return nil, fmt.Errorf("join columns not found (left=%s right=%s)", leftColumn, rightColumn)
+	leftIndex, rightIndex, err := resolveJoinColumnIndexes(left.Columns, right.Columns, leftColumn, rightColumn)
+	if err != nil {
+		return nil, err
 	}
-
 	joinType := normalizeJoinType(join.Type)
-	rightMap := make(map[string][]int, len(right.Rows))
-	for idx, row := range right.Rows {
-		key := normalizeJoinKey(rowValue(row, rightIndex))
-		rightMap[key] = append(rightMap[key], idx)
+	rightMap := buildRightRowIndexMap(right.Rows, rightIndex)
+	rows, matchedRight := joinLeftRows(left.Rows, right.Rows, leftIndex, rightMap, joinType, len(right.Columns))
+	if requiresUnmatchedRightRows(joinType) {
+		rows = append(rows, unmatchedRightRows(right.Rows, matchedRight, len(left.Columns))...)
 	}
-
-	rows := make([]Row, 0)
-	matchedRight := make(map[int]struct{}, len(right.Rows))
-	rightNulls := nilRow(len(right.Columns))
-	leftNulls := nilRow(len(left.Columns))
-
-	for _, leftRow := range left.Rows {
-		key := normalizeJoinKey(rowValue(leftRow, leftIndex))
-		rightMatches := rightMap[key]
-		if len(rightMatches) == 0 {
-			if joinType == FederationJoinLeft || joinType == FederationJoinFull {
-				rows = append(rows, mergeRows(leftRow, rightNulls))
-			}
-			continue
-		}
-
-		for _, rightRowIdx := range rightMatches {
-			rows = append(rows, mergeRows(leftRow, right.Rows[rightRowIdx]))
-			matchedRight[rightRowIdx] = struct{}{}
-		}
-	}
-
-	if joinType == FederationJoinRight || joinType == FederationJoinFull {
-		for idx, rightRow := range right.Rows {
-			if _, alreadyMatched := matchedRight[idx]; alreadyMatched {
-				continue
-			}
-			rows = append(rows, mergeRows(leftNulls, rightRow))
-		}
-	}
-
 	columns := append(append([]string(nil), left.Columns...), right.Columns...)
 	return &JoinResult{Columns: columns, Rows: rows}, nil
 }
@@ -224,12 +190,97 @@ func isFederationReadOnlySQL(sqlText string) bool {
 }
 
 func applyAggregation(result AggregatedResult, aggregation Aggregation) (*AggregatedResult, error) {
+	function, alias, columnIndex, err := resolveAggregationSpec(result.Columns, aggregation)
+	if err != nil {
+		return nil, err
+	}
+	if function == "COUNT" {
+		return aggregationResult(alias, aggregationCount(result.Rows, columnIndex)), nil
+	}
+	if !isNumericAggregation(function) {
+		return nil, fmt.Errorf("unsupported aggregation function: %s", aggregation.Function)
+	}
+	if columnIndex == -1 {
+		return nil, fmt.Errorf("%s requires a numeric column", function)
+	}
+	values := collectNumericValues(result.Rows, columnIndex)
+	if len(values) == 0 {
+		return aggregationResult(alias, 0), nil
+	}
+	return aggregationResult(alias, applyNumericAggregation(function, values)), nil
+}
+
+func resolveJoinColumnIndexes(leftColumns, rightColumns []string, leftColumn, rightColumn string) (int, int, error) {
+	leftIndex := findColumnIndex(leftColumns, leftColumn)
+	rightIndex := findColumnIndex(rightColumns, rightColumn)
+	if leftIndex == -1 || rightIndex == -1 {
+		return -1, -1, fmt.Errorf("join columns not found (left=%s right=%s)", leftColumn, rightColumn)
+	}
+	return leftIndex, rightIndex, nil
+}
+
+func buildRightRowIndexMap(rows []Row, rightIndex int) map[string][]int {
+	rightMap := make(map[string][]int, len(rows))
+	for idx, row := range rows {
+		key := normalizeJoinKey(rowValue(row, rightIndex))
+		rightMap[key] = append(rightMap[key], idx)
+	}
+	return rightMap
+}
+
+func joinLeftRows(
+	leftRows []Row,
+	rightRows []Row,
+	leftIndex int,
+	rightMap map[string][]int,
+	joinType string,
+	rightColumnCount int,
+) ([]Row, map[int]struct{}) {
+	rows := make([]Row, 0)
+	matchedRight := make(map[int]struct{}, len(rightRows))
+	rightNulls := nilRow(rightColumnCount)
+
+	for _, leftRow := range leftRows {
+		key := normalizeJoinKey(rowValue(leftRow, leftIndex))
+		rightMatches := rightMap[key]
+		if len(rightMatches) == 0 {
+			if joinType == FederationJoinLeft || joinType == FederationJoinFull {
+				rows = append(rows, mergeRows(leftRow, rightNulls))
+			}
+			continue
+		}
+		for _, rightRowIdx := range rightMatches {
+			rows = append(rows, mergeRows(leftRow, rightRows[rightRowIdx]))
+			matchedRight[rightRowIdx] = struct{}{}
+		}
+	}
+
+	return rows, matchedRight
+}
+
+func requiresUnmatchedRightRows(joinType string) bool {
+	return joinType == FederationJoinRight || joinType == FederationJoinFull
+}
+
+func unmatchedRightRows(rightRows []Row, matchedRight map[int]struct{}, leftColumnCount int) []Row {
+	leftNulls := nilRow(leftColumnCount)
+	rows := make([]Row, 0)
+	for idx, rightRow := range rightRows {
+		if _, alreadyMatched := matchedRight[idx]; alreadyMatched {
+			continue
+		}
+		rows = append(rows, mergeRows(leftNulls, rightRow))
+	}
+	return rows
+}
+
+func resolveAggregationSpec(columns []string, aggregation Aggregation) (string, string, int, error) {
 	function := strings.ToUpper(strings.TrimSpace(aggregation.Function))
 	if function == "" {
-		return nil, fmt.Errorf("aggregation function is required")
+		return "", "", -1, fmt.Errorf("aggregation function is required")
 	}
 	if len(aggregation.GroupBy) > 0 {
-		return nil, fmt.Errorf("group_by aggregations are not supported yet")
+		return "", "", -1, fmt.Errorf("group_by aggregations are not supported yet")
 	}
 
 	alias := strings.TrimSpace(aggregation.Alias)
@@ -240,63 +291,66 @@ func applyAggregation(result AggregatedResult, aggregation Aggregation) (*Aggreg
 	columnName := columnFromQualified(aggregation.Column)
 	columnIndex := -1
 	if columnName != "" && columnName != "*" {
-		columnIndex = findColumnIndex(result.Columns, columnName)
+		columnIndex = findColumnIndex(columns, columnName)
 		if columnIndex == -1 {
-			return nil, fmt.Errorf("aggregation column not found: %s", columnName)
+			return "", "", -1, fmt.Errorf("aggregation column not found: %s", columnName)
 		}
 	}
+	return function, alias, columnIndex, nil
+}
 
+func isNumericAggregation(function string) bool {
+	return function == "SUM" || function == "AVG" || function == "MIN" || function == "MAX"
+}
+
+func aggregationResult(alias string, value interface{}) *AggregatedResult {
+	return &AggregatedResult{
+		Columns: []string{alias},
+		Rows:    []Row{{value}},
+	}
+}
+
+func applyNumericAggregation(function string, values []float64) interface{} {
 	switch function {
-	case "COUNT":
-		count := aggregationCount(result.Rows, columnIndex)
-		return &AggregatedResult{
-			Columns: []string{alias},
-			Rows:    []Row{{count}},
-		}, nil
-	case "SUM", "AVG", "MIN", "MAX":
-		if columnIndex == -1 {
-			return nil, fmt.Errorf("%s requires a numeric column", function)
-		}
-		values := collectNumericValues(result.Rows, columnIndex)
-		if len(values) == 0 {
-			return &AggregatedResult{
-				Columns: []string{alias},
-				Rows:    []Row{{0}},
-			}, nil
-		}
-		switch function {
-		case "SUM":
-			sum := 0.0
-			for _, value := range values {
-				sum += value
-			}
-			return &AggregatedResult{Columns: []string{alias}, Rows: []Row{{sum}}}, nil
-		case "AVG":
-			sum := 0.0
-			for _, value := range values {
-				sum += value
-			}
-			return &AggregatedResult{Columns: []string{alias}, Rows: []Row{{sum / float64(len(values))}}}, nil
-		case "MIN":
-			min := values[0]
-			for _, value := range values[1:] {
-				if value < min {
-					min = value
-				}
-			}
-			return &AggregatedResult{Columns: []string{alias}, Rows: []Row{{min}}}, nil
-		case "MAX":
-			max := values[0]
-			for _, value := range values[1:] {
-				if value > max {
-					max = value
-				}
-			}
-			return &AggregatedResult{Columns: []string{alias}, Rows: []Row{{max}}}, nil
+	case "SUM":
+		return sumFloat64(values)
+	case "AVG":
+		return sumFloat64(values) / float64(len(values))
+	case "MIN":
+		return minValue(values)
+	case "MAX":
+		return maxValue(values)
+	default:
+		return 0
+	}
+}
+
+func sumFloat64(values []float64) float64 {
+	sum := 0.0
+	for _, value := range values {
+		sum += value
+	}
+	return sum
+}
+
+func minValue(values []float64) float64 {
+	min := values[0]
+	for _, value := range values[1:] {
+		if value < min {
+			min = value
 		}
 	}
+	return min
+}
 
-	return nil, fmt.Errorf("unsupported aggregation function: %s", aggregation.Function)
+func maxValue(values []float64) float64 {
+	max := values[0]
+	for _, value := range values[1:] {
+		if value > max {
+			max = value
+		}
+	}
+	return max
 }
 
 func aggregationCount(rows []Row, columnIndex int) int {

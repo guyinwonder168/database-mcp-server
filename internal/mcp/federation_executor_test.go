@@ -465,7 +465,7 @@ func TestExecuteConcurrentlyWithContextEdgeCases(t *testing.T) {
 }
 
 func TestApplyLimitsAndOffsetsEdgeCases(t *testing.T) {
-	if got := ApplyLimitsAndOffsets(nil, 1, 1); got != nil {
+	if ApplyLimitsAndOffsets(nil, 1, 1) != nil {
 		t.Fatalf("expected nil passthrough")
 	}
 

@@ -45,6 +45,8 @@ const (
 	ErrorCodeDecryptionFailed  ErrorCode = "DECRYPTION_FAILED"
 )
 
+const errorTextDoesNotExist = "does not exist"
+
 // ErrorSuggestion represents a suggestion to fix an error
 type ErrorSuggestion struct {
 	Tool        string `json:"tool,omitempty"`
@@ -132,10 +134,10 @@ func (a *ErrorAnalyzer) AnalyzeError(err error, context map[string]interface{}) 
 	case strings.Contains(errMsg, "profile not found"):
 		return a.handleProfileNotFound(context)
 
-	case strings.Contains(errMsg, "no such table") || strings.Contains(errMsg, "table") && strings.Contains(errMsg, "does not exist"):
+	case strings.Contains(errMsg, "no such table") || strings.Contains(errMsg, "table") && strings.Contains(errMsg, errorTextDoesNotExist):
 		return a.handleTableNotFound(context)
 
-	case strings.Contains(errMsg, "no such column") || strings.Contains(errMsg, "column") && strings.Contains(errMsg, "does not exist"):
+	case strings.Contains(errMsg, "no such column") || strings.Contains(errMsg, "column") && strings.Contains(errMsg, errorTextDoesNotExist):
 		return a.handleColumnNotFound(context)
 
 	case strings.Contains(errMsg, "syntax error") || strings.Contains(errMsg, "SQL syntax"):
@@ -153,7 +155,7 @@ func (a *ErrorAnalyzer) AnalyzeError(err error, context map[string]interface{}) 
 	case strings.Contains(errMsg, "connection") || strings.Contains(errMsg, "connect"):
 		return a.handleConnectionError(context)
 
-	case strings.Contains(errMsg, "database") && (strings.Contains(errMsg, "does not exist") || strings.Contains(errMsg, "not found")):
+	case strings.Contains(errMsg, "database") && (strings.Contains(errMsg, errorTextDoesNotExist) || strings.Contains(errMsg, "not found")):
 		return a.handleDatabaseNotFound(context)
 
 	case strings.Contains(errMsg, "data type") || strings.Contains(errMsg, "type mismatch"):

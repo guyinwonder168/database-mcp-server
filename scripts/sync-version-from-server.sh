@@ -9,7 +9,7 @@ README_FILE="README.md"
 OPENAPI_FILE="docs/mcp-openapi.yaml"
 
 VERSION="$(awk -F'"' '/^const MCPVersion = / {print $2; exit}' "$SERVER_FILE")"
-if [ -z "$VERSION" ]; then
+if [[ -z "$VERSION" ]]; then
   echo "Failed to read MCPVersion from $SERVER_FILE"
   exit 1
 fi
