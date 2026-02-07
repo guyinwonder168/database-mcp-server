@@ -5,7 +5,7 @@
 This directory contains the canonical project documentation for the current production state.
 
 Current baseline:
-- Version: `v1.1.0`
+- Version: `v1.1.1`
 - MCP tools: `18` implemented and registered
 - Databases: MySQL, MariaDB, PostgreSQL, SQLite
 - Go baseline: `go 1.25` with toolchain `go1.25.7`

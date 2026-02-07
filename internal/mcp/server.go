@@ -1,6 +1,6 @@
 // server.go
 // Author: guyinwonder
-// Version: v1.0.0
+// Version: v1.1.1
 // Project created using OpenAI GPT-4.1 via VSCode Kilocode AI code assistant extension.
 // MCP server implementation for the database-mcp-provider project.
 // Provides MCP actions for profile management, SQL execution, table/DB listing, and uses structured JSON logging.
@@ -42,7 +42,7 @@ type MCPServer struct {
 	contextMgr    *ctxmgr.Manager
 }
 
-const MCPVersion = "v1.1.0"
+const MCPVersion = "v1.1.1"
 const MCPAuthor = "guyinwonder"
 
 // Cap for number of data quality issues retained per column to prevent unbounded payload growth
