@@ -3293,21 +3293,21 @@ func (s *MCPServer) handleAnalyzeSchema(
 		"analysis_level": p.AnalysisLevel,
 	})
 
-	result := buildAnalyzeSchemaResult(
-		startTime,
-		p,
-		prof.DBType,
-		filteredTables,
-		collected.totalColumns,
-		tableCatalog,
-		tableSchemas,
-		relGraph,
-		relGraphVisual,
-		aiQuerySuggestions,
-		dataQualityMetrics,
-		domain,
-		confidence,
-	)
+	result := buildAnalyzeSchemaResult(analyzeSchemaResultInput{
+		startTime:               startTime,
+		params:                  p,
+		dbType:                  prof.DBType,
+		filteredTables:          filteredTables,
+		totalColumns:            collected.totalColumns,
+		tableCatalog:            tableCatalog,
+		tableSchemas:            tableSchemas,
+		relationshipGraph:       relGraph,
+		relationshipGraphVisual: relGraphVisual,
+		aiQuerySuggestions:      aiQuerySuggestions,
+		dataQualityMetrics:      dataQualityMetrics,
+		domain:                  domain,
+		confidence:              confidence,
+	})
 
 	if p.Profiling {
 		enhanced := enhanceSchemaAnalysis(ctx, tableSchemas, collected.sampleDataMap, defaultProfilingWorkers)
@@ -3329,7 +3329,7 @@ func (s *MCPServer) handleAnalyzeSchema(
 }
 
 func validateAnalyzeSchemaParams(p AnalyzeSchemaParams) (*mcp.CallToolResult, error) {
-	if err := p.Validate(); err == nil {
+	if p.Validate() == nil {
 		return nil, nil
 	}
 	structErr := NewStructuredError(
@@ -3897,47 +3897,49 @@ func addAnalyzeSchemaDatabaseAggregateMetric(metrics map[string]QualityMetrics) 
 	}
 }
 
-func buildAnalyzeSchemaResult(
-	startTime time.Time,
-	p AnalyzeSchemaParams,
-	dbType string,
-	filteredTables []string,
-	totalColumns int,
-	tableCatalog TableCatalog,
-	tableSchemas map[string]TableInfo,
-	relationshipGraph RelationshipGraph,
-	relationshipGraphVisual map[string]interface{},
-	aiQuerySuggestions AIQuerySuggestions,
-	dataQualityMetrics map[string]QualityMetrics,
-	domain string,
-	confidence float64,
-) AnalyzeSchemaResult {
+type analyzeSchemaResultInput struct {
+	startTime               time.Time
+	params                  AnalyzeSchemaParams
+	dbType                  string
+	filteredTables          []string
+	totalColumns            int
+	tableCatalog            TableCatalog
+	tableSchemas            map[string]TableInfo
+	relationshipGraph       RelationshipGraph
+	relationshipGraphVisual map[string]interface{}
+	aiQuerySuggestions      AIQuerySuggestions
+	dataQualityMetrics      map[string]QualityMetrics
+	domain                  string
+	confidence              float64
+}
+
+func buildAnalyzeSchemaResult(input analyzeSchemaResultInput) AnalyzeSchemaResult {
 	return AnalyzeSchemaResult{
 		AnalysisMetadata: AnalysisMetadata{
-			AnalysisLevel:      p.AnalysisLevel,
-			DatabaseType:       dbType,
-			AnalysisTimestamp:  startTime,
+			AnalysisLevel:      input.params.AnalysisLevel,
+			DatabaseType:       input.dbType,
+			AnalysisTimestamp:  input.startTime,
 			ToolsUsed:          []string{"list-tables", "describe-table", "sample-data", toolDiscoverJoins},
-			AnalysisDurationMs: int(time.Since(startTime).Milliseconds()),
+			AnalysisDurationMs: int(time.Since(input.startTime).Milliseconds()),
 		},
 		DatabaseOverview: DatabaseOverview{
 			DatabaseCount:           1,
-			TotalTables:             len(filteredTables),
-			TotalColumns:            totalColumns,
-			TotalRelationships:      len(relationshipGraph.ForeignKeys) + len(relationshipGraph.SemanticRelationships),
-			EstimatedBusinessDomain: domain,
-			ConfidenceScore:         confidence,
+			TotalTables:             len(input.filteredTables),
+			TotalColumns:            input.totalColumns,
+			TotalRelationships:      len(input.relationshipGraph.ForeignKeys) + len(input.relationshipGraph.SemanticRelationships),
+			EstimatedBusinessDomain: input.domain,
+			ConfidenceScore:         input.confidence,
 			BusinessModelInsights:   []string{},
-			Summary:                 fmt.Sprintf("Analyzed %d tables and %d columns.", len(filteredTables), totalColumns),
+			Summary:                 fmt.Sprintf("Analyzed %d tables and %d columns.", len(input.filteredTables), input.totalColumns),
 		},
-		TableCatalog:            tableCatalog,
-		TableSchemas:            tableSchemas,
-		RelationshipGraph:       relationshipGraph,
-		RelationshipGraphVisual: relationshipGraphVisual,
+		TableCatalog:            input.tableCatalog,
+		TableSchemas:            input.tableSchemas,
+		RelationshipGraph:       input.relationshipGraph,
+		RelationshipGraphVisual: input.relationshipGraphVisual,
 		BusinessContext:         BusinessContext{},
-		AIQuerySuggestions:      aiQuerySuggestions,
-		DataQualityMetrics:      dataQualityMetrics,
-		QuickInsights:           []string{fmt.Sprintf("Schema analysis completed for %d tables.", len(filteredTables))},
+		AIQuerySuggestions:      input.aiQuerySuggestions,
+		DataQualityMetrics:      input.dataQualityMetrics,
+		QuickInsights:           []string{fmt.Sprintf("Schema analysis completed for %d tables.", len(input.filteredTables))},
 	}
 }
 

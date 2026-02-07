@@ -193,21 +193,21 @@ func TestSummarizeAnalyzeSchemaBusinessContext(t *testing.T) {
 
 func TestBuildAnalyzeSchemaResult(t *testing.T) {
 	startTime := time.Now()
-	result := buildAnalyzeSchemaResult(
-		startTime,
-		AnalyzeSchemaParams{AnalysisLevel: AnalysisLevelDetailed},
-		"sqlite",
-		[]string{"users"},
-		3,
-		TableCatalog{},
-		map[string]TableInfo{"users": {ColumnCount: 3}},
-		RelationshipGraph{},
-		map[string]interface{}{"nodes": []string{}},
-		AIQuerySuggestions{},
-		map[string]QualityMetrics{"users.id": {OverallScore: 0.9}},
-		"finance",
-		0.8,
-	)
+	result := buildAnalyzeSchemaResult(analyzeSchemaResultInput{
+		startTime:               startTime,
+		params:                  AnalyzeSchemaParams{AnalysisLevel: AnalysisLevelDetailed},
+		dbType:                  "sqlite",
+		filteredTables:          []string{"users"},
+		totalColumns:            3,
+		tableCatalog:            TableCatalog{},
+		tableSchemas:            map[string]TableInfo{"users": {ColumnCount: 3}},
+		relationshipGraph:       RelationshipGraph{},
+		relationshipGraphVisual: map[string]interface{}{"nodes": []string{}},
+		aiQuerySuggestions:      AIQuerySuggestions{},
+		dataQualityMetrics:      map[string]QualityMetrics{"users.id": {OverallScore: 0.9}},
+		domain:                  "finance",
+		confidence:              0.8,
+	})
 
 	if result.AnalysisMetadata.AnalysisLevel != AnalysisLevelDetailed {
 		t.Fatalf("unexpected analysis level: %q", result.AnalysisMetadata.AnalysisLevel)
