@@ -18,7 +18,7 @@ concurrency:
 jobs:
   dependabot:
     # For pull_request_target, only act on Dependabot PRs. For push/workflow_dispatch, reconcile all open Dependabot PRs.
-    if: ${{ github.event_name != 'pull_request_target' || github.actor == 'dependabot[bot]' }}
+    if: ${{ github.event_name != 'pull_request_target' || github.event.pull_request.user.login == 'dependabot[bot]' }}
     runs-on: ubuntu-latest
     steps:
       - name: Enable auto-merge and keep Dependabot PRs up to date
