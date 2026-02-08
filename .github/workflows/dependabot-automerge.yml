@@ -1,0 +1,68 @@
+name: Dependabot Auto Rebase and Auto Merge
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: dependabot-automerge
+  cancel-in-progress: true
+
+jobs:
+  dependabot:
+    # For pull_request_target, only act on Dependabot PRs. For push/workflow_dispatch, reconcile all open Dependabot PRs.
+    if: ${{ github.event_name != 'pull_request_target' || github.event.pull_request.user.login == 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enable auto-merge and keep Dependabot PRs up to date
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+
+          pr_numbers=()
+
+          if [ "$EVENT_NAME" = "pull_request_target" ]; then
+            pr_numbers+=("$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")")
+          else
+            mapfile -t pr_numbers < <(gh pr list --repo "$REPO" --state open --author app/dependabot --json number --jq '.[].number')
+          fi
+
+          if [ ${#pr_numbers[@]} -eq 0 ]; then
+            echo "No open Dependabot PRs."
+            exit 0
+          fi
+
+          for pr in "${pr_numbers[@]}"; do
+            echo "Processing PR #$pr"
+
+            is_draft="$(gh pr view "$pr" --repo "$REPO" --json isDraft --jq '.isDraft')"
+            if [ "$is_draft" = "true" ]; then
+              echo "PR is draft; skipping."
+              continue
+            fi
+
+            auto_merge_enabled="$(gh pr view "$pr" --repo "$REPO" --json autoMergeRequest --jq '.autoMergeRequest != null')"
+            if [ "$auto_merge_enabled" != "true" ]; then
+              gh pr merge "$pr" --repo "$REPO" --auto --squash
+            else
+              echo "Auto-merge already enabled."
+            fi
+
+            merge_state="$(gh pr view "$pr" --repo "$REPO" --json mergeStateStatus --jq '.mergeStateStatus')"
+            if [ "$merge_state" = "BEHIND" ]; then
+              echo "PR is behind; updating branch (rebase preferred)."
+              gh pr update-branch "$pr" --repo "$REPO" --rebase || gh pr update-branch "$pr" --repo "$REPO"
+            else
+              echo "mergeStateStatus=$merge_state"
+            fi
+          done
