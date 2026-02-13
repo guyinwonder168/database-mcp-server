@@ -9,8 +9,8 @@ import (
 )
 
 type GetToolHelpParams struct {
-	ToolName string `json:"tool_name" jsonschema:"name of the tool to explain"`
-	Topic    string `json:"topic,omitempty" jsonschema:"summary|minimal_example|advanced_example|errors|all"`
+	ToolName string `json:"tool_name"`
+	Topic    string `json:"topic,omitempty"`
 }
 
 type ToolHelpError struct {

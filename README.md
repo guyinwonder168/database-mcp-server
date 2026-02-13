@@ -1,6 +1,6 @@
 # Database MCP Server
 
-[![Go](https://img.shields.io/badge/Go-1.25.7%2B-00ADD8?logo=Go&logoColor=white)](https://go.dev)
+[![Go](https://img.shields.io/badge/Go-1.26.0%2B-00ADD8?logo=Go&logoColor=white)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Version](https://img.shields.io/badge/Version-v1.2.0-blue.svg)](https://github.com/guyinwonder168/database-mcp-server/releases/tag/v1.2.0)
 [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=guyinwonder168_database-mcp-server&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=guyinwonder168_database-mcp-server)
@@ -8,7 +8,7 @@
 [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=guyinwonder168_database-mcp-server&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=guyinwonder168_database-mcp-server)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=guyinwonder168_database-mcp-server&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=guyinwonder168_database-mcp-server)
 
-A production-ready Model Context Protocol (MCP) provider for SQL databases, built using various vibe coding tools. Supports MySQL, MariaDB, PostgreSQL, and SQLite. Features robust connection pooling, secure AES-GCM credential storage, structured JSON logging, comprehensive schema introspection, and a full suite of 19 MCP tools. Built and tested with Go 1.25.7.
+A production-ready Model Context Protocol (MCP) provider for SQL databases, built using various vibe coding tools. Supports MySQL, MariaDB, PostgreSQL, and SQLite. Features robust connection pooling, secure AES-GCM credential storage, structured JSON logging, comprehensive schema introspection, and a full suite of 19 MCP tools. Built and tested with Go 1.26.0.
 
 ## 🚀 Quick Start
 
@@ -93,14 +93,21 @@ Package registry: `https://github.com/guyinwonder168/database-mcp-server/pkgs/co
 
 ## 🤖 Model Compatibility
 
-- Default schema mode is `compact` for tool-first clients and Gemini compatibility.
+- Default schema mode is `compact` for tool-first and strict declaration-budget clients.
 - Optional `standard` mode keeps verbose tool descriptions for human-readable metadata.
-- For binary-only usage without browsing repository docs, use `get-tool-help` for examples/troubleshooting.
+- All 19 MCP tools are always registered.
+- Use `get-tool-help` for per-tool examples and troubleshooting without inflating startup metadata.
 
 `config.yaml`:
 
 ```yaml
 schema_mode: compact # compact|standard
+```
+
+Recommended startup configuration for strict tool-loading clients:
+
+```yaml
+schema_mode: compact
 ```
 
 Helper tool request example:
@@ -175,13 +182,9 @@ go test ./...
 - Comprehensive unit and integration tests included.
 - Ready for production use.
 
- - **Business Intelligence Discovery**: Added `discover-insights` tool for automatic KPI, trend, anomaly, and distribution analysis
+- **Business Intelligence Discovery**: Added `discover-insights` tool for automatic KPI, trend, anomaly, and distribution analysis
 
 ---
-
-## License
-
-MIT
 
 ## Enhancement Planning
 

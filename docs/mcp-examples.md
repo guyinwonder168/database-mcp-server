@@ -156,6 +156,17 @@ Returns compact, on-demand examples and troubleshooting for one tool.
 }
 ```
 
+## Gemini-Safe Startup Config
+
+Use this configuration when a Gemini client fails at tool-loading time (for example, on a simple prompt like `halo`) due to strict declaration payload limits.
+
+```yaml
+schema_mode: compact
+```
+
+- `schema_mode: compact` keeps tool descriptions short.
+- All 19 MCP tools remain available; request rich usage details with `get-tool-help` as needed.
+
 ### Response
 ```json
 {

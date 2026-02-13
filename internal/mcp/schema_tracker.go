@@ -27,17 +27,17 @@ const (
 
 // TrackSchemaChangesParams defines input for track-schema-changes operations.
 type TrackSchemaChangesParams struct {
-	ProfileName    string   `json:"profile_name" jsonschema:"profile to use for schema tracking"`
-	DatabaseName   string   `json:"database_name,omitempty" jsonschema:"optional database/schema override"`
-	Operation      string   `json:"operation,omitempty" jsonschema:"operation: track|history|generate_migration|detect_drift (default: track)"`
-	Dialect        string   `json:"dialect,omitempty" jsonschema:"SQL dialect override for migration generation (mysql|postgresql|sqlite)"`
-	FromSnapshotID string   `json:"from_snapshot_id,omitempty" jsonschema:"source snapshot ID for migration generation"`
-	ToSnapshotID   string   `json:"to_snapshot_id,omitempty" jsonschema:"target snapshot ID for migration generation"`
-	SnapshotID     string   `json:"snapshot_id,omitempty" jsonschema:"baseline snapshot ID for drift detection"`
-	Limit          int      `json:"limit,omitempty" jsonschema:"maximum number of history snapshots to return (default 20)"`
-	RetentionDays  int      `json:"retention_days,omitempty" jsonschema:"snapshot retention window in days (default 30)"`
-	ChangeTypes    []string `json:"change_types,omitempty" jsonschema:"reserved for future filtering compatibility"`
-	TimeRange      string   `json:"time_range,omitempty" jsonschema:"reserved for future filtering compatibility"`
+	ProfileName    string   `json:"profile_name"`
+	DatabaseName   string   `json:"database_name,omitempty"`
+	Operation      string   `json:"operation,omitempty"`
+	Dialect        string   `json:"dialect,omitempty"`
+	FromSnapshotID string   `json:"from_snapshot_id,omitempty"`
+	ToSnapshotID   string   `json:"to_snapshot_id,omitempty"`
+	SnapshotID     string   `json:"snapshot_id,omitempty"`
+	Limit          int      `json:"limit,omitempty"`
+	RetentionDays  int      `json:"retention_days,omitempty"`
+	ChangeTypes    []string `json:"change_types,omitempty"`
+	TimeRange      string   `json:"time_range,omitempty"`
 }
 
 // TrackSchemaChangesResult is the response payload for track-schema-changes operations.

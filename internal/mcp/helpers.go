@@ -13,6 +13,7 @@ import (
 
 func errorResult(structErr *StructuredError) *mcp.CallToolResult {
 	return &mcp.CallToolResult{
+		IsError: true,
 		Content: []mcp.Content{&mcp.TextContent{Text: structErr.ToJSON()}},
 	}
 }

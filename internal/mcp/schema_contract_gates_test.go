@@ -10,6 +10,7 @@ import (
 const (
 	maxCompactDescriptionLength = 160
 	maxCompactToolsPayloadBytes = 12 * 1024
+	maxCompactDeclBytes         = 10 * 1024
 )
 
 func TestSchemaGate001_AllToolsDefineInputSchema(t *testing.T) {
@@ -57,6 +58,21 @@ func TestSchemaGate005_MaxCompactToolsListPayloadBytes(t *testing.T) {
 	}
 	if len(payload) > maxCompactToolsPayloadBytes {
 		t.Fatalf("compact tools payload too large: %d > %d", len(payload), maxCompactToolsPayloadBytes)
+	}
+}
+
+func TestSchemaGate006_MaxCompactDeclarationPayloadBytes(t *testing.T) {
+	configPath := writeMCPDeclarationConfig(t, "compact")
+	server := NewMCPServerWithConfig(configPath)
+	if len(server.toolDecls) == 0 {
+		t.Fatal("expected declarations in compact mode")
+	}
+	payloadBytes, err := declarationPayloadBytes(server.toolDecls)
+	if err != nil {
+		t.Fatalf("failed to marshal declaration payload: %v", err)
+	}
+	if payloadBytes > maxCompactDeclBytes {
+		t.Fatalf("compact declaration payload too large: %d > %d", payloadBytes, maxCompactDeclBytes)
 	}
 }
 

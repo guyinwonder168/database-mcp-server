@@ -39,6 +39,7 @@ type MCPServer struct {
 	ConfigPath    string // <--- Add this field for testability
 	errorAnalyzer *ErrorAnalyzer
 	toolsRegistry []ToolInfo
+	toolDecls     []ToolDeclarationInfo
 	contextMgr    *ctxmgr.Manager
 }
 
@@ -406,8 +407,7 @@ func (s *MCPServer) registerAllTools() {
 		{"profile_name":"some-profile-name","db_type":"postgres","host":"localhost","port":5432,"username":"app","password":"secret","database_name":"appdb","readonly":false,"sslmode":"require"}`),
 			InputSchema: inputSchemaFor[ConfigureProfileParams](),
 		}
-		mcp.AddTool(s.server, tool, s.handleConfigureProfile)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleConfigureProfile)
 	}
 
 	// list-profiles
@@ -419,8 +419,7 @@ func (s *MCPServer) registerAllTools() {
   {}`),
 			InputSchema: inputSchemaFor[ListProfilesParams](),
 		}
-		mcp.AddTool(s.server, tool, s.handleListProfiles)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleListProfiles)
 	}
 
 	// execute-sql
@@ -434,8 +433,7 @@ func (s *MCPServer) registerAllTools() {
 		{"profile_name":"some-profile-name","sql":"DESCRIBE some-database-name.some-table-name"}`),
 			InputSchema: inputSchemaWithParams[ExecuteSQLParams]("positional parameters for prepared statements; BLOB/BINARY values must be base64-encoded strings"),
 		}
-		mcp.AddTool(s.server, tool, s.handleExecuteSQL)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleExecuteSQL)
 	}
 
 	// list-tables
@@ -447,8 +445,7 @@ func (s *MCPServer) registerAllTools() {
 		{"profile_name":"some-profile-name","database_name":"some-database-name"}`),
 			InputSchema: inputSchemaFor[ListTablesParams](),
 		}
-		mcp.AddTool(s.server, tool, s.handleListTables)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleListTables)
 	}
 
 	// describe-table
@@ -461,8 +458,7 @@ func (s *MCPServer) registerAllTools() {
   {"profile_name":"some-profile-name","database_name":"some-database-name","table_name":"some-table-name"}`),
 			InputSchema: inputSchemaFor[DescribeTableParams](),
 		}
-		mcp.AddTool(s.server, tool, s.handleDescribeTable)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleDescribeTable)
 	}
 
 	// list-databases
@@ -474,8 +470,7 @@ func (s *MCPServer) registerAllTools() {
   {"profile_name":"some-profile-name"}`),
 			InputSchema: inputSchemaFor[ListDatabasesParams](),
 		}
-		mcp.AddTool(s.server, tool, s.handleListDatabases)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleListDatabases)
 	}
 
 	// analyze-schema
@@ -503,8 +498,7 @@ func (s *MCPServer) registerAllTools() {
   {"profile_name":"analytics_db","analysis_level":"detailed","database_name":"analytics_db"}`),
 			InputSchema: inputSchemaFor[AnalyzeSchemaParams](),
 		}
-		mcp.AddTool(s.server, tool, s.handleAnalyzeSchema)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleAnalyzeSchema)
 	}
 
 	// smart-query-builder
@@ -518,8 +512,7 @@ func (s *MCPServer) registerAllTools() {
   {"profile_name":"some-profile-name","intent":"attendance dashboard"}`),
 			InputSchema: inputSchemaFor[SmartQueryBuilderParams](),
 		}
-		mcp.AddTool(s.server, tool, s.handleSmartQueryBuilder)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleSmartQueryBuilder)
 	}
 
 	// optimize-query
@@ -533,8 +526,7 @@ func (s *MCPServer) registerAllTools() {
 		{"profile_name":"analytics_db","database_name":"analytics_db","sql":"SELECT * FROM orders WHERE customer_id = ?","params":[123]}`),
 			InputSchema: inputSchemaWithParams[OptimizeQueryParams]("positional parameters for prepared statements; BLOB/BINARY values must be base64-encoded strings"),
 		}
-		mcp.AddTool(s.server, tool, s.handleOptimizeQuery)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleOptimizeQuery)
 	}
 
 	// validate-query
@@ -548,8 +540,7 @@ func (s *MCPServer) registerAllTools() {
 		{"profile_name":"analytics_db","sql":"SELECT * FROM users WHERE id = ?","params":[123]}`),
 			InputSchema: inputSchemaWithParams[ValidateQueryParams]("positional parameters for prepared statements (metadata only); BLOB/BINARY values must be base64-encoded strings"),
 		}
-		mcp.AddTool(s.server, tool, s.handleValidateQuery)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleValidateQuery)
 	}
 
 	// analyze-data-lineage
@@ -563,8 +554,7 @@ func (s *MCPServer) registerAllTools() {
   {"profile_name":"analytics_db","table_name":"orders","scope":"both"}`),
 			InputSchema: inputSchemaFor[AnalyzeDataLineageParams](),
 		}
-		mcp.AddTool(s.server, tool, s.handleAnalyzeDataLineage)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleAnalyzeDataLineage)
 	}
 
 	// discover-insights
@@ -578,8 +568,7 @@ func (s *MCPServer) registerAllTools() {
   {"profile_name":"analytics_db","table_name":"sales","insight_types":["kpi","trend"],"max_results":10}`),
 			InputSchema: inputSchemaWithParams[DiscoverInsightsParams]("Optional query parameters for filtering insights"),
 		}
-		mcp.AddTool(s.server, tool, s.handleDiscoverInsights)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleDiscoverInsights)
 	}
 
 	// track-schema-changes
@@ -594,8 +583,7 @@ func (s *MCPServer) registerAllTools() {
   {"profile_name":"analytics_db","operation":"track","retention_days":30}`),
 			InputSchema: inputSchemaFor[TrackSchemaChangesParams](),
 		}
-		mcp.AddTool(s.server, tool, s.handleTrackSchemaChanges)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleTrackSchemaChanges)
 	}
 
 	// federated-query
@@ -609,8 +597,7 @@ func (s *MCPServer) registerAllTools() {
   {"sub_queries":[{"profile":"crm_db","sql":"SELECT id,name FROM users","alias":"u"},{"profile":"analytics_db","sql":"SELECT user_id,total FROM orders","alias":"o"}],"joins":[{"left":"u.id","right":"o.user_id","type":"INNER"}],"limit":100}`),
 			InputSchema: inputSchemaFor[FederatedQueryRequest](),
 		}
-		mcp.AddTool(s.server, tool, s.handleFederatedQuery)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleFederatedQuery)
 	}
 
 	// discover-joins
@@ -624,8 +611,7 @@ func (s *MCPServer) registerAllTools() {
   {"profile_name":"analytics_db","tables":["orders","customers"]}`),
 			InputSchema: inputSchemaFor[DiscoverJoinsParams](),
 		}
-		mcp.AddTool(s.server, tool, s.handleDiscoverJoins)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleDiscoverJoins)
 	}
 
 	// sample-data
@@ -639,8 +625,7 @@ func (s *MCPServer) registerAllTools() {
   {"profile_name":"analytics_db","database_name":"analytics_db","table_name":"users","sample_size":5}`),
 			InputSchema: inputSchemaFor[SampleDataParams](),
 		}
-		mcp.AddTool(s.server, tool, s.handleSampleData)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleSampleData)
 	}
 
 	// mcp-info
@@ -652,8 +637,7 @@ func (s *MCPServer) registerAllTools() {
   {}`),
 			InputSchema: inputSchemaFor[MCPInfoParams](),
 		}
-		mcp.AddTool(s.server, tool, s.handleMCPInfo)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleMCPInfo)
 	}
 
 	// list-tools
@@ -665,8 +649,7 @@ func (s *MCPServer) registerAllTools() {
   {}`),
 			InputSchema: inputSchemaFor[ListToolsParams](),
 		}
-		mcp.AddTool(s.server, tool, s.handleListTools)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleListTools)
 	}
 
 	// get-tool-help
@@ -678,8 +661,7 @@ func (s *MCPServer) registerAllTools() {
   {"tool_name":"execute-sql","topic":"all"}`),
 			InputSchema: inputSchemaFor[GetToolHelpParams](),
 		}
-		mcp.AddTool(s.server, tool, s.handleGetToolHelp)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleGetToolHelp)
 	}
 }
 
@@ -973,15 +955,15 @@ func (s *MCPServer) handleMCPInfo(ctx context.Context, _ *mcp.CallToolRequest, i
 // --- MCP Handler Parameter Structs ---
 
 type ConfigureProfileParams struct {
-	ProfileName  string `json:"profile_name" jsonschema:"unique name for this database profile"`
-	DBType       string `json:"db_type" jsonschema:"database type: mysql | mariadb | postgres | sqlite"`
-	Host         string `json:"host,omitempty" jsonschema:"hostname or IP (not required for sqlite)"`
-	Port         int    `json:"port,omitempty" jsonschema:"TCP port number (not required for sqlite)"`
-	Username     string `json:"username,omitempty" jsonschema:"database username (not required for sqlite)"`
-	Password     string `json:"password,omitempty" jsonschema:"database password (not required for sqlite)"`
-	DatabaseName string `json:"database_name" jsonschema:"default database/schema name or sqlite file path"`
-	Readonly     bool   `json:"readonly" jsonschema:"when true, write operations are blocked"`
-	SSLMode      string `json:"sslmode,omitempty" jsonschema:"postgres only: disable | require | verify-ca | verify-full"`
+	ProfileName  string `json:"profile_name"`
+	DBType       string `json:"db_type"`
+	Host         string `json:"host,omitempty"`
+	Port         int    `json:"port,omitempty"`
+	Username     string `json:"username,omitempty"`
+	Password     string `json:"password,omitempty"`
+	DatabaseName string `json:"database_name"`
+	Readonly     bool   `json:"readonly"`
+	SSLMode      string `json:"sslmode,omitempty"`
 }
 
 type ListProfilesParams struct{}
@@ -994,10 +976,10 @@ type ListProfilesResult struct {
 }
 
 type ExecuteSQLParams struct {
-	ProfileName  string        `json:"profile_name" jsonschema:"profile to use for connection"`
-	SQL          string        `json:"sql" jsonschema:"SQL statement to execute"`
-	DatabaseName string        `json:"database_name" jsonschema:"target database/schema (sqlite uses file path)"`
-	Params       []interface{} `json:"params,omitempty" jsonschema:"positional parameters for prepared statement"`
+	ProfileName  string        `json:"profile_name"`
+	SQL          string        `json:"sql"`
+	DatabaseName string        `json:"database_name"`
+	Params       []interface{} `json:"params,omitempty"`
 }
 
 type ExecuteSQLResult struct {
@@ -1007,8 +989,8 @@ type ExecuteSQLResult struct {
 }
 
 type ListTablesParams struct {
-	ProfileName  string `json:"profile_name" jsonschema:"profile to use for connection"`
-	DatabaseName string `json:"database_name" jsonschema:"database/schema to inspect"`
+	ProfileName  string `json:"profile_name"`
+	DatabaseName string `json:"database_name"`
 }
 
 type ListTablesResult struct {
@@ -1016,9 +998,9 @@ type ListTablesResult struct {
 }
 
 type DescribeTableParams struct {
-	ProfileName  string `json:"profile_name" jsonschema:"profile to use for connection"`
-	DatabaseName string `json:"database_name" jsonschema:"database/schema containing the table"`
-	TableName    string `json:"table_name" jsonschema:"table to describe"`
+	ProfileName  string `json:"profile_name"`
+	DatabaseName string `json:"database_name"`
+	TableName    string `json:"table_name"`
 }
 
 type DescribeTableResult struct {
@@ -1043,10 +1025,10 @@ type ColumnInfo struct {
 
 // --- Smart Query Builder Types ---
 type SmartQueryBuilderParams struct {
-	ProfileName  string   `json:"profile_name" jsonschema:"profile to use for connection"`
-	Intent       string   `json:"intent" jsonschema:"natural-language intent to convert to SQL"`
-	DatabaseName string   `json:"database_name,omitempty" jsonschema:"optional database/schema context"`
-	TableNames   []string `json:"table_names,omitempty" jsonschema:"optional focus tables for SQL generation"`
+	ProfileName  string   `json:"profile_name"`
+	Intent       string   `json:"intent"`
+	DatabaseName string   `json:"database_name,omitempty"`
+	TableNames   []string `json:"table_names,omitempty"`
 }
 
 type SmartQueryBuilderResult struct {
@@ -1056,10 +1038,10 @@ type SmartQueryBuilderResult struct {
 
 // --- Validate Query Types ---
 type ValidateQueryParams struct {
-	ProfileName  string        `json:"profile_name" jsonschema:"profile to use for connection"`
-	DatabaseName string        `json:"database_name,omitempty" jsonschema:"optional database/schema context"`
-	SQL          string        `json:"sql" jsonschema:"SQL statement to validate"`
-	Params       []interface{} `json:"params,omitempty" jsonschema:"positional parameters for prepared statement (metadata only)"`
+	ProfileName  string        `json:"profile_name"`
+	DatabaseName string        `json:"database_name,omitempty"`
+	SQL          string        `json:"sql"`
+	Params       []interface{} `json:"params,omitempty"`
 }
 
 type ValidateQueryResult struct {
@@ -1073,10 +1055,10 @@ type ValidateQueryResult struct {
 
 // --- Optimize Query Types ---
 type OptimizeQueryParams struct {
-	ProfileName  string        `json:"profile_name" jsonschema:"profile to use for connection"`
-	DatabaseName string        `json:"database_name" jsonschema:"database/schema to use for EXPLAIN (sqlite uses file path)"`
-	SQL          string        `json:"sql" jsonschema:"SQL statement to analyze"`
-	Params       []interface{} `json:"params,omitempty" jsonschema:"positional parameters for prepared statement"`
+	ProfileName  string        `json:"profile_name"`
+	DatabaseName string        `json:"database_name"`
+	SQL          string        `json:"sql"`
+	Params       []interface{} `json:"params,omitempty"`
 }
 
 type OptimizeQueryResult struct {
@@ -1088,8 +1070,8 @@ type OptimizeQueryResult struct {
 
 // --- End Smart Query Builder Types ---
 type DiscoverJoinsParams struct {
-	ProfileName string   `json:"profile_name" jsonschema:"profile to use for connection"`
-	Tables      []string `json:"tables,omitempty" jsonschema:"optional subset of tables to analyze for joins"`
+	ProfileName string   `json:"profile_name"`
+	Tables      []string `json:"tables,omitempty"`
 }
 
 type JoinSuggestion struct {
@@ -1107,7 +1089,7 @@ type DiscoverJoinsResult struct {
 }
 
 type ListDatabasesParams struct {
-	ProfileName string `json:"profile_name" jsonschema:"profile to use for connection"`
+	ProfileName string `json:"profile_name"`
 }
 
 type MCPInfoParams struct{}
@@ -1118,10 +1100,10 @@ type ListDatabasesResult struct {
 
 // --- Sample Data Types ---
 type SampleDataParams struct {
-	ProfileName  string `json:"profile_name" jsonschema:"profile to use for connection"`
-	TableName    string `json:"table_name" jsonschema:"table to sample"`
-	DatabaseName string `json:"database_name" jsonschema:"database/schema containing the table"`
-	SampleSize   int    `json:"sample_size,omitempty" jsonschema:"number of rows to return (default 3)"`
+	ProfileName  string `json:"profile_name"`
+	TableName    string `json:"table_name"`
+	DatabaseName string `json:"database_name"`
+	SampleSize   int    `json:"sample_size,omitempty"`
 }
 
 type SampleDataResult struct {
@@ -1145,13 +1127,20 @@ type ToolInfo struct {
 	Description string `json:"description"`
 }
 
+// ToolDeclarationInfo captures MCP declaration payload fields used in tools/list.
+type ToolDeclarationInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	InputSchema any    `json:"inputSchema,omitempty"`
+}
+
 // --- Lineage Types ---
 type AnalyzeDataLineageParams struct {
-	ProfileName  string   `json:"profile_name" jsonschema:"profile to use for connection"`
-	DatabaseName string   `json:"database_name,omitempty" jsonschema:"database/schema to use (sqlite uses file path)"`
-	TableName    string   `json:"table_name" jsonschema:"target table for lineage"`
-	Scope        string   `json:"scope,omitempty" jsonschema:"upstream|downstream|both (default both)"`
-	Tables       []string `json:"tables,omitempty" jsonschema:"optional subset of tables to include"`
+	ProfileName  string   `json:"profile_name"`
+	DatabaseName string   `json:"database_name,omitempty"`
+	TableName    string   `json:"table_name"`
+	Scope        string   `json:"scope,omitempty"`
+	Tables       []string `json:"tables,omitempty"`
 }
 
 type AnalyzeDataLineageResult struct {
@@ -1188,6 +1177,39 @@ func (s *MCPServer) handleListTools(
 			},
 		},
 	}, nil, nil
+}
+
+func (s *MCPServer) registerToolInfo(tool *mcp.Tool) {
+	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+	s.toolDecls = append(s.toolDecls, ToolDeclarationInfo{Name: tool.Name, Description: tool.Description, InputSchema: tool.InputSchema})
+}
+
+func addTool[In any, Out any](
+	s *MCPServer,
+	tool *mcp.Tool,
+	handler func(context.Context, *mcp.CallToolRequest, In) (*mcp.CallToolResult, Out, error),
+) {
+	mcp.AddTool(s.server, tool, wrapToolHandler(tool.Name, handler))
+	s.registerToolInfo(tool)
+}
+
+func wrapToolHandler[In any, Out any](
+	toolName string,
+	handler func(context.Context, *mcp.CallToolRequest, In) (*mcp.CallToolResult, Out, error),
+) func(context.Context, *mcp.CallToolRequest, In) (*mcp.CallToolResult, Out, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, input In) (*mcp.CallToolResult, Out, error) {
+		result, output, err := handler(ctx, req, input)
+		if err == nil {
+			return result, output, nil
+		}
+		structErr := NewStructuredError(
+			ErrorCodeInternalError,
+			"Tool execution failed",
+			err.Error(),
+		).WithContext("tool_name", toolName)
+		var zeroOut Out
+		return errorResult(structErr), zeroOut, nil
+	}
 }
 
 // resourceToolsHandler returns the current tools registry as a resource.
