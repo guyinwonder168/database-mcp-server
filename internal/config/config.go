@@ -37,11 +37,19 @@ type NLPConfig struct {
 	BusinessDomains       []string `yaml:"business_domains,omitempty"`
 }
 
+type SchemaMode string
+
+const (
+	SchemaModeCompact  SchemaMode = "compact"
+	SchemaModeStandard SchemaMode = "standard"
+)
+
 type Config struct {
-	Profiles    []Profile `yaml:"profiles"`
-	MaxPoolSize int       `yaml:"max_pool_size"`
-	AESKey      string    `yaml:"aes_key"`
-	NLP         NLPConfig `yaml:"nlp,omitempty"`
+	Profiles    []Profile  `yaml:"profiles"`
+	MaxPoolSize int        `yaml:"max_pool_size"`
+	AESKey      string     `yaml:"aes_key"`
+	NLP         NLPConfig  `yaml:"nlp,omitempty"`
+	SchemaMode  SchemaMode `yaml:"schema_mode,omitempty"`
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -55,6 +63,12 @@ func LoadConfig(path string) (*Config, error) {
 	decoder := yaml.NewDecoder(f)
 	if err := decoder.Decode(&cfg); err != nil {
 		return nil, err
+	}
+	if cfg.SchemaMode == "" {
+		cfg.SchemaMode = SchemaModeCompact
+	}
+	if cfg.SchemaMode != SchemaModeCompact && cfg.SchemaMode != SchemaModeStandard {
+		return nil, fmt.Errorf("invalid schema_mode %q: must be one of compact|standard", cfg.SchemaMode)
 	}
 	// Decrypt passwords (fail fast on any decryption error for security clarity)
 	key := cfg.AESKey

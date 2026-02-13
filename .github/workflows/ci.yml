@@ -80,6 +80,9 @@ jobs:
       - name: Run go vet
         run: go vet ./...
 
+      - name: Enforce schema contract gates
+        run: go test -v ./internal/mcp -run TestSchemaGate
+
       - name: Verify version metadata sync
         run: |
           bash scripts/sync-version-from-server.sh

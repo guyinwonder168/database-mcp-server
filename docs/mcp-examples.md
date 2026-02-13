@@ -130,21 +130,56 @@ Lists all available MCP tools/actions for programmatic discovery.
 ```json
 {
   "tools": [
-    { "name": "configure-profile", "description": "Create or update a database connection profile. Required for all database actions.\nExample:\n{\"profile_name\":\"some-profile-name\",\"db_type\":\"mariadb\",\"host\":\"localhost\",\"port\":3306,\"username\":\"app\",\"password\":\"secret\",\"database_name\":\"mysql\",\"readonly\":false}" },
-    { "name": "list-profiles", "description": "List all configured database profiles.\nExample:\n{}" },
-    { "name": "execute-sql", "description": "Execute an arbitrary SQL query or statement. Use the 'database_name' parameter to select a database if needed.\nNote: For cross-database queries or describing tables in another database, use fully qualified table names (e.g., db.table).\nExample:\n{\"profile_name\":\"some-profile-name\",\"database_name\":\"some-database-name\",\"sql\":\"SELECT * FROM some-table-name WHERE some-field-name=34;\"}\n{\"profile_name\":\"some-profile-name\",\"sql\":\"DESCRIBE some-database-name.some-table-name\"}" },
-    { "name": "list-tables", "description": "List all tables in the selected database. Use 'database_name' to override the profile's default database.\nExample:\n{\"profile_name\":\"some-profile-name\",\"database_name\":\"some-database-name\"}" },
-    { "name": "describe-table", "description": "Describe the comprehensive schema of a table including columns, types, constraints, comments, and metadata. Returns detailed information to enable AI/agents to understand table structure and build intelligent queries.\nReturns: column names, data types, nullable status, key constraints, default values, column comments, character sets, collation, auto-increment status, max length, precision, and scale.\nExample:\n{\"profile_name\":\"some-profile-name\",\"database_name\":\"some-database-name\",\"table_name\":\"some-table-name\"}" },
-    { "name": "list-databases", "description": "List all databases/schemas available to the profile.\nExample:\n{\"profile_name\":\"some-profile-name\"}" },
-    { "name": "analyze-schema", "description": "Perform schema analysis for a database, including table/column metadata, relationships, and sample data integration.\n\nRequired parameters:\n\t - profile_name: Database profile to analyze\n\t - analysis_level: REQUIRED. Must be one of \"basic\", \"detailed\", \"comprehensive\".\n\t   - BASIC: Quick overview for initial exploration\n\t   - DETAILED: Comprehensive schema for query construction\n\t   - COMPREHENSIVE: Deep business context with AI insights\n\nOptional parameters:\n\t - database_name: Specific database (uses profile default if empty)\n\t - include_tables: Specific tables to analyze (all if empty)\n\t - exclude_tables: Tables to exclude from analysis\n\t - sample_size: Rows to sample per table (default: 10)\n\t - include_queries: Generate query suggestions (default: true)\n\nAI agents MUST specify analysis_level. Example:\n{\"profile_name\":\"analytics_db\",\"analysis_level\":\"detailed\",\"database_name\":\"analytics_db\"}" },
-    { "name": "mcp-info", "description": "Show MCP provider version and author.\nExample:\n{}" },
-    { "name": "smart-query-builder", "description": "Generate optimized SQL from high-level intent and schema analysis.\nInput: profile_name, intent (natural language), optional database_name/table_name(s).\nReturns: generated SQL, explanation, and any errors.\nExample:\n{\"profile_name\":\"some-profile-name\",\"intent\":\"attendance dashboard\"}" },
-    { "name": "discover-joins", "description": "Discover joinable relationships (foreign keys) between tables and suggest JOIN SQL.\nInput: profile_name (required), tables (optional).\nReturns: list of join suggestions and summary.\nExample:\n{\"profile_name\":\"analytics_db\",\"tables\":[\"orders\",\"customers\"]}" },
-    { "name": "sample-data", "description": "Fetch sample rows from a table to help AI/agents infer data types, formats, and value ranges.\nInput: profile_name (required), table_name (required), database_name (optional), sample_size (optional, default: 3).\nReturns: sample rows with column names and values.\nExample:\n{\"profile_name\":\"analytics_db\",\"table_name\":\"users\",\"sample_size\":5}" },
-    { "name": "list-tools", "description": "List all available MCP tools and their descriptions.\nExample:\n{}" }
+    { "name": "configure-profile", "description": "Create or update a database connection profile. Required for all database actions. Fields: profile_name, db_type, host/port/username/password (except sqlite), database_name, readonly, sslmode." },
+    { "name": "execute-sql", "description": "Execute an arbitrary SQL query or statement. Requires profile_name and database_name." },
+    { "name": "analyze-schema", "description": "Perform schema analysis for a database. Requires profile_name and analysis_level." },
+    { "name": "get-tool-help", "description": "Get usage help, examples, and common errors for a specific tool." }
   ]
 }
 ```
 
 ### Use Case
 This action enables AI agents and MCP clients to programmatically discover all available tools without needing prior knowledge of the server's capabilities.
+
+## Get Tool Help
+
+Returns compact, on-demand examples and troubleshooting for one tool.
+
+### Request
+```json
+{
+  "method": "get-tool-help",
+  "params": {
+    "tool_name": "execute-sql",
+    "topic": "all"
+  }
+}
+```
+
+### Response
+```json
+{
+  "tool_name": "execute-sql",
+  "found": true,
+  "summary": "Execute SQL on a selected profile and database.",
+  "minimal_example": {
+    "profile_name": "analytics_db",
+    "database_name": "analytics_db",
+    "sql": "SELECT 1"
+  },
+  "advanced_example": {
+    "profile_name": "analytics_db",
+    "database_name": "analytics_db",
+    "sql": "SELECT * FROM orders WHERE customer_id = ?",
+    "params": [123]
+  },
+  "common_errors": [
+    {
+      "error": "Missing required parameters",
+      "cause": "profile_name/database_name/sql omitted",
+      "fix": "Provide all required fields"
+    }
+  ],
+  "topics": ["summary", "minimal_example", "advanced_example", "errors", "all"]
+}
+```
