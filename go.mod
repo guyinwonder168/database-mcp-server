@@ -1,17 +1,17 @@
 module database-mcp-provider
 
-go 1.25
+go 1.26
 
-toolchain go1.25.7
+toolchain go1.26.0
 
 require (
 	github.com/blastrain/vitess-sqlparser v0.0.0-20201030050434-a139afbb1aba
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/google/jsonschema-go v0.4.2
 	github.com/lestrrat-go/file-rotatelogs v2.4.0+incompatible
-	github.com/lib/pq v1.11.1
-	github.com/mattn/go-sqlite3 v1.14.33
-	github.com/modelcontextprotocol/go-sdk v1.2.0
+	github.com/lib/pq v1.11.2
+	github.com/mattn/go-sqlite3 v1.14.34
+	github.com/modelcontextprotocol/go-sdk v1.3.0
 	gopkg.in/yaml.v3 v3.0.1
 // Add MCP SDK import here when available
 )
