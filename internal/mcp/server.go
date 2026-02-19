@@ -1,6 +1,6 @@
 // server.go
 // Author: guyinwonder
-// Version: v1.1.1
+// Version: v1.2.0
 // Project created using OpenAI GPT-4.1 via VSCode Kilocode AI code assistant extension.
 // MCP server implementation for the database-mcp-provider project.
 // Provides MCP actions for profile management, SQL execution, table/DB listing, and uses structured JSON logging.
@@ -39,21 +39,22 @@ type MCPServer struct {
 	ConfigPath    string // <--- Add this field for testability
 	errorAnalyzer *ErrorAnalyzer
 	toolsRegistry []ToolInfo
+	toolDecls     []ToolDeclarationInfo
 	contextMgr    *ctxmgr.Manager
 }
 
-const MCPVersion = "v1.1.1"
+const MCPVersion = "v1.2.0"
 const MCPAuthor = "guyinwonder"
 
 // Cap for number of data quality issues retained per column to prevent unbounded payload growth
 const maxQualityIssuesPerColumn = 10
 
 const sqliteListTablesQuery = "SELECT name FROM sqlite_master WHERE type='table'"
-
 const (
 	joinSQLTemplate                     = "SELECT * FROM %s JOIN %s ON %s.%s = %s.%s"
 	toolConfigureProfile                = "configure-profile"
 	toolDiscoverJoins                   = "discover-joins"
+	toolGetToolHelp                     = "get-tool-help"
 	toolListProfiles                    = "list-profiles"
 	mimeTypeApplicationJSON             = "application/json"
 	messageMissingRequiredParameters    = "Missing required parameters"
@@ -101,7 +102,111 @@ func inputSchemaWithParams[T any](paramsDescription string) *jsonschema.Schema {
 		schema.Properties = map[string]*jsonschema.Schema{}
 	}
 	schema.Properties["params"] = paramsArraySchema(paramsDescription)
-	return schema
+	return sanitizeSchemaForGemini(schema)
+}
+
+func inputSchemaFor[T any]() *jsonschema.Schema {
+	schema, err := jsonschema.ForType(reflect.TypeFor[T](), &jsonschema.ForOptions{})
+	if err != nil {
+		panic(fmt.Sprintf("failed to infer schema for tool input: %v", err))
+	}
+	return sanitizeSchemaForGemini(schema)
+}
+
+func analyzeSchemaInputSchema() *jsonschema.Schema {
+	return sanitizeSchemaForGemini(&jsonschema.Schema{
+		Type: "object",
+		Properties: map[string]*jsonschema.Schema{
+			"profile_name":    {Type: "string"},
+			"analysis_level":  {Type: "string"},
+			"database_name":   {Type: "string"},
+			"sample_size":     {Type: "integer"},
+			"include_queries": {Type: "boolean"},
+			"profiling":       {Type: "boolean"},
+		},
+		Required: []string{"profile_name", "analysis_level"},
+	})
+}
+
+func sanitizeSchemaForGemini(schema *jsonschema.Schema) *jsonschema.Schema {
+	if schema == nil {
+		return nil
+	}
+
+	raw, err := json.Marshal(schema)
+	if err != nil {
+		return schema
+	}
+
+	var node any
+	if err := json.Unmarshal(raw, &node); err != nil {
+		return schema
+	}
+
+	sanitizeSchemaNodeForGemini(node)
+
+	sanitizedRaw, err := json.Marshal(node)
+	if err != nil {
+		return schema
+	}
+
+	var sanitized jsonschema.Schema
+	if err := json.Unmarshal(sanitizedRaw, &sanitized); err != nil {
+		return schema
+	}
+
+	return &sanitized
+}
+
+func sanitizeSchemaNodeForGemini(node any) {
+	switch n := node.(type) {
+	case map[string]any:
+		if typeValue, ok := n["type"]; ok {
+			if typeList, ok := typeValue.([]any); ok {
+				nonNullType := ""
+				for _, item := range typeList {
+					typeName, ok := item.(string)
+					if !ok {
+						continue
+					}
+					if typeName == "null" {
+						continue
+					}
+					if nonNullType == "" {
+						nonNullType = typeName
+					}
+				}
+				if nonNullType != "" {
+					n["type"] = nonNullType
+					delete(n, "nullable")
+				}
+			}
+		}
+
+		if additionalPropertiesValue, ok := n["additionalProperties"]; ok {
+			if additionalPropertiesBool, ok := additionalPropertiesValue.(bool); ok && !additionalPropertiesBool {
+				delete(n, "additionalProperties")
+			}
+		}
+
+		if itemsValue, ok := n["items"]; ok {
+			if itemsBool, ok := itemsValue.(bool); ok {
+				if itemsBool {
+					n["items"] = map[string]any{"type": "string"}
+				} else {
+					delete(n, "items")
+				}
+			}
+		}
+
+		for _, child := range n {
+			sanitizeSchemaNodeForGemini(child)
+		}
+	case []any:
+		for _, child := range n {
+			sanitizeSchemaNodeForGemini(child)
+		}
+	}
 }
 
 // --- Semantic Relationship Mapping Helpers ---
@@ -340,6 +445,38 @@ func NewMCPServerWithConfig(configPath string) *MCPServer {
 	return mcpServer
 }
 
+func (s *MCPServer) toolDescriptionFormatter() func(string) string {
+	if s.schemaMode() == config.SchemaModeStandard {
+		return strings.TrimSpace
+	}
+	return compactToolDescription
+}
+
+func (s *MCPServer) schemaMode() config.SchemaMode {
+	cfg, err := config.LoadConfig(s.ConfigPath)
+	if err != nil {
+		return config.SchemaModeCompact
+	}
+	return cfg.SchemaMode
+}
+
+func compactToolDescription(description string) string {
+	compact := strings.TrimSpace(description)
+	if idx := strings.Index(compact, "Example:"); idx >= 0 {
+		compact = compact[:idx]
+	}
+	compact = strings.Join(strings.Fields(compact), " ")
+	const maxCompactDescriptionLength = 160
+	if len(compact) <= maxCompactDescriptionLength {
+		return compact
+	}
+	trimmed := compact[:maxCompactDescriptionLength]
+	if cut := strings.LastIndex(trimmed, " "); cut > 100 {
+		trimmed = trimmed[:cut]
+	}
+	return strings.TrimSpace(trimmed)
+}
+
 // registerAllTools registers all MCP tools and populates toolsRegistry.
 // This is called in Start() and in tests.
 func (s *MCPServer) registerAllTools() {
@@ -347,12 +484,13 @@ func (s *MCPServer) registerAllTools() {
 	if len(s.toolsRegistry) > 0 {
 		return
 	}
+	descriptionFormatter := s.toolDescriptionFormatter()
 
 	// configure-profile
 	{
 		tool := &mcp.Tool{
 			Name: toolConfigureProfile,
-			Description: `Create or update a database connection profile. Required for all database actions.
+			Description: descriptionFormatter(`Create or update a database connection profile. Required for all database actions.
 		Fields:
 		  profile_name (required)
 		  db_type (mysql|mariadb|postgres|sqlite) (required)
@@ -361,81 +499,80 @@ func (s *MCPServer) registerAllTools() {
 		  readonly (boolean)
 		  sslmode (Postgres only, optional: disable|require|verify-ca|verify-full; defaults to require)
 		Example:
-		{"profile_name":"some-profile-name","db_type":"postgres","host":"localhost","port":5432,"username":"app","password":"secret","database_name":"appdb","readonly":false,"sslmode":"require"}`,
+		{"profile_name":"some-profile-name","db_type":"postgres","host":"localhost","port":5432,"username":"app","password":"secret","database_name":"appdb","readonly":false,"sslmode":"require"}`),
+			InputSchema: inputSchemaFor[ConfigureProfileParams](),
 		}
-		mcp.AddTool(s.server, tool, s.handleConfigureProfile)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleConfigureProfile)
 	}
 
 	// list-profiles
 	{
 		tool := &mcp.Tool{
 			Name: toolListProfiles,
-			Description: `List all configured database profiles.
+			Description: descriptionFormatter(`List all configured database profiles.
   Example:
-  {}`,
+  {}`),
+			InputSchema: inputSchemaFor[ListProfilesParams](),
 		}
-		mcp.AddTool(s.server, tool, s.handleListProfiles)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleListProfiles)
 	}
 
 	// execute-sql
 	{
 		tool := &mcp.Tool{
 			Name: "execute-sql",
-			Description: `Execute an arbitrary SQL query or statement. Both 'profile_name' and 'database_name' are required.
+			Description: descriptionFormatter(`Execute an arbitrary SQL query or statement. Both 'profile_name' and 'database_name' are required.
 		Note: For cross-database queries or describing tables in another database, use fully qualified table names (e.g., db.table).
 		Example:
 		{"profile_name":"some-profile-name","database_name":"some-database-name","sql":"SELECT * FROM some-table-name WHERE some-field-name=34;"}
-		{"profile_name":"some-profile-name","sql":"DESCRIBE some-database-name.some-table-name"}`,
+		{"profile_name":"some-profile-name","sql":"DESCRIBE some-database-name.some-table-name"}`),
 			InputSchema: inputSchemaWithParams[ExecuteSQLParams]("positional parameters for prepared statements; BLOB/BINARY values must be base64-encoded strings"),
 		}
-		mcp.AddTool(s.server, tool, s.handleExecuteSQL)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleExecuteSQL)
 	}
 
 	// list-tables
 	{
 		tool := &mcp.Tool{
 			Name: "list-tables",
-			Description: `List all tables in the selected database. Both 'profile_name' and 'database_name' are required.
+			Description: descriptionFormatter(`List all tables in the selected database. Both 'profile_name' and 'database_name' are required.
 		Example:
-		{"profile_name":"some-profile-name","database_name":"some-database-name"}`,
+		{"profile_name":"some-profile-name","database_name":"some-database-name"}`),
+			InputSchema: inputSchemaFor[ListTablesParams](),
 		}
-		mcp.AddTool(s.server, tool, s.handleListTables)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleListTables)
 	}
 
 	// describe-table
 	{
 		tool := &mcp.Tool{
 			Name: "describe-table",
-			Description: `Describe the comprehensive schema of a table including columns, types, constraints, comments, and metadata.
+			Description: descriptionFormatter(`Describe the comprehensive schema of a table including columns, types, constraints, comments, and metadata.
   Returns: column names, data types, nullable status, key constraints, default values, column comments, character sets, collation, auto-increment status, max length, precision, and scale.
   Example:
-  {"profile_name":"some-profile-name","database_name":"some-database-name","table_name":"some-table-name"}`,
+  {"profile_name":"some-profile-name","database_name":"some-database-name","table_name":"some-table-name"}`),
+			InputSchema: inputSchemaFor[DescribeTableParams](),
 		}
-		mcp.AddTool(s.server, tool, s.handleDescribeTable)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleDescribeTable)
 	}
 
 	// list-databases
 	{
 		tool := &mcp.Tool{
 			Name: "list-databases",
-			Description: `List all databases/schemas available to the profile.
+			Description: descriptionFormatter(`List all databases/schemas available to the profile.
   Example:
-  {"profile_name":"some-profile-name"}`,
+  {"profile_name":"some-profile-name"}`),
+			InputSchema: inputSchemaFor[ListDatabasesParams](),
 		}
-		mcp.AddTool(s.server, tool, s.handleListDatabases)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleListDatabases)
 	}
 
 	// analyze-schema
 	{
 		tool := &mcp.Tool{
 			Name: "analyze-schema",
-			Description: `Perform schema analysis for a database, including table/column metadata, relationships, and sample data integration.
+			Description: descriptionFormatter(`Perform schema analysis for a database, including table/column metadata, relationships, and sample data integration.
   
   Required parameters:
    - profile_name: Database profile to analyze
@@ -453,164 +590,173 @@ func (s *MCPServer) registerAllTools() {
    - profiling: Enable advanced statistical and pattern profiling (default: false)
   
   AI agents MUST specify analysis_level. Example:
-  {"profile_name":"analytics_db","analysis_level":"detailed","database_name":"analytics_db"}`,
+  {"profile_name":"analytics_db","analysis_level":"detailed","database_name":"analytics_db"}`),
+			InputSchema: analyzeSchemaInputSchema(),
 		}
-		mcp.AddTool(s.server, tool, s.handleAnalyzeSchema)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleAnalyzeSchema)
 	}
 
 	// smart-query-builder
 	{
 		tool := &mcp.Tool{
 			Name: "smart-query-builder",
-			Description: `Generate optimized SQL from high-level intent and schema analysis.
+			Description: descriptionFormatter(`Generate optimized SQL from high-level intent and schema analysis.
   Input: profile_name, intent (natural language), optional database_name/table_name(s).
   Returns: generated SQL, explanation, and any errors.
   Example:
-  {"profile_name":"some-profile-name","intent":"attendance dashboard"}`,
+  {"profile_name":"some-profile-name","intent":"attendance dashboard"}`),
+			InputSchema: inputSchemaFor[SmartQueryBuilderParams](),
 		}
-		mcp.AddTool(s.server, tool, s.handleSmartQueryBuilder)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleSmartQueryBuilder)
 	}
 
 	// optimize-query
 	{
 		tool := &mcp.Tool{
 			Name: "optimize-query",
-			Description: `Run EXPLAIN and return optimization findings for a SQL statement.
+			Description: descriptionFormatter(`Run EXPLAIN and return optimization findings for a SQL statement.
 		Input: profile_name (required), database_name (required), sql (required), params (optional).
 		Returns: execution plan, detected issues (missing indexes, inefficient joins), and estimated improvement range.
 		Example:
-		{"profile_name":"analytics_db","database_name":"analytics_db","sql":"SELECT * FROM orders WHERE customer_id = ?","params":[123]}`,
+		{"profile_name":"analytics_db","database_name":"analytics_db","sql":"SELECT * FROM orders WHERE customer_id = ?","params":[123]}`),
 			InputSchema: inputSchemaWithParams[OptimizeQueryParams]("positional parameters for prepared statements; BLOB/BINARY values must be base64-encoded strings"),
 		}
-		mcp.AddTool(s.server, tool, s.handleOptimizeQuery)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleOptimizeQuery)
 	}
 
 	// validate-query
 	{
 		tool := &mcp.Tool{
 			Name: "validate-query",
-			Description: `Validate SQL syntax and detect risky patterns without executing the statement.
+			Description: descriptionFormatter(`Validate SQL syntax and detect risky patterns without executing the statement.
 		Input: profile_name (required), sql (required), database_name (optional), params (optional).
 		Returns: validation issues (syntax, logic, security) and pass/fail summary.
 		Example:
-		{"profile_name":"analytics_db","sql":"SELECT * FROM users WHERE id = ?","params":[123]}`,
+		{"profile_name":"analytics_db","sql":"SELECT * FROM users WHERE id = ?","params":[123]}`),
 			InputSchema: inputSchemaWithParams[ValidateQueryParams]("positional parameters for prepared statements (metadata only); BLOB/BINARY values must be base64-encoded strings"),
 		}
-		mcp.AddTool(s.server, tool, s.handleValidateQuery)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleValidateQuery)
 	}
 
 	// analyze-data-lineage
 	{
 		tool := &mcp.Tool{
 			Name: "analyze-data-lineage",
-			Description: `Trace data dependencies for a table using foreign key relationships.
+			Description: descriptionFormatter(`Trace data dependencies for a table using foreign key relationships.
   Input: profile_name (required), table_name (required), database_name (optional), scope (optional: upstream|downstream|both).
   Returns: upstream/downstream tables and dependency edges.
   Example:
-  {"profile_name":"analytics_db","table_name":"orders","scope":"both"}`,
+  {"profile_name":"analytics_db","table_name":"orders","scope":"both"}`),
+			InputSchema: inputSchemaFor[AnalyzeDataLineageParams](),
 		}
-		mcp.AddTool(s.server, tool, s.handleAnalyzeDataLineage)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleAnalyzeDataLineage)
 	}
 
 	// discover-insights
 	{
 		tool := &mcp.Tool{
 			Name: "discover-insights",
-			Description: `Automatically discovers KPIs, trends, anomalies, and distribution patterns in database tables.
+			Description: descriptionFormatter(`Automatically discovers KPIs, trends, anomalies, and distribution patterns in database tables.
   Input: profile_name (required), table_name (required), columns (optional), insight_types (optional: kpi, trend, anomaly, distribution), max_results (optional).
   Returns: list of insights with type, column, description, and detailed metrics.
   Example:
-  {"profile_name":"analytics_db","table_name":"sales","insight_types":["kpi","trend"],"max_results":10}`,
+  {"profile_name":"analytics_db","table_name":"sales","insight_types":["kpi","trend"],"max_results":10}`),
 			InputSchema: inputSchemaWithParams[DiscoverInsightsParams]("Optional query parameters for filtering insights"),
 		}
-		mcp.AddTool(s.server, tool, s.handleDiscoverInsights)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleDiscoverInsights)
 	}
 
 	// track-schema-changes
 	{
 		tool := &mcp.Tool{
 			Name: "track-schema-changes",
-			Description: `Track schema evolution with snapshots, history, migration generation, and drift detection.
+			Description: descriptionFormatter(`Track schema evolution with snapshots, history, migration generation, and drift detection.
   Input: profile_name (required), operation (optional: track|history|generate_migration|detect_drift), database_name (optional), dialect (optional),
          from_snapshot_id/to_snapshot_id (optional for migration), snapshot_id (optional for drift), limit (optional), retention_days (optional).
   Returns: schema snapshots, detected changes, migration script/validation/impact, or drift report depending on operation.
   Example:
-  {"profile_name":"analytics_db","operation":"track","retention_days":30}`,
+  {"profile_name":"analytics_db","operation":"track","retention_days":30}`),
+			InputSchema: inputSchemaFor[TrackSchemaChangesParams](),
 		}
-		mcp.AddTool(s.server, tool, s.handleTrackSchemaChanges)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleTrackSchemaChanges)
 	}
 
 	// federated-query
 	{
 		tool := &mcp.Tool{
 			Name: "federated-query",
-			Description: `Execute read-only SQL across multiple profiles with optional cross-profile JOINs and aggregations.
+			Description: descriptionFormatter(`Execute read-only SQL across multiple profiles with optional cross-profile JOINs and aggregations.
   Input: either sql (profile.table syntax) or explicit sub_queries, joins (optional), aggregations (optional), limit/offset (optional), max_concurrency (optional).
   Returns: combined rows plus execution metadata (execution_time_ms, rows_from_each, partial errors).
   Example:
-  {"sub_queries":[{"profile":"crm_db","sql":"SELECT id,name FROM users","alias":"u"},{"profile":"analytics_db","sql":"SELECT user_id,total FROM orders","alias":"o"}],"joins":[{"left":"u.id","right":"o.user_id","type":"INNER"}],"limit":100}`,
+  {"sub_queries":[{"profile":"crm_db","sql":"SELECT id,name FROM users","alias":"u"},{"profile":"analytics_db","sql":"SELECT user_id,total FROM orders","alias":"o"}],"joins":[{"left":"u.id","right":"o.user_id","type":"INNER"}],"limit":100}`),
+			InputSchema: inputSchemaFor[FederatedQueryRequest](),
 		}
-		mcp.AddTool(s.server, tool, s.handleFederatedQuery)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleFederatedQuery)
 	}
 
 	// discover-joins
 	{
 		tool := &mcp.Tool{
 			Name: toolDiscoverJoins,
-			Description: `Discover joinable relationships (foreign keys) between tables and suggest JOIN SQL.
+			Description: descriptionFormatter(`Discover joinable relationships (foreign keys) between tables and suggest JOIN SQL.
   Input: profile_name (required), tables (optional).
   Returns: list of join suggestions and summary.
   Example:
-  {"profile_name":"analytics_db","tables":["orders","customers"]}`,
+  {"profile_name":"analytics_db","tables":["orders","customers"]}`),
+			InputSchema: inputSchemaFor[DiscoverJoinsParams](),
 		}
-		mcp.AddTool(s.server, tool, s.handleDiscoverJoins)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleDiscoverJoins)
 	}
 
 	// sample-data
 	{
 		tool := &mcp.Tool{
 			Name: "sample-data",
-			Description: `Fetch sample rows from a table to help AI/agents infer data types, formats, and value ranges.
+			Description: descriptionFormatter(`Fetch sample rows from a table to help AI/agents infer data types, formats, and value ranges.
   Input: profile_name (required), database_name (required), table_name (required), sample_size (optional, default: 3).
   Returns: sample rows with column names and values.
   Example:
-  {"profile_name":"analytics_db","database_name":"analytics_db","table_name":"users","sample_size":5}`,
+  {"profile_name":"analytics_db","database_name":"analytics_db","table_name":"users","sample_size":5}`),
+			InputSchema: inputSchemaFor[SampleDataParams](),
 		}
-		mcp.AddTool(s.server, tool, s.handleSampleData)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleSampleData)
 	}
 
 	// mcp-info
 	{
 		tool := &mcp.Tool{
 			Name: "mcp-info",
-			Description: `Show MCP provider version and author.
+			Description: descriptionFormatter(`Show MCP provider version and author.
   Example:
-  {}`,
+  {}`),
+			InputSchema: inputSchemaFor[MCPInfoParams](),
 		}
-		mcp.AddTool(s.server, tool, s.handleMCPInfo)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleMCPInfo)
 	}
 
 	// list-tools
 	{
 		tool := &mcp.Tool{
 			Name: "list-tools",
-			Description: `List all available MCP tools and their descriptions.
+			Description: descriptionFormatter(`List all available MCP tools and their descriptions.
   Example:
-  {}`,
+  {}`),
+			InputSchema: inputSchemaFor[ListToolsParams](),
 		}
-		mcp.AddTool(s.server, tool, s.handleListTools)
-		s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+		addTool(s, tool, s.handleListTools)
+	}
+
+	// get-tool-help
+	{
+		tool := &mcp.Tool{
+			Name: toolGetToolHelp,
+			Description: descriptionFormatter(`Get usage help, examples, and common errors for a specific tool.
+  Example:
+  {"tool_name":"execute-sql","topic":"all"}`),
+			InputSchema: inputSchemaFor[GetToolHelpParams](),
+		}
+		addTool(s, tool, s.handleGetToolHelp)
 	}
 }
 
@@ -904,16 +1050,18 @@ func (s *MCPServer) handleMCPInfo(ctx context.Context, _ *mcp.CallToolRequest, i
 // --- MCP Handler Parameter Structs ---
 
 type ConfigureProfileParams struct {
-	ProfileName  string `json:"profile_name" jsonschema:"unique name for this database profile"`
-	DBType       string `json:"db_type" jsonschema:"database type: mysql | mariadb | postgres | sqlite"`
-	Host         string `json:"host,omitempty" jsonschema:"hostname or IP (not required for sqlite)"`
-	Port         int    `json:"port,omitempty" jsonschema:"TCP port number (not required for sqlite)"`
-	Username     string `json:"username,omitempty" jsonschema:"database username (not required for sqlite)"`
-	Password     string `json:"password,omitempty" jsonschema:"database password (not required for sqlite)"`
-	DatabaseName string `json:"database_name" jsonschema:"default database/schema name or sqlite file path"`
-	Readonly     bool   `json:"readonly" jsonschema:"when true, write operations are blocked"`
-	SSLMode      string `json:"sslmode,omitempty" jsonschema:"postgres only: disable | require | verify-ca | verify-full"`
+	ProfileName  string `json:"profile_name"`
+	DBType       string `json:"db_type"`
+	Host         string `json:"host,omitempty"`
+	Port         int    `json:"port,omitempty"`
+	Username     string `json:"username,omitempty"`
+	Password     string `json:"password,omitempty"`
+	DatabaseName string `json:"database_name"`
+	Readonly     bool   `json:"readonly"`
+	SSLMode      string `json:"sslmode,omitempty"`
 }
+
+type ListProfilesParams struct{}
 
 type ListProfilesResult struct {
 	Profiles []struct {
@@ -923,10 +1071,10 @@ type ListProfilesResult struct {
 }
 
 type ExecuteSQLParams struct {
-	ProfileName  string        `json:"profile_name" jsonschema:"profile to use for connection"`
-	SQL          string        `json:"sql" jsonschema:"SQL statement to execute"`
-	DatabaseName string        `json:"database_name" jsonschema:"target database/schema (sqlite uses file path)"`
-	Params       []interface{} `json:"params,omitempty" jsonschema:"positional parameters for prepared statement"`
+	ProfileName  string        `json:"profile_name"`
+	SQL          string        `json:"sql"`
+	DatabaseName string        `json:"database_name"`
+	Params       []interface{} `json:"params,omitempty"`
 }
 
 type ExecuteSQLResult struct {
@@ -936,8 +1084,8 @@ type ExecuteSQLResult struct {
 }
 
 type ListTablesParams struct {
-	ProfileName  string `json:"profile_name" jsonschema:"profile to use for connection"`
-	DatabaseName string `json:"database_name" jsonschema:"database/schema to inspect"`
+	ProfileName  string `json:"profile_name"`
+	DatabaseName string `json:"database_name"`
 }
 
 type ListTablesResult struct {
@@ -945,9 +1093,9 @@ type ListTablesResult struct {
 }
 
 type DescribeTableParams struct {
-	ProfileName  string `json:"profile_name" jsonschema:"profile to use for connection"`
-	DatabaseName string `json:"database_name" jsonschema:"database/schema containing the table"`
-	TableName    string `json:"table_name" jsonschema:"table to describe"`
+	ProfileName  string `json:"profile_name"`
+	DatabaseName string `json:"database_name"`
+	TableName    string `json:"table_name"`
 }
 
 type DescribeTableResult struct {
@@ -972,10 +1120,10 @@ type ColumnInfo struct {
 
 // --- Smart Query Builder Types ---
 type SmartQueryBuilderParams struct {
-	ProfileName  string   `json:"profile_name" jsonschema:"profile to use for connection"`
-	Intent       string   `json:"intent" jsonschema:"natural-language intent to convert to SQL"`
-	DatabaseName string   `json:"database_name,omitempty" jsonschema:"optional database/schema context"`
-	TableNames   []string `json:"table_names,omitempty" jsonschema:"optional focus tables for SQL generation"`
+	ProfileName  string   `json:"profile_name"`
+	Intent       string   `json:"intent"`
+	DatabaseName string   `json:"database_name,omitempty"`
+	TableNames   []string `json:"table_names,omitempty"`
 }
 
 type SmartQueryBuilderResult struct {
@@ -985,10 +1133,10 @@ type SmartQueryBuilderResult struct {
 
 // --- Validate Query Types ---
 type ValidateQueryParams struct {
-	ProfileName  string        `json:"profile_name" jsonschema:"profile to use for connection"`
-	DatabaseName string        `json:"database_name,omitempty" jsonschema:"optional database/schema context"`
-	SQL          string        `json:"sql" jsonschema:"SQL statement to validate"`
-	Params       []interface{} `json:"params,omitempty" jsonschema:"positional parameters for prepared statement (metadata only)"`
+	ProfileName  string        `json:"profile_name"`
+	DatabaseName string        `json:"database_name,omitempty"`
+	SQL          string        `json:"sql"`
+	Params       []interface{} `json:"params,omitempty"`
 }
 
 type ValidateQueryResult struct {
@@ -1002,10 +1150,10 @@ type ValidateQueryResult struct {
 
 // --- Optimize Query Types ---
 type OptimizeQueryParams struct {
-	ProfileName  string        `json:"profile_name" jsonschema:"profile to use for connection"`
-	DatabaseName string        `json:"database_name" jsonschema:"database/schema to use for EXPLAIN (sqlite uses file path)"`
-	SQL          string        `json:"sql" jsonschema:"SQL statement to analyze"`
-	Params       []interface{} `json:"params,omitempty" jsonschema:"positional parameters for prepared statement"`
+	ProfileName  string        `json:"profile_name"`
+	DatabaseName string        `json:"database_name"`
+	SQL          string        `json:"sql"`
+	Params       []interface{} `json:"params,omitempty"`
 }
 
 type OptimizeQueryResult struct {
@@ -1017,8 +1165,8 @@ type OptimizeQueryResult struct {
 
 // --- End Smart Query Builder Types ---
 type DiscoverJoinsParams struct {
-	ProfileName string   `json:"profile_name" jsonschema:"profile to use for connection"`
-	Tables      []string `json:"tables,omitempty" jsonschema:"optional subset of tables to analyze for joins"`
+	ProfileName string   `json:"profile_name"`
+	Tables      []string `json:"tables,omitempty"`
 }
 
 type JoinSuggestion struct {
@@ -1036,8 +1184,10 @@ type DiscoverJoinsResult struct {
 }
 
 type ListDatabasesParams struct {
-	ProfileName string `json:"profile_name" jsonschema:"profile to use for connection"`
+	ProfileName string `json:"profile_name"`
 }
+
+type MCPInfoParams struct{}
 
 type ListDatabasesResult struct {
 	Databases []string `json:"databases"`
@@ -1045,10 +1195,10 @@ type ListDatabasesResult struct {
 
 // --- Sample Data Types ---
 type SampleDataParams struct {
-	ProfileName  string `json:"profile_name" jsonschema:"profile to use for connection"`
-	TableName    string `json:"table_name" jsonschema:"table to sample"`
-	DatabaseName string `json:"database_name" jsonschema:"database/schema containing the table"`
-	SampleSize   int    `json:"sample_size,omitempty" jsonschema:"number of rows to return (default 3)"`
+	ProfileName  string `json:"profile_name"`
+	TableName    string `json:"table_name"`
+	DatabaseName string `json:"database_name"`
+	SampleSize   int    `json:"sample_size,omitempty"`
 }
 
 type SampleDataResult struct {
@@ -1072,13 +1222,20 @@ type ToolInfo struct {
 	Description string `json:"description"`
 }
 
+// ToolDeclarationInfo captures MCP declaration payload fields used in tools/list.
+type ToolDeclarationInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	InputSchema any    `json:"inputSchema,omitempty"`
+}
+
 // --- Lineage Types ---
 type AnalyzeDataLineageParams struct {
-	ProfileName  string   `json:"profile_name" jsonschema:"profile to use for connection"`
-	DatabaseName string   `json:"database_name,omitempty" jsonschema:"database/schema to use (sqlite uses file path)"`
-	TableName    string   `json:"table_name" jsonschema:"target table for lineage"`
-	Scope        string   `json:"scope,omitempty" jsonschema:"upstream|downstream|both (default both)"`
-	Tables       []string `json:"tables,omitempty" jsonschema:"optional subset of tables to include"`
+	ProfileName  string   `json:"profile_name"`
+	DatabaseName string   `json:"database_name,omitempty"`
+	TableName    string   `json:"table_name"`
+	Scope        string   `json:"scope,omitempty"`
+	Tables       []string `json:"tables,omitempty"`
 }
 
 type AnalyzeDataLineageResult struct {
@@ -1115,6 +1272,39 @@ func (s *MCPServer) handleListTools(
 			},
 		},
 	}, nil, nil
+}
+
+func (s *MCPServer) registerToolInfo(tool *mcp.Tool) {
+	s.toolsRegistry = append(s.toolsRegistry, ToolInfo{Name: tool.Name, Description: tool.Description})
+	s.toolDecls = append(s.toolDecls, ToolDeclarationInfo{Name: tool.Name, Description: tool.Description, InputSchema: tool.InputSchema})
+}
+
+func addTool[In any, Out any](
+	s *MCPServer,
+	tool *mcp.Tool,
+	handler func(context.Context, *mcp.CallToolRequest, In) (*mcp.CallToolResult, Out, error),
+) {
+	mcp.AddTool(s.server, tool, wrapToolHandler(tool.Name, handler))
+	s.registerToolInfo(tool)
+}
+
+func wrapToolHandler[In any, Out any](
+	toolName string,
+	handler func(context.Context, *mcp.CallToolRequest, In) (*mcp.CallToolResult, Out, error),
+) func(context.Context, *mcp.CallToolRequest, In) (*mcp.CallToolResult, Out, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, input In) (*mcp.CallToolResult, Out, error) {
+		result, output, err := handler(ctx, req, input)
+		if err == nil {
+			return result, output, nil
+		}
+		structErr := NewStructuredError(
+			ErrorCodeInternalError,
+			"Tool execution failed",
+			err.Error(),
+		).WithContext("tool_name", toolName)
+		var zeroOut Out
+		return errorResult(structErr), zeroOut, nil
+	}
 }
 
 // resourceToolsHandler returns the current tools registry as a resource.

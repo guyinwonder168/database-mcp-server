@@ -42,3 +42,5 @@ pkg/mcp-server
 pkg/log/*.log.*
 
 docs/plans/
+#exclude wiki from main repo
+wiki/

@@ -19,11 +19,11 @@ const (
 
 // DiscoverInsightsParams represents the input parameters for discovering insights
 type DiscoverInsightsParams struct {
-	ProfileName  string        `json:"profile_name" jsonschema:"profile to use for connection"`
-	TableName    string        `json:"table_name" jsonschema:"table to analyze for insights"`
-	Columns      []string      `json:"columns,omitempty" jsonschema:"specific columns to analyze (optional)"`
-	InsightTypes []InsightType `json:"insight_types,omitempty" jsonschema:"filter by insight type: kpi, trend, anomaly, distribution"`
-	MaxResults   int           `json:"max_results,omitempty" jsonschema:"maximum number of insights to return"`
+	ProfileName  string        `json:"profile_name"`
+	TableName    string        `json:"table_name"`
+	Columns      []string      `json:"columns,omitempty"`
+	InsightTypes []InsightType `json:"insight_types,omitempty"`
+	MaxResults   int           `json:"max_results,omitempty"`
 }
 
 // handleDiscoverInsights implements the discover-insights MCP tool

@@ -1,14 +1,14 @@
 # Database MCP Server
 
-[![Go](https://img.shields.io/badge/Go-1.25.7%2B-00ADD8?logo=Go&logoColor=white)](https://go.dev)
+[![Go](https://img.shields.io/badge/Go-1.26.0%2B-00ADD8?logo=Go&logoColor=white)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/Version-v1.1.1-blue.svg)](https://github.com/guyinwonder168/database-mcp-server/releases/tag/v1.1.1)
+[![Version](https://img.shields.io/badge/Version-v1.2.0-blue.svg)](https://github.com/guyinwonder168/database-mcp-server/releases/tag/v1.2.0)
 [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=guyinwonder168_database-mcp-server&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=guyinwonder168_database-mcp-server)
 [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=guyinwonder168_database-mcp-server&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=guyinwonder168_database-mcp-server)
 [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=guyinwonder168_database-mcp-server&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=guyinwonder168_database-mcp-server)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=guyinwonder168_database-mcp-server&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=guyinwonder168_database-mcp-server)
 
-A production-ready Model Context Protocol (MCP) provider for SQL databases, built using various vibe coding tools. Supports MySQL, MariaDB, PostgreSQL, and SQLite. Features robust connection pooling, secure AES-GCM credential storage, structured JSON logging, comprehensive schema introspection, and a full suite of 18 MCP tools. Built and tested with Go 1.25.7.
+A production-ready Model Context Protocol (MCP) provider for SQL databases, built using various vibe coding tools. Supports MySQL, MariaDB, PostgreSQL, and SQLite. Features robust connection pooling, secure AES-GCM credential storage, structured JSON logging, comprehensive schema introspection, and a full suite of 19 MCP tools. Built and tested with Go 1.26.0.
 
 ## 🚀 Quick Start
 
@@ -28,10 +28,10 @@ go build -o mcp-server ./cmd/server/main.go
 
 ```bash
 # Pull the release image
-docker pull ghcr.io/guyinwonder168/database-mcp-server:v1.1.1
+docker pull ghcr.io/guyinwonder168/database-mcp-server:v1.2.0
 
 # Run with stdio transport
-docker run --rm -i ghcr.io/guyinwonder168/database-mcp-server:v1.1.1
+docker run --rm -i ghcr.io/guyinwonder168/database-mcp-server:v1.2.0
 ```
 
 ```bash
@@ -39,7 +39,7 @@ docker run --rm -i ghcr.io/guyinwonder168/database-mcp-server:v1.1.1
 mkdir -p ./.mcp-data
 docker run --rm -i \
   -v "$(pwd)/.mcp-data:/app" \
-  ghcr.io/guyinwonder168/database-mcp-server:v1.1.1
+  ghcr.io/guyinwonder168/database-mcp-server:v1.2.0
 ```
 
 Package registry: `https://github.com/guyinwonder168/database-mcp-server/pkgs/container/database-mcp-server`
@@ -87,8 +87,37 @@ Package registry: `https://github.com/guyinwonder168/database-mcp-server/pkgs/co
 | `track-schema-changes` | Track schema snapshots/history, generate migrations, and detect schema drift |
 | `federated-query` | Execute read-only cross-profile subqueries with optional JOINs, aggregation, and partial-failure metadata |
 | `list-tools` | List all available MCP tools and descriptions |
+| `get-tool-help` | Return on-demand summary, examples, and common errors for a tool |
 | `analyze-schema` | Comprehensive schema analysis with AI query suggestions and optional advanced profiling (`profiling`) |
 | `mcp-info` | Show provider version and author |
+
+## 🤖 Model Compatibility
+
+- Default schema mode is `compact` for tool-first and strict declaration-budget clients.
+- Optional `standard` mode keeps verbose tool descriptions for human-readable metadata.
+- All 19 MCP tools are always registered.
+- Use `get-tool-help` for per-tool examples and troubleshooting without inflating startup metadata.
+
+`config.yaml`:
+
+```yaml
+schema_mode: compact # compact|standard
+```
+
+Recommended startup configuration for strict tool-loading clients:
+
+```yaml
+schema_mode: compact
+```
+
+Helper tool request example:
+
+```json
+{
+  "tool_name": "execute-sql",
+  "topic": "all"
+}
+```
 
 ## 📖 Documentation
 
@@ -143,23 +172,19 @@ go test ./...
 
 ## 📊 Project Status
 
-- **Version:** v1.1.1
+- **Version:** v1.2.0
 - **Built with:** Various vibe coding tools
 - **Status:** Production Ready ✅
-- All 18 MCP tools are fully implemented and OpenAPI-aligned.
+- All 19 MCP tools are fully implemented and OpenAPI-aligned.
 - Enhanced schema introspection and sample data features.
 - Optional advanced profiling in `analyze-schema` for column-level statistics, pattern detection, and quality scoring.
 - AES-GCM encryption, connection pooling, and structured error handling are enforced.
 - Comprehensive unit and integration tests included.
 - Ready for production use.
 
- - **Business Intelligence Discovery**: Added `discover-insights` tool for automatic KPI, trend, anomaly, and distribution analysis
+- **Business Intelligence Discovery**: Added `discover-insights` tool for automatic KPI, trend, anomaly, and distribution analysis
 
 ---
-
-## License
-
-MIT
 
 ## Enhancement Planning
 

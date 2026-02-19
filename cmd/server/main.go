@@ -78,7 +78,7 @@ func ensureConfigFile(configPath string) error {
 }
 
 func buildMinimalConfigPayload() []byte {
-	return []byte(fmt.Sprintf("profiles: []\nmax_pool_size: 5\naes_key: %q\n", randomASCIIKey(32)))
+	return []byte(fmt.Sprintf("profiles: []\nmax_pool_size: 5\naes_key: %q\nschema_mode: compact\n", randomASCIIKey(32)))
 }
 
 func randomASCIIKey(length int) string {
