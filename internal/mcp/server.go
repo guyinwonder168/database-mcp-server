@@ -43,7 +43,7 @@ type MCPServer struct {
 	contextMgr    *ctxmgr.Manager
 }
 
-const MCPVersion = "v1.2.0"
+const MCPVersion = "v1.2.1"
 const MCPAuthor = "guyinwonder"
 
 // Cap for number of data quality issues retained per column to prevent unbounded payload growth

@@ -2,7 +2,7 @@
 
 [![Go](https://img.shields.io/badge/Go-1.26.0%2B-00ADD8?logo=Go&logoColor=white)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/Version-v1.2.0-blue.svg)](https://github.com/guyinwonder168/database-mcp-server/releases/tag/v1.2.0)
+[![Version](https://img.shields.io/badge/Version-v1.2.1-blue.svg)](https://github.com/guyinwonder168/database-mcp-server/releases/tag/v1.2.1)
 [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=guyinwonder168_database-mcp-server&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=guyinwonder168_database-mcp-server)
 [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=guyinwonder168_database-mcp-server&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=guyinwonder168_database-mcp-server)
 [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=guyinwonder168_database-mcp-server&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=guyinwonder168_database-mcp-server)
@@ -28,10 +28,10 @@ go build -o mcp-server ./cmd/server/main.go
 
 ```bash
 # Pull the release image
-docker pull ghcr.io/guyinwonder168/database-mcp-server:v1.2.0
+docker pull ghcr.io/guyinwonder168/database-mcp-server:v1.2.1
 
 # Run with stdio transport
-docker run --rm -i ghcr.io/guyinwonder168/database-mcp-server:v1.2.0
+docker run --rm -i ghcr.io/guyinwonder168/database-mcp-server:v1.2.1
 ```
 
 ```bash
@@ -39,7 +39,7 @@ docker run --rm -i ghcr.io/guyinwonder168/database-mcp-server:v1.2.0
 mkdir -p ./.mcp-data
 docker run --rm -i \
   -v "$(pwd)/.mcp-data:/app" \
-  ghcr.io/guyinwonder168/database-mcp-server:v1.2.0
+  ghcr.io/guyinwonder168/database-mcp-server:v1.2.1
 ```
 
 Package registry: `https://github.com/guyinwonder168/database-mcp-server/pkgs/container/database-mcp-server`
@@ -96,6 +96,7 @@ Package registry: `https://github.com/guyinwonder168/database-mcp-server/pkgs/co
 - Default schema mode is `compact` for tool-first and strict declaration-budget clients.
 - Optional `standard` mode keeps verbose tool descriptions for human-readable metadata.
 - All 19 MCP tools are always registered.
+- **Gemini Compatibility**: Schemas are automatically sanitized to comply with Google Gemini's OpenAPI 3.0 subset requirements (single `type` values, no `additionalProperties: false`, proper `items` schemas).
 - Use `get-tool-help` for per-tool examples and troubleshooting without inflating startup metadata.
 
 `config.yaml`:
@@ -172,7 +173,7 @@ go test ./...
 
 ## 📊 Project Status
 
-- **Version:** v1.2.0
+- **Version:** v1.2.1
 - **Built with:** Various vibe coding tools
 - **Status:** Production Ready ✅
 - All 19 MCP tools are fully implemented and OpenAPI-aligned.

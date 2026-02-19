@@ -6,6 +6,15 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+## [v1.2.1] - 2026-02-19
+
+### Fixed
+- JSON Schema sanitization for Google Gemini compatibility (OpenAPI 3.0 subset compliance).
+  - Converts `type: ["null","array"]` to `type: "array"` (Gemini requires single type strings).
+  - Removes `additionalProperties: false` (rejected by Gemini endpoint).
+  - Fixes boolean `items: true` to proper schema objects.
+- SonarCloud code quality issues: S8193 (unnecessary variable declarations) and S3776 (cognitive complexity reduction via helper function extraction).
+
 ## [v1.2.0] - 2026-02-13
 
 ### Added
