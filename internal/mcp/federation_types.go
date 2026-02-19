@@ -24,13 +24,13 @@ type Row []interface{}
 
 // FederatedQueryRequest defines input for the federated-query tool.
 type FederatedQueryRequest struct {
-	SQL            string          `json:"sql,omitempty" jsonschema:"optional federated SQL expression (profile.table syntax required)"`
-	SubQueries     []SubQuery      `json:"sub_queries,omitempty" jsonschema:"explicit subqueries to execute (use when sql is omitted)"`
-	Joins          []JoinCondition `json:"joins,omitempty" jsonschema:"cross-source join conditions"`
-	Aggregations   []Aggregation   `json:"aggregations,omitempty" jsonschema:"optional post-join aggregations"`
-	Limit          int             `json:"limit,omitempty" jsonschema:"max rows to return after processing"`
-	Offset         int             `json:"offset,omitempty" jsonschema:"row offset to apply after processing"`
-	MaxConcurrency int             `json:"max_concurrency,omitempty" jsonschema:"max parallel subquery executions (default auto)"`
+	SQL            string          `json:"sql,omitempty"`
+	SubQueries     []SubQuery      `json:"sub_queries,omitempty"`
+	Joins          []JoinCondition `json:"joins,omitempty"`
+	Aggregations   []Aggregation   `json:"aggregations,omitempty"`
+	Limit          int             `json:"limit,omitempty"`
+	Offset         int             `json:"offset,omitempty"`
+	MaxConcurrency int             `json:"max_concurrency,omitempty"`
 }
 
 // SubQuery defines one query target in federation execution.

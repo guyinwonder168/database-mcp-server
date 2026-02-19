@@ -20,7 +20,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
-          go-version: '1.25.7'
+          go-version: '1.26.0'
           cache: true
 
       - name: Download dependencies
@@ -74,11 +74,14 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
-          go-version: '1.25.7'
+          go-version: '1.26.0'
           cache: true
 
       - name: Run go vet
         run: go vet ./...
+
+      - name: Enforce schema contract gates
+        run: go test -v ./internal/mcp -run TestSchemaGate
 
       - name: Verify version metadata sync
         run: |
@@ -93,7 +96,7 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
         with:
-          version: v2.8.0
+          version: v2.9.0
           args: --timeout=5m
 
   # Job 3: Security Scanning
@@ -109,7 +112,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
-          go-version: '1.25.7'
+          go-version: '1.26.0'
 
       - name: Run Gosec Security Scanner
         uses: securego/gosec@398ad549bbf1a51dc978fd966169f660c59774de # v2.23.0
@@ -125,7 +128,7 @@ jobs:
       - name: Run govulncheck
         uses: golang/govulncheck-action@b625fbe08f3bccbe446d94fbf87fcc875a4f50ee # v1.0.4
         with:
-          go-version-input: '1.25.7'
+          go-version-input: '1.26.0'
 
   # Job 4: Database Compatibility Tests
   integration-test:
@@ -166,7 +169,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
-          go-version: '1.25.7'
+          go-version: '1.26.0'
 
       - name: Run integration tests (Postgres)
         env:
@@ -234,7 +237,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
-          go-version: '1.25.7'
+          go-version: '1.26.0'
 
       - name: Build binary
         env:

@@ -18,6 +18,9 @@ func TestErrorResult(t *testing.T) {
 	if result == nil || len(result.Content) != 1 {
 		t.Fatalf("Expected error result with one content item")
 	}
+	if !result.IsError {
+		t.Fatalf("Expected IsError=true for error result")
+	}
 	content, ok := result.Content[0].(*mcp.TextContent)
 	if !ok {
 		t.Fatalf("Expected TextContent, got %T", result.Content[0])
