@@ -6,6 +6,19 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+## [v1.2.0] - 2026-02-13
+
+### Added
+- `get-tool-help` MCP tool for on-demand tool summaries, examples, and troubleshooting.
+- Provider smoke tests for compact (Gemini-style) and standard (Claude-style) discovery/call paths.
+- Schema contract gate tests (`GATE_SCHEMA_001..005`) for InputSchema coverage and compact payload budgets.
+
+### Changed
+- Added `schema_mode` config (`compact|standard`) with default `compact`.
+- Switched tool metadata to compact-by-default descriptions in compact mode.
+- Added explicit `InputSchema` for all registered tools.
+- CI now enforces schema contract gates via `go test ./internal/mcp -run TestSchemaGate`.
+
 ## [v1.1.1] - 2026-02-07
 
 ### Fixed
