@@ -43,7 +43,7 @@ type MCPServer struct {
 	contextMgr    *ctxmgr.Manager
 }
 
-const MCPVersion = "v1.2.0"
+const MCPVersion = "v1.2.1"
 const MCPAuthor = "guyinwonder"
 
 // Cap for number of data quality issues retained per column to prevent unbounded payload growth
@@ -139,7 +139,8 @@ func sanitizeSchemaForGemini(schema *jsonschema.Schema) *jsonschema.Schema {
 	}
 
 	var node any
-	if err := json.Unmarshal(raw, &node); err != nil {
+	err = json.Unmarshal(raw, &node)
+	if err != nil {
 		return schema
 	}
 
@@ -151,54 +152,68 @@ func sanitizeSchemaForGemini(schema *jsonschema.Schema) *jsonschema.Schema {
 	}
 
 	var sanitized jsonschema.Schema
-	if err := json.Unmarshal(sanitizedRaw, &sanitized); err != nil {
+	err = json.Unmarshal(sanitizedRaw, &sanitized)
+	if err != nil {
 		return schema
 	}
 
 	return &sanitized
 }
 
+// sanitizeTypeArray converts ["null","array"] to "array" and removes nullable.
+func sanitizeTypeArray(n map[string]any) {
+	typeValue, ok := n["type"]
+	if !ok {
+		return
+	}
+	typeList, ok := typeValue.([]any)
+	if !ok {
+		return
+	}
+	nonNullType := ""
+	for _, item := range typeList {
+		typeName, ok := item.(string)
+		if !ok || typeName == "null" {
+			continue
+		}
+		if nonNullType == "" {
+			nonNullType = typeName
+		}
+	}
+	if nonNullType != "" {
+		n["type"] = nonNullType
+		delete(n, "nullable")
+	}
+}
+
+// sanitizeAdditionalProperties removes additionalProperties:false.
+func sanitizeAdditionalProperties(n map[string]any) {
+	if val, ok := n["additionalProperties"]; ok {
+		if b, ok := val.(bool); ok && !b {
+			delete(n, "additionalProperties")
+		}
+	}
+}
+
+// sanitizeItems fixes boolean items:true to object schema.
+func sanitizeItems(n map[string]any) {
+	if val, ok := n["items"]; ok {
+		if b, ok := val.(bool); ok {
+			if b {
+				n["items"] = map[string]any{"type": "string"}
+			} else {
+				delete(n, "items")
+			}
+		}
+	}
+}
+
 func sanitizeSchemaNodeForGemini(node any) {
 	switch n := node.(type) {
 	case map[string]any:
-		if typeValue, ok := n["type"]; ok {
-			if typeList, ok := typeValue.([]any); ok {
-				nonNullType := ""
-				for _, item := range typeList {
-					typeName, ok := item.(string)
-					if !ok {
-						continue
-					}
-					if typeName == "null" {
-						continue
-					}
-					if nonNullType == "" {
-						nonNullType = typeName
-					}
-				}
-				if nonNullType != "" {
-					n["type"] = nonNullType
-					delete(n, "nullable")
-				}
-			}
-		}
-
-		if additionalPropertiesValue, ok := n["additionalProperties"]; ok {
-			if additionalPropertiesBool, ok := additionalPropertiesValue.(bool); ok && !additionalPropertiesBool {
-				delete(n, "additionalProperties")
-			}
-		}
-
-		if itemsValue, ok := n["items"]; ok {
-			if itemsBool, ok := itemsValue.(bool); ok {
-				if itemsBool {
-					n["items"] = map[string]any{"type": "string"}
-				} else {
-					delete(n, "items")
-				}
-			}
-		}
-
+		sanitizeTypeArray(n)
+		sanitizeAdditionalProperties(n)
+		sanitizeItems(n)
 		for _, child := range n {
 			sanitizeSchemaNodeForGemini(child)
 		}
