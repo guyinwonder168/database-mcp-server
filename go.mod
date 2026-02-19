@@ -17,7 +17,7 @@ require (
 )
 
 require (
-	filippo.io/edwards25519 v1.1.0 // indirect
+	filippo.io/edwards25519 v1.1.1 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/juju/errors v1.0.0 // indirect
 	github.com/lestrrat-go/strftime v1.1.1 // indirect
