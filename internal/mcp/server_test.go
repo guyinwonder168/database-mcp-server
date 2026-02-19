@@ -133,6 +133,111 @@ func TestInputSchemaWithParamsSetsProperties(t *testing.T) {
 	}
 }
 
+func TestSanitizeSchemaForGeminiConvertsNullableArrayTypes(t *testing.T) {
+	schema := inputSchemaFor[AnalyzeSchemaParams]()
+	if schema == nil {
+		t.Fatalf("Expected schema")
+	}
+
+	raw, err := json.Marshal(schema)
+	if err != nil {
+		t.Fatalf("failed to marshal schema: %v", err)
+	}
+	jsonText := string(raw)
+
+	if strings.Contains(jsonText, `"type":["null","array"]`) {
+		t.Fatalf("expected nullable array type syntax removed, got schema: %s", jsonText)
+	}
+	if !strings.Contains(jsonText, `"include_tables":{"type":"array"`) {
+		t.Fatalf("expected include_tables type to be array, got schema: %s", jsonText)
+	}
+	if strings.Contains(jsonText, `"nullable":true`) {
+		t.Fatalf("expected nullable removed for Gemini compatibility, got schema: %s", jsonText)
+	}
+}
+
+func TestSanitizeSchemaForGeminiRemovesAdditionalPropertiesFalse(t *testing.T) {
+	schema := inputSchemaFor[FederatedQueryRequest]()
+	if schema == nil {
+		t.Fatalf("Expected schema")
+	}
+
+	raw, err := json.Marshal(schema)
+	if err != nil {
+		t.Fatalf("failed to marshal schema: %v", err)
+	}
+	jsonText := string(raw)
+
+	if strings.Contains(jsonText, `"additionalProperties":false`) {
+		t.Fatalf("expected additionalProperties false removed, got schema: %s", jsonText)
+	}
+}
+
+func TestGeminiSanitizationRemovesIncompatiblePatterns(t *testing.T) {
+	schemas := map[string]any{
+		"configure-profile":    inputSchemaFor[ConfigureProfileParams](),
+		"list-profiles":        inputSchemaFor[ListProfilesParams](),
+		"execute-sql":          inputSchemaWithParams[ExecuteSQLParams]("params"),
+		"list-tables":          inputSchemaFor[ListTablesParams](),
+		"describe-table":       inputSchemaFor[DescribeTableParams](),
+		"list-databases":       inputSchemaFor[ListDatabasesParams](),
+		"analyze-schema":       analyzeSchemaInputSchema(),
+		"smart-query-builder":  inputSchemaFor[SmartQueryBuilderParams](),
+		"optimize-query":       inputSchemaWithParams[OptimizeQueryParams]("params"),
+		"validate-query":       inputSchemaWithParams[ValidateQueryParams]("params"),
+		"analyze-data-lineage": inputSchemaFor[AnalyzeDataLineageParams](),
+		"discover-insights":    inputSchemaWithParams[DiscoverInsightsParams]("params"),
+		"track-schema-changes": inputSchemaFor[TrackSchemaChangesParams](),
+		"federated-query":      inputSchemaFor[FederatedQueryRequest](),
+		"discover-joins":       inputSchemaFor[DiscoverJoinsParams](),
+		"sample-data":          inputSchemaFor[SampleDataParams](),
+		"mcp-info":             inputSchemaFor[MCPInfoParams](),
+		"list-tools":           inputSchemaFor[ListToolsParams](),
+		"get-tool-help":        inputSchemaFor[GetToolHelpParams](),
+	}
+
+	for name, schema := range schemas {
+		raw, err := json.Marshal(schema)
+		if err != nil {
+			t.Fatalf("%s: failed to marshal schema: %v", name, err)
+		}
+		jsonText := string(raw)
+
+		if strings.Contains(jsonText, `"type":["null","array"]`) {
+			t.Fatalf("%s: found incompatible nullable array type syntax: %s", name, jsonText)
+		}
+		if strings.Contains(jsonText, `"additionalProperties":false`) {
+			t.Fatalf("%s: found incompatible additionalProperties false: %s", name, jsonText)
+		}
+		if strings.Contains(jsonText, `"items":true`) {
+			t.Fatalf("%s: found incompatible items:true boolean schema: %s", name, jsonText)
+		}
+		if strings.Contains(jsonText, `"nullable":true`) {
+			t.Fatalf("%s: found nullable field not accepted by Gemini endpoint: %s", name, jsonText)
+		}
+	}
+}
+
+func TestAnalyzeSchemaInputSchemaIsGeminiSafeMinimal(t *testing.T) {
+	schema := analyzeSchemaInputSchema()
+	if schema == nil {
+		t.Fatal("expected schema")
+	}
+
+	raw, err := json.Marshal(schema)
+	if err != nil {
+		t.Fatalf("failed to marshal schema: %v", err)
+	}
+	jsonText := string(raw)
+
+	if strings.Contains(jsonText, "include_tables") || strings.Contains(jsonText, "exclude_tables") {
+		t.Fatalf("expected include/exclude tables removed from analyze-schema declaration: %s", jsonText)
+	}
+	if !strings.Contains(jsonText, `"profile_name"`) || !strings.Contains(jsonText, `"analysis_level"`) {
+		t.Fatalf("expected required core fields in analyze-schema declaration: %s", jsonText)
+	}
+}
+
 func TestHandleListProfiles(t *testing.T) {
 	testConfig := setupTestConfig(t)
 	defer os.Remove(testConfig)
