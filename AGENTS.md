@@ -258,3 +258,55 @@ When preparing any release/version bump:
 **Action taken**:
 - Updated fixtures to disambiguate date detection.
 - Kept assertions focused on stable behavior in helper tests.
+
+### Mistake #7: JSON Schema 2020-12 vs Gemini's OpenAPI 3.0 Subset (2026-02-13)
+**What happened**: All 19 MCP tools registered with the Go SDK's `jsonschema.ForType()` reflector. The Go SDK emits JSON Schema draft 2020-12 by default. Google Gemini's function calling API only accepts an OpenAPI 3.0 subset of JSON Schema. Adding any "advanced" tool (those with Go slice fields like `[]string`, `[]SubQuery`, `[]InsightType`) caused Gemini to reject the entire tool declaration with `INVALID_ARGUMENT`, surfaced as `"Failed to process error response"` due to a separate ai-sdk double-read bug.
+
+**Root cause**: The `jsonschema.ForType()` reflector emits features Gemini doesn't support:
+
+1. **`"type": ["null", "array"]`** — Go's `[]T` with `omitempty` becomes a nullable array using JSON Schema 2020-12 type-array syntax. Gemini requires `"type"` to be a single string (`"array"`), not an array of types.
+2. **`"additionalProperties": false`** — Emitted on every `object` type by default. While Gemini technically supports this, some models/endpoints reject it.
+3. **`"items": true`** — For `[]interface{}` (used in `params` fields), the reflector emits `"items": true` (unconstrained). Gemini expects `"items"` to be a schema object, not a boolean.
+
+**Why base tools worked but advanced tools failed**:
+- Base tools with `[]interface{}` params (e.g., `execute-sql`) use `inputSchemaWithParams()` which REPLACES the params property with a manually constructed `{type: "array", items: {oneOf: [...]}}` — avoiding the `["null", "array"]` pattern.
+- Base tools without array fields (e.g., `configure-profile`, `list-databases`) only have scalar properties, so the reflector produces clean schemas.
+- Advanced tools (e.g., `analyze-schema`, `federated-query`, `discover-joins`) have Go `[]string` or `[]SubQuery` fields that produce `"type": ["null", "array"]` — breaking Gemini.
+
+**Schema dump evidence** (from `TestDumpAllInputSchemas`):
+| Tool | Problematic Feature | Bytes |
+|------|-------------------|-------|
+| `federated-query` | `"type": ["null","array"]` on 3 fields + nested objects with `additionalProperties: false` | 1855 |
+| `analyze-schema` | `"type": ["null","array"]` on `include_tables`, `exclude_tables` | 732 |
+| `track-schema-changes` | `"type": ["null","array"]` on `change_types` | 766 |
+| `discover-insights` | `"type": ["null","array"]` on `columns`, `insight_types` | 557 |
+| `smart-query-builder` | `"type": ["null","array"]` on `table_names` | 417 |
+| `execute-sql` (base) | `"items": true` on `params` (overridden by `inputSchemaWithParams`) | 397 |
+| `configure-profile` (base) | Clean — no arrays | 602 |
+
+**Gemini's supported JSON Schema features** (OpenAPI 3.0 subset):
+- ✅ `type` (single string), `properties`, `required`, `enum`, `items` (object), `description`
+- ✅ `nullable` (as separate boolean, NOT as type-array), `minimum`, `maximum`
+- ✅ `anyOf` (Nov 2025+), `$ref` with inline definitions
+- ❌ `type` as array (`["null", "array"]`)
+- ❌ `oneOf`, `not`, `if/then/else`, `allOf` (historically)
+- ❌ `items: true` (boolean schema)
+- ⚠️ `additionalProperties: false` (works on some models, rejected by others)
+
+**Fix approach**:
+- Post-process all tool InputSchemas with a `sanitizeSchemaForGemini()` function that:
+  1. Replaces `"type": ["null", "array"]` → `"type": "array"` (drop nullable)
+  2. Replaces `"items": true` → `"items": {"type": "string"}` (or appropriate concrete type)
+  3. Strips `"additionalProperties": false` from all object schemas
+  4. Flattens any `$defs`/`$ref` if present (currently not emitted, but defensive)
+
+**Lesson learned**:
+- Go's JSON Schema reflector targets draft 2020-12; LLM providers (Gemini, Claude, etc.) each support different subsets
+- ALWAYS dump and inspect the actual wire-format schema before debugging provider rejections
+- The `TestDumpAllInputSchemas` test is now a permanent regression gate for schema compatibility
+- When a provider rejects tool declarations, bisect by tool name AND inspect the schema JSON — don't guess at the cause
+
+**Action taken**:
+- Created `TestDumpAllInputSchemas` in `schema_dump_test.go` to dump and flag incompatible features
+- Identified all 3 incompatible patterns (`type-array`, `items: true`, `additionalProperties`)
+- Next: implement `sanitizeSchemaForGemini()` post-processor and verify with Gemini endpoint

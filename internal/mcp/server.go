@@ -50,7 +50,6 @@ const MCPAuthor = "guyinwonder"
 const maxQualityIssuesPerColumn = 10
 
 const sqliteListTablesQuery = "SELECT name FROM sqlite_master WHERE type='table'"
-
 const (
 	joinSQLTemplate                     = "SELECT * FROM %s JOIN %s ON %s.%s = %s.%s"
 	toolConfigureProfile                = "configure-profile"
@@ -103,7 +102,7 @@ func inputSchemaWithParams[T any](paramsDescription string) *jsonschema.Schema {
 		schema.Properties = map[string]*jsonschema.Schema{}
 	}
 	schema.Properties["params"] = paramsArraySchema(paramsDescription)
-	return schema
+	return sanitizeSchemaForGemini(schema)
 }
 
 func inputSchemaFor[T any]() *jsonschema.Schema {
@@ -111,7 +110,103 @@ func inputSchemaFor[T any]() *jsonschema.Schema {
 	if err != nil {
 		panic(fmt.Sprintf("failed to infer schema for tool input: %v", err))
 	}
-	return schema
+	return sanitizeSchemaForGemini(schema)
+}
+
+func analyzeSchemaInputSchema() *jsonschema.Schema {
+	return sanitizeSchemaForGemini(&jsonschema.Schema{
+		Type: "object",
+		Properties: map[string]*jsonschema.Schema{
+			"profile_name":    {Type: "string"},
+			"analysis_level":  {Type: "string"},
+			"database_name":   {Type: "string"},
+			"sample_size":     {Type: "integer"},
+			"include_queries": {Type: "boolean"},
+			"profiling":       {Type: "boolean"},
+		},
+		Required: []string{"profile_name", "analysis_level"},
+	})
+}
+
+func sanitizeSchemaForGemini(schema *jsonschema.Schema) *jsonschema.Schema {
+	if schema == nil {
+		return nil
+	}
+
+	raw, err := json.Marshal(schema)
+	if err != nil {
+		return schema
+	}
+
+	var node any
+	if err := json.Unmarshal(raw, &node); err != nil {
+		return schema
+	}
+
+	sanitizeSchemaNodeForGemini(node)
+
+	sanitizedRaw, err := json.Marshal(node)
+	if err != nil {
+		return schema
+	}
+
+	var sanitized jsonschema.Schema
+	if err := json.Unmarshal(sanitizedRaw, &sanitized); err != nil {
+		return schema
+	}
+
+	return &sanitized
+}
+
+func sanitizeSchemaNodeForGemini(node any) {
+	switch n := node.(type) {
+	case map[string]any:
+		if typeValue, ok := n["type"]; ok {
+			if typeList, ok := typeValue.([]any); ok {
+				nonNullType := ""
+				for _, item := range typeList {
+					typeName, ok := item.(string)
+					if !ok {
+						continue
+					}
+					if typeName == "null" {
+						continue
+					}
+					if nonNullType == "" {
+						nonNullType = typeName
+					}
+				}
+				if nonNullType != "" {
+					n["type"] = nonNullType
+					delete(n, "nullable")
+				}
+			}
+		}
+
+		if additionalPropertiesValue, ok := n["additionalProperties"]; ok {
+			if additionalPropertiesBool, ok := additionalPropertiesValue.(bool); ok && !additionalPropertiesBool {
+				delete(n, "additionalProperties")
+			}
+		}
+
+		if itemsValue, ok := n["items"]; ok {
+			if itemsBool, ok := itemsValue.(bool); ok {
+				if itemsBool {
+					n["items"] = map[string]any{"type": "string"}
+				} else {
+					delete(n, "items")
+				}
+			}
+		}
+
+		for _, child := range n {
+			sanitizeSchemaNodeForGemini(child)
+		}
+	case []any:
+		for _, child := range n {
+			sanitizeSchemaNodeForGemini(child)
+		}
+	}
 }
 
 // --- Semantic Relationship Mapping Helpers ---
@@ -496,7 +591,7 @@ func (s *MCPServer) registerAllTools() {
   
   AI agents MUST specify analysis_level. Example:
   {"profile_name":"analytics_db","analysis_level":"detailed","database_name":"analytics_db"}`),
-			InputSchema: inputSchemaFor[AnalyzeSchemaParams](),
+			InputSchema: analyzeSchemaInputSchema(),
 		}
 		addTool(s, tool, s.handleAnalyzeSchema)
 	}
