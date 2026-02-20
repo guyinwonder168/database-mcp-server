@@ -2117,28 +2117,73 @@ func (s *MCPServer) handleConfigureProfile(ctx context.Context, _ *mcp.CallToolR
 	if errResult := validateConfigureProfileParams(p); errResult != nil {
 		return errResult, nil, nil
 	}
+
+	switch p.Action {
+	case "delete":
+		return s.handleDeleteProfile(cfg, p)
+	case "clone":
+		return s.handleCloneProfile(cfg, p)
+	default:
+		return s.handleUpsertProfile(cfg, p)
+	}
+}
+
+func (s *MCPServer) handleUpsertProfile(cfg *config.Config, p ConfigureProfileParams) (*mcp.CallToolResult, any, error) {
 	ensureConfigAESKey(cfg, s.ConfigPath)
 	upsertConfigProfile(cfg, p)
-
 	if err := config.SaveConfig(s.ConfigPath, cfg); err != nil {
 		structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
 			"profile_name": p.ProfileName,
 			"operation":    "save_config",
 		})
 		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{
-					Text: structErr.ToJSON(),
-				},
-			},
+			Content: []mcp.Content{&mcp.TextContent{Text: structErr.ToJSON()}},
 		}, nil, nil
 	}
 	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{
-				Text: "Profile configured successfully.",
-			},
-		},
+		Content: []mcp.Content{&mcp.TextContent{Text: "Profile configured successfully."}},
+	}, nil, nil
+}
+
+func (s *MCPServer) handleDeleteProfile(cfg *config.Config, p ConfigureProfileParams) (*mcp.CallToolResult, any, error) {
+	found := false
+	for i := range cfg.Profiles {
+		if cfg.Profiles[i].ProfileName == p.ProfileName {
+			cfg.Profiles = append(cfg.Profiles[:i], cfg.Profiles[i+1:]...)
+			found = true
+			break
+		}
+	}
+	if !found {
+		structErr := NewStructuredError(
+			ErrorCodeProfileNotFound,
+			messageProfileNotFound,
+			fmt.Sprintf(messageProfileNotFoundFormat, p.ProfileName),
+		).WithContext("profile_name", p.ProfileName)
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: structErr.ToJSON()}},
+		}, nil, nil
+	}
+	if err := config.SaveConfig(s.ConfigPath, cfg); err != nil {
+		structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
+			"profile_name": p.ProfileName,
+			"operation":    "save_config",
+		})
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: structErr.ToJSON()}},
+		}, nil, nil
+	}
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{
+			Text: fmt.Sprintf("Profile '%s' deleted successfully.", p.ProfileName),
+		}},
+	}, nil, nil
+}
+
+func (s *MCPServer) handleCloneProfile(cfg *config.Config, p ConfigureProfileParams) (*mcp.CallToolResult, any, error) {
+	// Stub — implemented in Task 5
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: "clone not implemented"}},
 	}, nil, nil
 }
 

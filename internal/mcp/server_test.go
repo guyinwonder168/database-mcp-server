@@ -298,6 +298,47 @@ func TestHandleConfigureProfile_InvalidAction(t *testing.T) {
 	}
 }
 
+func TestHandleConfigureProfile_Delete(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+
+	// First, create a profile to delete
+	res, _, err := server.handleConfigureProfile(ctx, nil, ConfigureProfileParams{
+		ProfileName:  "todelete",
+		DBType:       "sqlite",
+		DatabaseName: testSQLiteDBPath,
+	})
+	if err != nil {
+		t.Fatalf("create error: %v", err)
+	}
+	text := res.Content[0].(*mcp.TextContent).Text
+	if !strings.Contains(text, "successfully") {
+		t.Fatalf("expected success, got: %s", text)
+	}
+
+	// Delete it
+	res, _, err = server.handleConfigureProfile(ctx, nil, ConfigureProfileParams{
+		Action:      "delete",
+		ProfileName: "todelete",
+	})
+	if err != nil {
+		t.Fatalf("delete error: %v", err)
+	}
+	text = res.Content[0].(*mcp.TextContent).Text
+	if !strings.Contains(text, "deleted") {
+		t.Fatalf("expected deleted confirmation, got: %s", text)
+	}
+
+	// Verify it's gone
+	_, _, err = server.findProfile("todelete")
+	if err == nil {
+		t.Fatal("expected profile to be gone after delete")
+	}
+}
+
 // TestHandleExecuteSQL tests the execute-sql MCP action.
 func TestHandleExecuteSQL(t *testing.T) {
 	testConfig := setupTestConfig(t)
