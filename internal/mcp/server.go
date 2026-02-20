@@ -1060,7 +1060,7 @@ func (s *MCPServer) handleMCPInfo(ctx context.Context, _ *mcp.CallToolRequest, i
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{
-				Text: "Database MCP Provider\nAuthor: " + MCPAuthor + "\nVersion: " + MCPVersion + "\nCreated using OpenAI GPT-4.1 via VSCode Kilocode AI code assistant extension.",
+				Text: "Database MCP Provider\nAuthor: " + MCPAuthor + "\nVersion: " + MCPVersion + "\nCreated using Google Gemini 2.0 Flash (antigravity-gemini-3-flash) via OpenAgent framework.\nFeatures: 19 tools (including profile delete/clone), optimized for strict declaration budgets.",
 			},
 		},
 	}, nil, nil
