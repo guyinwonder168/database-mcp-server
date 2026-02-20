@@ -871,6 +871,59 @@ git commit -m "chore: fmt/vet cleanup"
 
 ---
 
+## Task 10: Version bump and artifact sync
+
+### Files
+- Modify: `internal/mcp/server.go:46` (`MCPVersion` constant)
+- Run: `scripts/sync-version-from-server.sh` (syncs `README.md` and `docs/mcp-openapi.yaml`)
+- Modify: `CHANGELOG.md` (add v1.3.0 section)
+
+### Step 1: Bump MCPVersion
+
+In `internal/mcp/server.go`, change:
+
+```go
+const MCPVersion = "v1.3.0"
+```
+
+### Step 2: Run sync script
+
+```bash
+source ~/.gvm/scripts/gvm && ./scripts/sync-version-from-server.sh
+```
+
+This updates version references in `README.md` and `docs/mcp-openapi.yaml` automatically.
+
+### Step 3: Add CHANGELOG entry
+
+Add a `## v1.3.0` section at the top of `CHANGELOG.md`:
+
+```markdown
+## v1.3.0
+
+### Added
+- `configure-profile` now supports `action` field with `"delete"` and `"clone"` actions
+- Delete action: remove a profile by name (`{"action": "delete", "profile_name": "mydb"}`)
+- Clone action: copy an existing profile with optional overrides (`{"action": "clone", "profile_name": "new", "source_profile": "existing"}`)
+```
+
+### Step 4: Verify sync
+
+```bash
+grep -n 'v1.3.0' README.md docs/mcp-openapi.yaml internal/mcp/server.go CHANGELOG.md
+```
+
+Expected: version `v1.3.0` appears in all four files.
+
+### Step 5: Commit
+
+```bash
+git add internal/mcp/server.go README.md docs/mcp-openapi.yaml CHANGELOG.md
+git commit -m "chore: bump version to v1.3.0 for profile delete/clone feature"
+```
+
+---
+
 ## Verification Checklist
 
 - [ ] `action=""` (omitted) → existing create/update works identically (backward compatible)
@@ -889,6 +942,9 @@ git commit -m "chore: fmt/vet cleanup"
 - [ ] `gofmt -l .` → no output
 - [ ] Tool description updated
 - [ ] Tool help updated
+- [ ] `MCPVersion` bumped to `v1.3.0`
+- [ ] `README.md`, `docs/mcp-openapi.yaml` synced via `scripts/sync-version-from-server.sh`
+- [ ] `CHANGELOG.md` has `v1.3.0` entry
 
 ## Known Limitations
 
