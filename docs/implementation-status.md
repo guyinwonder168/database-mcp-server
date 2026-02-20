@@ -6,7 +6,7 @@ This document tracks the current implementation status of the Database MCP Serve
 
 ## Project Information
 
-- Version: `v1.1.0`
+- Version: `v1.3.0`
 - Status: Production Ready
 - Author: `guyinwonder`
 - Toolchain: `go 1.25` with `go1.25.7`
@@ -28,11 +28,11 @@ This document tracks the current implementation status of the Database MCP Serve
 
 ## MCP Tool Status (Runtime)
 
-The runtime currently registers **18 MCP tools**.
+The runtime currently registers **19 MCP tools**.
 
 | Tool | Status | Notes |
 |---|---|---|
-| `configure-profile` | ✅ Implemented | Create/update connection profiles |
+| `configure-profile` | ✅ Implemented | Create/update/delete/clone connection profiles |
 | `list-profiles` | ✅ Implemented | List configured profiles |
 | `execute-sql` | ✅ Implemented | Parameterized SQL execution |
 | `list-tables` | ✅ Implemented | List tables/views in selected DB |

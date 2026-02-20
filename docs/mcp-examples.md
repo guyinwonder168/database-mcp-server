@@ -130,7 +130,7 @@ Lists all available MCP tools/actions for programmatic discovery.
 ```json
 {
   "tools": [
-    { "name": "configure-profile", "description": "Create or update a database connection profile. Required for all database actions. Fields: profile_name, db_type, host/port/username/password (except sqlite), database_name, readonly, sslmode." },
+    { "name": "configure-profile", "description": "Create, update, delete, or clone a database connection profile. Required for all database actions. Fields: profile_name, action (delete|clone), source_profile (for clone), db_type, host/port/username/password (except sqlite), database_name, readonly, sslmode." },
     { "name": "execute-sql", "description": "Execute an arbitrary SQL query or statement. Requires profile_name and database_name." },
     { "name": "analyze-schema", "description": "Perform schema analysis for a database. Requires profile_name and analysis_level." },
     { "name": "get-tool-help", "description": "Get usage help, examples, and common errors for a specific tool." }

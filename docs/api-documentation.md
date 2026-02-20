@@ -57,8 +57,8 @@ Typical error response:
 ### Profile and Connectivity
 
 1. `configure-profile`
-- Purpose: create or update a DB connection profile
-- Key params: `profile_name`, `db_type`, `database_name`, `readonly`, plus host/port/user/pass for non-sqlite
+- Purpose: create, update, delete, or clone a database connection profile
+- Key params: `profile_name`, `action` (`delete`|`clone`|`""`), `source_profile` (for clone), `db_type`, `database_name`, `readonly`, plus host/port/user/pass for non-sqlite
 
 2. `list-profiles`
 - Purpose: list configured profiles
