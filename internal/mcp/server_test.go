@@ -275,6 +275,29 @@ func TestHandleConfigureProfile(t *testing.T) {
 	}
 }
 
+func TestHandleConfigureProfile_InvalidAction(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+
+	res, _, err := server.handleConfigureProfile(ctx, nil, ConfigureProfileParams{
+		Action:      "invalid",
+		ProfileName: "test",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == nil || res.Content == nil {
+		t.Fatal("expected error result, got nil")
+	}
+	text := res.Content[0].(*mcp.TextContent).Text
+	if !strings.Contains(text, "INVALID_INPUT") {
+		t.Fatalf("expected INVALID_INPUT error, got: %s", text)
+	}
+}
+
 // TestHandleExecuteSQL tests the execute-sql MCP action.
 func TestHandleExecuteSQL(t *testing.T) {
 	testConfig := setupTestConfig(t)

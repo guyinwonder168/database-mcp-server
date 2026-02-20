@@ -1065,15 +1065,17 @@ func (s *MCPServer) handleMCPInfo(ctx context.Context, _ *mcp.CallToolRequest, i
 // --- MCP Handler Parameter Structs ---
 
 type ConfigureProfileParams struct {
-	ProfileName  string `json:"profile_name"`
-	DBType       string `json:"db_type"`
-	Host         string `json:"host,omitempty"`
-	Port         int    `json:"port,omitempty"`
-	Username     string `json:"username,omitempty"`
-	Password     string `json:"password,omitempty"`
-	DatabaseName string `json:"database_name"`
-	Readonly     bool   `json:"readonly"`
-	SSLMode      string `json:"sslmode,omitempty"`
+	Action        string `json:"action,omitempty"`
+	ProfileName   string `json:"profile_name"`
+	DBType        string `json:"db_type,omitempty"`
+	Host          string `json:"host,omitempty"`
+	Port          int    `json:"port,omitempty"`
+	Username      string `json:"username,omitempty"`
+	Password      string `json:"password,omitempty"`
+	DatabaseName  string `json:"database_name,omitempty"`
+	Readonly      bool   `json:"readonly"`
+	SSLMode       string `json:"sslmode,omitempty"`
+	SourceProfile string `json:"source_profile,omitempty"`
 }
 
 type ListProfilesParams struct{}
@@ -2152,26 +2154,67 @@ func normalizeConfigureProfileParams(input ConfigureProfileParams) ConfigureProf
 }
 
 func validateConfigureProfileParams(p ConfigureProfileParams) *mcp.CallToolResult {
-	if p.ProfileName != "" && p.DBType != "" && p.DatabaseName != "" {
-		return nil
-	}
-	structErr := NewStructuredError(
-		ErrorCodeMissingParameter,
-		messageMissingRequiredParameters,
-		"All of profile_name, db_type, and database_name are required",
-	).WithSuggestions(
-		ErrorSuggestion{
-			Action:      actionProvideAllRequiredParameters,
-			Description: "Ensure profile_name, db_type, and database_name are included",
-			Example:     `{"profile_name": "mydb", "db_type": "mysql", "database_name": "mydb"}`,
-		},
-	)
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{
-				Text: structErr.ToJSON(),
+	switch p.Action {
+	case "":
+		if p.ProfileName != "" && p.DBType != "" && p.DatabaseName != "" {
+			return nil
+		}
+		structErr := NewStructuredError(
+			ErrorCodeMissingParameter,
+			messageMissingRequiredParameters,
+			"All of profile_name, db_type, and database_name are required",
+		).WithSuggestions(
+			ErrorSuggestion{
+				Action:      actionProvideAllRequiredParameters,
+				Description: "Ensure profile_name, db_type, and database_name are included",
+				Example:     `{"profile_name": "mydb", "db_type": "mysql", "database_name": "mydb"}`,
 			},
-		},
+		)
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: structErr.ToJSON()}},
+		}
+
+	case "delete":
+		if p.ProfileName == "" {
+			structErr := NewStructuredError(
+				ErrorCodeMissingParameter,
+				messageMissingRequiredParameters,
+				"profile_name is required for delete",
+			).WithSuggestions(ErrorSuggestion{
+				Action:  actionProvideAllRequiredParameters,
+				Example: `{"action": "delete", "profile_name": "mydb"}`,
+			})
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: structErr.ToJSON()}},
+			}
+		}
+		return nil
+
+	case "clone":
+		if p.ProfileName == "" || p.SourceProfile == "" {
+			structErr := NewStructuredError(
+				ErrorCodeMissingParameter,
+				messageMissingRequiredParameters,
+				"profile_name and source_profile are required for clone",
+			).WithSuggestions(ErrorSuggestion{
+				Action:  actionProvideAllRequiredParameters,
+				Example: `{"action": "clone", "profile_name": "new-profile", "source_profile": "existing-profile"}`,
+			})
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: structErr.ToJSON()}},
+			}
+		}
+		return nil
+
+	default:
+		structErr := NewStructuredError(
+			ErrorCodeInvalidInput,
+			"Unknown action",
+			fmt.Sprintf("Unknown action '%s'; valid actions are: delete, clone (or omit for create/update)", p.Action),
+		)
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: structErr.ToJSON()}},
+		}
 	}
 }
 
