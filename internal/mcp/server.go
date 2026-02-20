@@ -2132,17 +2132,24 @@ func (s *MCPServer) handleConfigureProfile(ctx context.Context, _ *mcp.CallToolR
 	}
 }
 
-func (s *MCPServer) handleUpsertProfile(cfg *config.Config, p ConfigureProfileParams) (*mcp.CallToolResult, any, error) {
-	ensureConfigAESKey(cfg, s.ConfigPath)
-	upsertConfigProfile(cfg, p)
+func (s *MCPServer) saveConfigResult(cfg *config.Config, profileName string) *mcp.CallToolResult {
 	if err := config.SaveConfig(s.ConfigPath, cfg); err != nil {
 		structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
-			"profile_name": p.ProfileName,
+			"profile_name": profileName,
 			"operation":    "save_config",
 		})
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: structErr.ToJSON()}},
-		}, nil, nil
+		}
+	}
+	return nil
+}
+
+func (s *MCPServer) handleUpsertProfile(cfg *config.Config, p ConfigureProfileParams) (*mcp.CallToolResult, any, error) {
+	ensureConfigAESKey(cfg, s.ConfigPath)
+	upsertConfigProfile(cfg, p)
+	if errResult := s.saveConfigResult(cfg, p.ProfileName); errResult != nil {
+		return errResult, nil, nil
 	}
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: "Profile configured successfully."}},
@@ -2168,20 +2175,41 @@ func (s *MCPServer) handleDeleteProfile(cfg *config.Config, p ConfigureProfilePa
 			Content: []mcp.Content{&mcp.TextContent{Text: structErr.ToJSON()}},
 		}, nil, nil
 	}
-	if err := config.SaveConfig(s.ConfigPath, cfg); err != nil {
-		structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
-			"profile_name": p.ProfileName,
-			"operation":    "save_config",
-		})
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: structErr.ToJSON()}},
-		}, nil, nil
+	if errResult := s.saveConfigResult(cfg, p.ProfileName); errResult != nil {
+		return errResult, nil, nil
 	}
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{
 			Text: fmt.Sprintf("Profile '%s' deleted successfully.", p.ProfileName),
 		}},
 	}, nil, nil
+}
+
+func applyCloneOverrides(cloned *config.Profile, p ConfigureProfileParams) {
+	if p.DBType != "" {
+		cloned.DBType = p.DBType
+	}
+	if p.Host != "" {
+		cloned.Host = p.Host
+	}
+	if p.Port != 0 {
+		cloned.Port = p.Port
+	}
+	if p.Username != "" {
+		cloned.Username = p.Username
+	}
+	if p.Password != "" {
+		cloned.Password = p.Password
+	}
+	if p.DatabaseName != "" {
+		cloned.DatabaseName = p.DatabaseName
+	}
+	if p.Readonly {
+		cloned.Readonly = p.Readonly
+	}
+	if p.SSLMode != "" {
+		cloned.SSLMode = p.SSLMode
+	}
 }
 
 func (s *MCPServer) handleCloneProfile(cfg *config.Config, p ConfigureProfileParams) (*mcp.CallToolResult, any, error) {
@@ -2221,42 +2249,13 @@ func (s *MCPServer) handleCloneProfile(cfg *config.Config, p ConfigureProfilePar
 	// Copy source and apply overrides
 	cloned := *source
 	cloned.ProfileName = p.ProfileName
-	if p.DBType != "" {
-		cloned.DBType = p.DBType
-	}
-	if p.Host != "" {
-		cloned.Host = p.Host
-	}
-	if p.Port != 0 {
-		cloned.Port = p.Port
-	}
-	if p.Username != "" {
-		cloned.Username = p.Username
-	}
-	if p.Password != "" {
-		cloned.Password = p.Password
-	}
-	if p.DatabaseName != "" {
-		cloned.DatabaseName = p.DatabaseName
-	}
-	if p.Readonly {
-		cloned.Readonly = p.Readonly
-	}
-	if p.SSLMode != "" {
-		cloned.SSLMode = p.SSLMode
-	}
+	applyCloneOverrides(&cloned, p)
 
 	ensureConfigAESKey(cfg, s.ConfigPath)
 	cfg.Profiles = append(cfg.Profiles, cloned)
 
-	if err := config.SaveConfig(s.ConfigPath, cfg); err != nil {
-		structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
-			"profile_name": p.ProfileName,
-			"operation":    "save_config",
-		})
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: structErr.ToJSON()}},
-		}, nil, nil
+	if errResult := s.saveConfigResult(cfg, p.ProfileName); errResult != nil {
+		return errResult, nil, nil
 	}
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{
