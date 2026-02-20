@@ -42,9 +42,14 @@ var supportedToolHelpTopics = []string{"summary", "minimal_example", "advanced_e
 
 var toolHelpCatalog = map[string]toolHelpEntry{
 	"configure-profile": {
-		Summary:        "Create or update a database profile used by all DB tools.",
-		MinimalExample: map[string]any{"profile_name": "analytics_db", "db_type": "sqlite", "database_name": "/tmp/demo.sqlite", "readonly": true},
-		CommonErrors:   []ToolHelpError{{Error: "Profile not found", Cause: "Using unknown profile_name", Fix: "Create profile first with configure-profile"}},
+		Summary:         "Create, update, delete, or clone a database profile used by all DB tools.",
+		MinimalExample:  map[string]any{"profile_name": "analytics_db", "db_type": "sqlite", "database_name": "/tmp/demo.sqlite", "readonly": true},
+		AdvancedExample: map[string]any{"action": "clone", "profile_name": "analytics_ro", "source_profile": "analytics_db", "readonly": true},
+		CommonErrors: []ToolHelpError{
+			{Error: "Profile not found", Cause: "Using unknown profile_name", Fix: "Create profile first with configure-profile"},
+			{Error: "Profile not found (delete)", Cause: "Deleting non-existent profile", Fix: "Check profile name with list-profiles"},
+			{Error: "Source profile not found (clone)", Cause: "source_profile does not exist", Fix: "Verify source profile name with list-profiles"},
+		},
 	},
 	"list-profiles": {
 		Summary:        "List configured profiles.",
