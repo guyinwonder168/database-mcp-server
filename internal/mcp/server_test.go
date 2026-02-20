@@ -359,6 +359,161 @@ func TestHandleConfigureProfile_DeleteNotFound(t *testing.T) {
 	}
 }
 
+func TestHandleConfigureProfile_DeleteMissingName(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+
+	res, _, err := server.handleConfigureProfile(ctx, nil, ConfigureProfileParams{
+		Action: "delete",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	text := res.Content[0].(*mcp.TextContent).Text
+	if !strings.Contains(text, "MISSING_PARAMETER") {
+		t.Fatalf("expected MISSING_PARAMETER error, got: %s", text)
+	}
+}
+
+func TestHandleConfigureProfile_Clone(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+
+	// Clone the existing "testsqlite" profile to "cloned-sqlite"
+	res, _, err := server.handleConfigureProfile(ctx, nil, ConfigureProfileParams{
+		Action:        "clone",
+		ProfileName:   "cloned-sqlite",
+		SourceProfile: "testsqlite",
+	})
+	if err != nil {
+		t.Fatalf("clone error: %v", err)
+	}
+	text := res.Content[0].(*mcp.TextContent).Text
+	if !strings.Contains(text, "cloned") {
+		t.Fatalf("expected cloned confirmation, got: %s", text)
+	}
+
+	// Verify the cloned profile exists and has the same fields
+	cfg, err := config.LoadConfig(testConfig)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+	var cloned *config.Profile
+	for i := range cfg.Profiles {
+		if cfg.Profiles[i].ProfileName == "cloned-sqlite" {
+			cloned = &cfg.Profiles[i]
+			break
+		}
+	}
+	if cloned == nil {
+		t.Fatal("cloned profile not found in config")
+	}
+	if cloned.DBType != "sqlite" {
+		t.Fatalf("expected db_type 'sqlite', got '%s'", cloned.DBType)
+	}
+	if cloned.DatabaseName != testSQLiteDBPath {
+		t.Fatalf("expected database_name '%s', got '%s'", testSQLiteDBPath, cloned.DatabaseName)
+	}
+}
+
+func TestHandleConfigureProfile_CloneWithOverrides(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+
+	// Clone "testsqlite" but override readonly to true
+	res, _, err := server.handleConfigureProfile(ctx, nil, ConfigureProfileParams{
+		Action:        "clone",
+		ProfileName:   "readonly-clone",
+		SourceProfile: "testsqlite",
+		Readonly:      true,
+	})
+	if err != nil {
+		t.Fatalf("clone error: %v", err)
+	}
+	text := res.Content[0].(*mcp.TextContent).Text
+	if !strings.Contains(text, "cloned") {
+		t.Fatalf("expected cloned confirmation, got: %s", text)
+	}
+
+	cfg, err := config.LoadConfig(testConfig)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+	for i := range cfg.Profiles {
+		if cfg.Profiles[i].ProfileName == "readonly-clone" {
+			if !cfg.Profiles[i].Readonly {
+				t.Fatal("expected readonly=true override, got false")
+			}
+			if cfg.Profiles[i].DBType != "sqlite" {
+				t.Fatalf("expected db_type 'sqlite' from source, got '%s'", cfg.Profiles[i].DBType)
+			}
+			return
+		}
+	}
+	t.Fatal("cloned profile not found")
+}
+
+func TestHandleConfigureProfile_CloneErrors(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+
+	t.Run("missing source_profile", func(t *testing.T) {
+		res, _, err := server.handleConfigureProfile(ctx, nil, ConfigureProfileParams{
+			Action:      "clone",
+			ProfileName: "newname",
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		text := res.Content[0].(*mcp.TextContent).Text
+		if !strings.Contains(text, "MISSING_PARAMETER") {
+			t.Fatalf("expected MISSING_PARAMETER, got: %s", text)
+		}
+	})
+
+	t.Run("source not found", func(t *testing.T) {
+		res, _, err := server.handleConfigureProfile(ctx, nil, ConfigureProfileParams{
+			Action:        "clone",
+			ProfileName:   "newname",
+			SourceProfile: "nonexistent",
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		text := res.Content[0].(*mcp.TextContent).Text
+		if !strings.Contains(text, "PROFILE_NOT_FOUND") {
+			t.Fatalf("expected PROFILE_NOT_FOUND, got: %s", text)
+		}
+	})
+
+	t.Run("target already exists", func(t *testing.T) {
+		res, _, err := server.handleConfigureProfile(ctx, nil, ConfigureProfileParams{
+			Action:        "clone",
+			ProfileName:   "testsqlite",
+			SourceProfile: "testpg",
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		text := res.Content[0].(*mcp.TextContent).Text
+		if !strings.Contains(text, "INVALID_INPUT") {
+			t.Fatalf("expected INVALID_INPUT (already exists), got: %s", text)
+		}
+	})
+}
+
 // TestHandleExecuteSQL tests the execute-sql MCP action.
 func TestHandleExecuteSQL(t *testing.T) {
 	testConfig := setupTestConfig(t)
