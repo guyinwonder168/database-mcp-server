@@ -339,6 +339,26 @@ func TestHandleConfigureProfile_Delete(t *testing.T) {
 	}
 }
 
+func TestHandleConfigureProfile_DeleteNotFound(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+
+	res, _, err := server.handleConfigureProfile(ctx, nil, ConfigureProfileParams{
+		Action:      "delete",
+		ProfileName: "nonexistent",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	text := res.Content[0].(*mcp.TextContent).Text
+	if !strings.Contains(text, "PROFILE_NOT_FOUND") {
+		t.Fatalf("expected PROFILE_NOT_FOUND error, got: %s", text)
+	}
+}
+
 // TestHandleExecuteSQL tests the execute-sql MCP action.
 func TestHandleExecuteSQL(t *testing.T) {
 	testConfig := setupTestConfig(t)
