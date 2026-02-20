@@ -71,7 +71,7 @@ Package registry: `https://github.com/guyinwonder168/database-mcp-server/pkgs/co
 
 | Tool | Description |
 |-------|-------------|
-| `configure-profile` | Create or update database connection profiles |
+| `configure-profile` | Create, update, delete, or clone database connection profiles |
 | `list-profiles` | List all configured database profiles |
 | `execute-sql` | Execute arbitrary SQL queries with read-only enforcement |
 | `list-tables` | List tables in selected database |
