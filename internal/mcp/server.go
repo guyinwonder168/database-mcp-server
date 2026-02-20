@@ -1,6 +1,6 @@
 // server.go
 // Author: guyinwonder
-// Version: v1.2.0
+// Version: v1.3.0
 // Project created using OpenAI GPT-4.1 via VSCode Kilocode AI code assistant extension.
 // MCP server implementation for the database-mcp-provider project.
 // Provides MCP actions for profile management, SQL execution, table/DB listing, and uses structured JSON logging.
@@ -43,7 +43,7 @@ type MCPServer struct {
 	contextMgr    *ctxmgr.Manager
 }
 
-const MCPVersion = "v1.2.1"
+const MCPVersion = "v1.3.0"
 const MCPAuthor = "guyinwonder"
 
 // Cap for number of data quality issues retained per column to prevent unbounded payload growth
@@ -505,16 +505,20 @@ func (s *MCPServer) registerAllTools() {
 	{
 		tool := &mcp.Tool{
 			Name: toolConfigureProfile,
-			Description: descriptionFormatter(`Create or update a database connection profile. Required for all database actions.
+			Description: descriptionFormatter(`Create, update, delete, or clone a database connection profile. Required for all database actions.
 		Fields:
 		  profile_name (required)
-		  db_type (mysql|mariadb|postgres|sqlite) (required)
+		  db_type (mysql|mariadb|postgres|sqlite)
 		  host / port / username / password (required except sqlite)
-		  database_name (required)
+		  database_name
 		  readonly (boolean)
 		  sslmode (Postgres only, optional: disable|require|verify-ca|verify-full; defaults to require)
-		Example:
-		{"profile_name":"some-profile-name","db_type":"postgres","host":"localhost","port":5432,"username":"app","password":"secret","database_name":"appdb","readonly":false,"sslmode":"require"}`),
+		  action (optional: "delete" or "clone"; omit for create/update)
+		  source_profile (required for clone: name of profile to copy from)
+		Examples:
+		  Create/update: {"profile_name":"mydb","db_type":"postgres","host":"localhost","port":5432,"username":"app","password":"secret","database_name":"appdb","readonly":false}
+		  Delete: {"action":"delete","profile_name":"mydb"}
+		  Clone: {"action":"clone","profile_name":"mydb-readonly","source_profile":"mydb","readonly":true}`),
 			InputSchema: inputSchemaFor[ConfigureProfileParams](),
 		}
 		addTool(s, tool, s.handleConfigureProfile)
@@ -1056,7 +1060,7 @@ func (s *MCPServer) handleMCPInfo(ctx context.Context, _ *mcp.CallToolRequest, i
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{
-				Text: "Database MCP Provider\nAuthor: " + MCPAuthor + "\nVersion: " + MCPVersion + "\nCreated using OpenAI GPT-4.1 via VSCode Kilocode AI code assistant extension.",
+				Text: "Database MCP Provider\nAuthor: " + MCPAuthor + "\nVersion: " + MCPVersion + "\nCreated using Opus 4.6, GLM 5, and GPT 5.3-Codex via OpenAgent framework.\nFeatures: 19 tools (including profile delete/clone), optimized for strict declaration budgets.",
 			},
 		},
 	}, nil, nil
@@ -1065,15 +1069,17 @@ func (s *MCPServer) handleMCPInfo(ctx context.Context, _ *mcp.CallToolRequest, i
 // --- MCP Handler Parameter Structs ---
 
 type ConfigureProfileParams struct {
-	ProfileName  string `json:"profile_name"`
-	DBType       string `json:"db_type"`
-	Host         string `json:"host,omitempty"`
-	Port         int    `json:"port,omitempty"`
-	Username     string `json:"username,omitempty"`
-	Password     string `json:"password,omitempty"`
-	DatabaseName string `json:"database_name"`
-	Readonly     bool   `json:"readonly"`
-	SSLMode      string `json:"sslmode,omitempty"`
+	Action        string `json:"action,omitempty"`
+	ProfileName   string `json:"profile_name"`
+	DBType        string `json:"db_type,omitempty"`
+	Host          string `json:"host,omitempty"`
+	Port          int    `json:"port,omitempty"`
+	Username      string `json:"username,omitempty"`
+	Password      string `json:"password,omitempty"`
+	DatabaseName  string `json:"database_name,omitempty"`
+	Readonly      bool   `json:"readonly"`
+	SSLMode       string `json:"sslmode,omitempty"`
+	SourceProfile string `json:"source_profile,omitempty"`
 }
 
 type ListProfilesParams struct{}
@@ -2115,28 +2121,146 @@ func (s *MCPServer) handleConfigureProfile(ctx context.Context, _ *mcp.CallToolR
 	if errResult := validateConfigureProfileParams(p); errResult != nil {
 		return errResult, nil, nil
 	}
-	ensureConfigAESKey(cfg, s.ConfigPath)
-	upsertConfigProfile(cfg, p)
 
+	switch p.Action {
+	case "delete":
+		return s.handleDeleteProfile(cfg, p)
+	case "clone":
+		return s.handleCloneProfile(cfg, p)
+	default:
+		return s.handleUpsertProfile(cfg, p)
+	}
+}
+
+func (s *MCPServer) saveConfigResult(cfg *config.Config, profileName string) *mcp.CallToolResult {
 	if err := config.SaveConfig(s.ConfigPath, cfg); err != nil {
 		structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
-			"profile_name": p.ProfileName,
+			"profile_name": profileName,
 			"operation":    "save_config",
 		})
 		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{
-					Text: structErr.ToJSON(),
-				},
-			},
-		}, nil, nil
+			Content: []mcp.Content{&mcp.TextContent{Text: structErr.ToJSON()}},
+		}
+	}
+	return nil
+}
+
+func (s *MCPServer) handleUpsertProfile(cfg *config.Config, p ConfigureProfileParams) (*mcp.CallToolResult, any, error) {
+	ensureConfigAESKey(cfg, s.ConfigPath)
+	upsertConfigProfile(cfg, p)
+	if errResult := s.saveConfigResult(cfg, p.ProfileName); errResult != nil {
+		return errResult, nil, nil
 	}
 	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{
-				Text: "Profile configured successfully.",
-			},
-		},
+		Content: []mcp.Content{&mcp.TextContent{Text: "Profile configured successfully."}},
+	}, nil, nil
+}
+
+func (s *MCPServer) handleDeleteProfile(cfg *config.Config, p ConfigureProfileParams) (*mcp.CallToolResult, any, error) {
+	found := false
+	for i := range cfg.Profiles {
+		if cfg.Profiles[i].ProfileName == p.ProfileName {
+			cfg.Profiles = append(cfg.Profiles[:i], cfg.Profiles[i+1:]...)
+			found = true
+			break
+		}
+	}
+	if !found {
+		structErr := NewStructuredError(
+			ErrorCodeProfileNotFound,
+			messageProfileNotFound,
+			fmt.Sprintf(messageProfileNotFoundFormat, p.ProfileName),
+		).WithContext("profile_name", p.ProfileName)
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: structErr.ToJSON()}},
+		}, nil, nil
+	}
+	if errResult := s.saveConfigResult(cfg, p.ProfileName); errResult != nil {
+		return errResult, nil, nil
+	}
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{
+			Text: fmt.Sprintf("Profile '%s' deleted successfully.", p.ProfileName),
+		}},
+	}, nil, nil
+}
+
+func applyCloneOverrides(cloned *config.Profile, p ConfigureProfileParams) {
+	if p.DBType != "" {
+		cloned.DBType = p.DBType
+	}
+	if p.Host != "" {
+		cloned.Host = p.Host
+	}
+	if p.Port != 0 {
+		cloned.Port = p.Port
+	}
+	if p.Username != "" {
+		cloned.Username = p.Username
+	}
+	if p.Password != "" {
+		cloned.Password = p.Password
+	}
+	if p.DatabaseName != "" {
+		cloned.DatabaseName = p.DatabaseName
+	}
+	if p.Readonly {
+		cloned.Readonly = p.Readonly
+	}
+	if p.SSLMode != "" {
+		cloned.SSLMode = p.SSLMode
+	}
+}
+
+func (s *MCPServer) handleCloneProfile(cfg *config.Config, p ConfigureProfileParams) (*mcp.CallToolResult, any, error) {
+	// Find source profile
+	var source *config.Profile
+	for i := range cfg.Profiles {
+		if cfg.Profiles[i].ProfileName == p.SourceProfile {
+			source = &cfg.Profiles[i]
+			break
+		}
+	}
+	if source == nil {
+		structErr := NewStructuredError(
+			ErrorCodeProfileNotFound,
+			messageProfileNotFound,
+			fmt.Sprintf("Source profile '%s' not found", p.SourceProfile),
+		).WithContext("source_profile", p.SourceProfile)
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: structErr.ToJSON()}},
+		}, nil, nil
+	}
+
+	// Check target doesn't already exist
+	for i := range cfg.Profiles {
+		if cfg.Profiles[i].ProfileName == p.ProfileName {
+			structErr := NewStructuredError(
+				ErrorCodeInvalidInput,
+				"Profile already exists",
+				fmt.Sprintf("Profile '%s' already exists; use a different name or delete it first", p.ProfileName),
+			).WithContext("profile_name", p.ProfileName)
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: structErr.ToJSON()}},
+			}, nil, nil
+		}
+	}
+
+	// Copy source and apply overrides
+	cloned := *source
+	cloned.ProfileName = p.ProfileName
+	applyCloneOverrides(&cloned, p)
+
+	ensureConfigAESKey(cfg, s.ConfigPath)
+	cfg.Profiles = append(cfg.Profiles, cloned)
+
+	if errResult := s.saveConfigResult(cfg, p.ProfileName); errResult != nil {
+		return errResult, nil, nil
+	}
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{
+			Text: fmt.Sprintf("Profile '%s' cloned from '%s' successfully.", p.ProfileName, p.SourceProfile),
+		}},
 	}, nil, nil
 }
 
@@ -2152,26 +2276,67 @@ func normalizeConfigureProfileParams(input ConfigureProfileParams) ConfigureProf
 }
 
 func validateConfigureProfileParams(p ConfigureProfileParams) *mcp.CallToolResult {
-	if p.ProfileName != "" && p.DBType != "" && p.DatabaseName != "" {
-		return nil
-	}
-	structErr := NewStructuredError(
-		ErrorCodeMissingParameter,
-		messageMissingRequiredParameters,
-		"All of profile_name, db_type, and database_name are required",
-	).WithSuggestions(
-		ErrorSuggestion{
-			Action:      actionProvideAllRequiredParameters,
-			Description: "Ensure profile_name, db_type, and database_name are included",
-			Example:     `{"profile_name": "mydb", "db_type": "mysql", "database_name": "mydb"}`,
-		},
-	)
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{
-				Text: structErr.ToJSON(),
+	switch p.Action {
+	case "":
+		if p.ProfileName != "" && p.DBType != "" && p.DatabaseName != "" {
+			return nil
+		}
+		structErr := NewStructuredError(
+			ErrorCodeMissingParameter,
+			messageMissingRequiredParameters,
+			"All of profile_name, db_type, and database_name are required",
+		).WithSuggestions(
+			ErrorSuggestion{
+				Action:      actionProvideAllRequiredParameters,
+				Description: "Ensure profile_name, db_type, and database_name are included",
+				Example:     `{"profile_name": "mydb", "db_type": "mysql", "database_name": "mydb"}`,
 			},
-		},
+		)
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: structErr.ToJSON()}},
+		}
+
+	case "delete":
+		if p.ProfileName == "" {
+			structErr := NewStructuredError(
+				ErrorCodeMissingParameter,
+				messageMissingRequiredParameters,
+				"profile_name is required for delete",
+			).WithSuggestions(ErrorSuggestion{
+				Action:  actionProvideAllRequiredParameters,
+				Example: `{"action": "delete", "profile_name": "mydb"}`,
+			})
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: structErr.ToJSON()}},
+			}
+		}
+		return nil
+
+	case "clone":
+		if p.ProfileName == "" || p.SourceProfile == "" {
+			structErr := NewStructuredError(
+				ErrorCodeMissingParameter,
+				messageMissingRequiredParameters,
+				"profile_name and source_profile are required for clone",
+			).WithSuggestions(ErrorSuggestion{
+				Action:  actionProvideAllRequiredParameters,
+				Example: `{"action": "clone", "profile_name": "new-profile", "source_profile": "existing-profile"}`,
+			})
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: structErr.ToJSON()}},
+			}
+		}
+		return nil
+
+	default:
+		structErr := NewStructuredError(
+			ErrorCodeInvalidInput,
+			"Unknown action",
+			fmt.Sprintf("Unknown action '%s'; valid actions are: delete, clone (or omit for create/update)", p.Action),
+		)
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: structErr.ToJSON()}},
+		}
 	}
 }
 

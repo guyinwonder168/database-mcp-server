@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+## [v1.3.0] - 2026-02-21
+
+### Added
+- `configure-profile` now supports `action` field with `"delete"` and `"clone"` actions.
+- Delete action: remove a profile by name (`{"action": "delete", "profile_name": "mydb"}`).
+- Clone action: copy an existing profile with optional overrides (`{"action": "clone", "profile_name": "new", "source_profile": "existing"}`).
+- Updated tool description and help metadata for the new actions.
+
 ## [v1.2.1] - 2026-02-19
 
 ### Fixed
