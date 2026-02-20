@@ -60,7 +60,24 @@ When `action="clone"`, the handler:
 
 ---
 
-## Task 1: Add `Action` field + validate unknown action
+- [x] Task 1: Add `Action` field + validate unknown action (Completed 2026-02-21)
+- [x] Task 2: Delete profile — happy path (Completed 2026-02-21)
+- [x] Task 3: Delete profile — error case (profile not found) (Completed 2026-02-21)
+- [x] Task 4: Delete profile — validation (missing profile_name) (Completed 2026-02-21)
+- [x] Task 5: Clone profile — happy path (Completed 2026-02-21)
+- [x] Task 6: Clone profile — with overrides (Completed 2026-02-21)
+- [x] Task 7: Clone profile — error cases (Completed 2026-02-21)
+- [x] Task 8: Update tool description and help (Completed 2026-02-21)
+- [x] Task 9: Full regression + vet + fmt (Completed 2026-02-21)
+- [x] Task 10: Version bump and artifact sync (Completed 2026-02-21)
+
+---
+## Verification Results (Final)
+- `go test ./internal/mcp` → ✅ PASS
+- `go vet ./...` → ✅ PASS
+- `gofmt -l .` → ✅ PASS (Clean)
+- Version `v1.3.0` confirmed in: `server.go`, `README.md`, `mcp-openapi.yaml`, `CHANGELOG.md`
+- Gemini compatibility: InputSchema remains scalar, verified via code inspection.
 
 ### Files
 - Modify: `internal/mcp/server.go:1067-1077` (ConfigureProfileParams struct)
