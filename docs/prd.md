@@ -93,7 +93,7 @@ Database MCP Server provides a unified MCP tool interface that lets AI agents an
 - Transaction orchestration remains database/client-driven
 
 ## 6. Technical Dependencies
-- Go runtime baseline: `go 1.25` (`go1.25.7` toolchain)
+- Go runtime baseline: `go 1.26` (`go1.26.0` toolchain)
 - Official Go MCP SDK
 - SQL database drivers for supported backends
 
