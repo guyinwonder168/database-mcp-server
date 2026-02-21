@@ -25,6 +25,7 @@ This roadmap consolidates the strategic enhancement plan for the Database MCP Se
 | Advanced Data Profiling | Complete | Enhanced `analyze-schema` profiling with optional `profiling` parameter and `column_profiling` output |
 | Multi-Database Federation | Complete | `federated-query` delivered with parser, join engine, concurrent execution, and partial-failure metadata |
 | Profile Management (v1.3.0) | Complete | `configure-profile` enhanced with `delete` and `clone` actions |
+| Data Migration (v1.4.0) | Planned | Cross-database migration with async jobs, schema translation, and resume capability |
 
 ## Roadmap Phases
 
@@ -50,6 +51,19 @@ This roadmap consolidates the strategic enhancement plan for the Database MCP Se
 - Schema evolution management (`track-schema-changes`) - Complete
 - Advanced data profiling (enhanced `analyze-schema`) - Complete
 - Multi-database federation (`federated-query`) - Complete
+
+### Phase 4: Data Migration (Planned)
+
+**Goal**: Enable cross-database data migration with intelligent schema translation.
+
+- Single-table and whole-database migration
+- Asynchronous background jobs with progress tracking
+- LLM-driven schema translation between database dialects
+- Automatic FK dependency ordering (topological sort)
+- Per-table checkpointing for resume-from-failure
+- Error isolation with failed row logging
+
+**Design Document**: `docs/data-migration-design.md`
 
 ## Guiding Principles
 

@@ -47,7 +47,7 @@ Package registry: `https://github.com/guyinwonder168/database-mcp-server/pkgs/co
 ## 📋 Features
 
 - 🔧 **Interactive Setup** - Auto-creates `config.yaml` if missing; all configuration is managed via MCP actions
-- 👥 **Profile Management** - Add, update, and list database profiles via MCP
+- 👥 **Profile Management** - Create, update, delete, or clone database profiles via MCP
 - ⚡ **SQL Execution** - Run arbitrary SQL queries (with read-only enforcement)
 - 🔍 **Schema Introspection** - List tables/views, describe table schemas, list databases, and discover joins
 - 📊 **Sample Data Fetching** - Fetch sample rows to infer data formats and value ranges
@@ -194,17 +194,19 @@ go test ./...
 **Implementation Phases**:
 - **Phase 1** (Completed): Query optimization, validation, and enhanced NLP
 - **Phase 2** (Completed): Data lineage and business intelligence
-- **Phase 3** (Completed): Schema evolution, advanced profiling, and multi-database federation delivered
+- **Phase 3** (Completed): Schema evolution, advanced profiling, and multi-database federation
+- **Phase 4** (Planned): Cross-database data migration with async jobs, schema translation, and resume capability
 
 **Current Progress**:
-- `track-schema-changes` is implemented with snapshot tracking, history, migration generation, and drift detection (F2 Phase 4 complete).
-- Advanced profiling for `analyze-schema` is implemented with optional `profiling` parameter and backward-compatible response shape (F3 complete).
-- `federated-query` is implemented with parser/planner/join/executor/handler modules and dedicated test coverage (F4 complete).
+- `track-schema-changes` is implemented with snapshot tracking, history, migration generation, and drift detection.
+- Advanced profiling for `analyze-schema` is implemented with optional `profiling` parameter and backward-compatible response shape.
+- `federated-query` is implemented with parser/planner/join/executor/handler modules and dedicated test coverage.
+- `configure-profile` enhanced with `delete` and `clone` actions (v1.3.0).
 
 **Planning Documents**:
 - [Enhancement Roadmap](docs/roadmap.md) - Strategic overview
+- [Data Migration Design](docs/data-migration-design.md) - Phase 4 implementation plan
 - [Project Plan (History)](docs/history/project-plan-roadmap.md) - Comprehensive implementation strategy
 - [Vertical Slices (History)](docs/history/vertical-slices.md) - Detailed phase breakdowns
-- [Architecture Validation (History)](docs/history/architecture-validation.md) - Technical compatibility analysis
 
 **Ready for immediate enhancement development while maintaining production stability.**

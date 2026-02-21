@@ -35,6 +35,10 @@ Current baseline:
   - Product requirements and long-term direction.
 - [analyze-schema-design.md](analyze-schema-design.md)
   - Detailed design for analyze-schema orchestration.
+- [data-migration-design.md](data-migration-design.md)
+  - Phase 4 design for cross-database migration feature.
+- [profile-delete-clone-design.md](profile-delete-clone-design.md)
+  - Design for profile delete/clone actions (v1.3.0).
 - [schema-introspection-queries.md](schema-introspection-queries.md)
   - DB-specific introspection query references.
 
