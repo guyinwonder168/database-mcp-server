@@ -9,7 +9,7 @@ This document tracks the current implementation status of the Database MCP Serve
 - Version: `v1.3.0`
 - Status: Production Ready
 - Author: `guyinwonder`
-- Toolchain: `go 1.25` with `go1.25.7`
+- Toolchain: `go 1.26` with `go1.26.0`
 - MCP SDK: `github.com/modelcontextprotocol/go-sdk v1.2.0`
 - Distribution:
   - GitHub Releases (binary artifacts)

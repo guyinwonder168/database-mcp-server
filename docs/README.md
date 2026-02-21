@@ -8,7 +8,7 @@ Current baseline:
 - Version: `v1.3.0`
 - MCP tools: `19` implemented and registered
 - Databases: MySQL, MariaDB, PostgreSQL, SQLite
-- Go baseline: `go 1.25` with toolchain `go1.25.7`
+- Go baseline: `go 1.26` with toolchain `go1.26.0`
 
 ## Document Index
 
