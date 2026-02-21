@@ -132,6 +132,27 @@ Typical error response:
 - Purpose: read-only multi-profile query federation with join/aggregation
 - Key params: either federated `sql` or `sub_queries`, optional `joins`, `aggregations`, pagination and concurrency
 
+## Planned Tools (v1.4.0)
+
+The following tools are planned for the Data Migration feature (Phase 4):
+
+19. `start-migration-job`
+- Purpose: Start an asynchronous cross-database migration job
+- Key params: `source_profile`, `source_database`, `target_profile`, `target_database`, optional `source_table`, `include_tables`, `truncate_target`, `stop_on_error`
+- Returns: `job_id` for status tracking
+
+20. `check-migration-status`
+- Purpose: Poll migration job progress and results
+- Key params: `job_id`
+- Returns: `status`, `progress_percent`, `tables_status`, `rows_migrated`, `rows_failed`, error file paths
+
+21. `generate-schema-copy`
+- Purpose: Generate schema translation SQL between database dialects (helper for LLM-guided migration)
+- Key params: `source_profile`, `source_database`, `target_profile`, `target_database`, optional `source_table`, `include_tables`
+- Returns: SQL files for tables, indexes, foreign keys, triggers, views; skipped items for unsupported objects
+
+**Design Document**: `docs/data-migration-design.md`
+
 ## End-to-End Usage Patterns
 
 ### Safe SQL flow
