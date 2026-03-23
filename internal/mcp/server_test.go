@@ -639,7 +639,49 @@ func TestHandleDescribeTable(t *testing.T) {
 	}
 }
 
-// TestHandleListDatabases tests the list-databases MCP action.
+// TestHandleDescribeTableWithSchema tests the describe-table MCP action with explicit schema parameter.
+func TestHandleDescribeTableWithSchema(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+
+	res, _, err := server.handleDescribeTable(ctx, nil, DescribeTableParams{
+		ProfileName:  "testsqlite",
+		DatabaseName: testSQLiteDBPath,
+		TableName:    "sqlite_master",
+		Schema:       "",
+	})
+	if err != nil {
+		t.Fatalf("handleDescribeTable with empty schema error: %v", err)
+	}
+	if res == nil || res.Content == nil {
+		t.Fatalf("handleDescribeTable with empty schema returned nil content")
+	}
+}
+
+// TestHandleDescribeTableAutoDetectSchema tests the describe-table MCP action with schema auto-detection.
+func TestHandleDescribeTableAutoDetectSchema(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+
+	res, _, err := server.handleDescribeTable(ctx, nil, DescribeTableParams{
+		ProfileName:  "testsqlite",
+		DatabaseName: testSQLiteDBPath,
+		TableName:    "sqlite_master",
+	})
+	if err != nil {
+		t.Fatalf("handleDescribeTable auto-detect schema error: %v", err)
+	}
+	if res == nil || res.Content == nil {
+		t.Fatalf("handleDescribeTable auto-detect schema returned nil content")
+	}
+}
+
 func TestHandleListDatabases(t *testing.T) {
 	testConfig := setupTestConfig(t)
 	defer os.Remove(testConfig)

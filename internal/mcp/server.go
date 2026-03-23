@@ -1122,6 +1122,7 @@ type DescribeTableParams struct {
 	ProfileName  string `json:"profile_name"`
 	DatabaseName string `json:"database_name"`
 	TableName    string `json:"table_name"`
+	Schema       string `json:"schema,omitempty"`
 }
 
 type DescribeTableResult struct {
@@ -3098,7 +3099,7 @@ func (s *MCPServer) queryDescribeTableColumns(
 		columns, err := describeMySQLTableColumns(ctx, conn, p.DatabaseName, p.TableName)
 		return columns, describeTableErrorResult(s.errorAnalyzer, err, p, dbType), nil
 	case "postgres":
-		columns, err := describePostgresTableColumns(ctx, conn, p.TableName)
+		columns, err := describePostgresTableColumns(ctx, conn, p.TableName, p.Schema)
 		return columns, describeTableErrorResult(s.errorAnalyzer, err, p, dbType), nil
 	case "sqlite":
 		columns, err := describeSQLiteTableColumns(ctx, conn, p.TableName)
@@ -3117,6 +3118,7 @@ func describeTableErrorResult(analyzer *ErrorAnalyzer, err error, p DescribeTabl
 		"profile_name":  p.ProfileName,
 		"database_name": p.DatabaseName,
 		"table_name":    p.TableName,
+		"schema":        p.Schema,
 		"operation":     "describe_table",
 		"db_type":       dbType,
 	})
@@ -3214,7 +3216,19 @@ func setMySQLDescribeColumnOptionalFields(col *ColumnInfo, row mysqlDescribeColu
 	}
 }
 
-func describePostgresTableColumns(ctx context.Context, conn *sql.DB, tableName string) ([]ColumnInfo, error) {
+func describePostgresTableColumns(ctx context.Context, conn *sql.DB, tableName, schema string) ([]ColumnInfo, error) {
+	// Resolve schema using ResolveSchema with auto-detection fallback
+	sqlConn, err := conn.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get connection: %w", err)
+	}
+	defer sqlConn.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
+
+	resolvedSchema, err := ResolveSchema(ctx, sqlConn, schema)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve schema: %w", err)
+	}
+
 	query := `SELECT
 		c.column_name as name,
 		c.data_type as type,
@@ -3239,10 +3253,10 @@ func describePostgresTableColumns(ctx context.Context, conn *sql.DB, tableName s
 		AND kcu.table_name = c.table_name AND kcu.table_schema = c.table_schema
 	LEFT JOIN information_schema.table_constraints tc ON tc.constraint_name = kcu.constraint_name
 		AND tc.table_name = c.table_name AND tc.table_schema = c.table_schema
-	WHERE c.table_schema = $1 AND c.table_name = $2
+	WHERE c.table_schema = ` + resolvedSchema + ` AND c.table_name = $1
 	ORDER BY c.ordinal_position`
 
-	rows, err := conn.QueryContext(ctx, query, "public", tableName)
+	rows, err := conn.QueryContext(ctx, query, tableName)
 	if err != nil {
 		return nil, err
 	}
