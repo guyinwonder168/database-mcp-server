@@ -1454,6 +1454,161 @@ func TestHandleListSchemas_MissingParams(t *testing.T) {
 	})
 }
 
+// TestGetDefaultSchemaWithMock tests the schema auto-detection with sqlmock
+func TestGetDefaultSchemaWithMock(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create sqlmock: %v", err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+
+	t.Run("success_current_schema", func(t *testing.T) {
+		// Get a connection from the pool
+		conn, err := db.Conn(ctx)
+		if err != nil {
+			t.Fatalf("failed to get connection: %v", err)
+		}
+		defer conn.Close()
+
+		rows := sqlmock.NewRows([]string{"current_schema"}).AddRow("myapp_schema")
+		mock.ExpectQuery("SELECT current_schema").WillReturnRows(rows)
+
+		schema, err := GetDefaultSchema(ctx, conn)
+		if err != nil {
+			t.Fatalf("GetDefaultSchema failed: %v", err)
+		}
+		if schema != "myapp_schema" {
+			t.Errorf("expected 'myapp_schema', got %q", schema)
+		}
+
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
+		}
+	})
+
+	t.Run("fallback_to_information_schema", func(t *testing.T) {
+		conn, err := db.Conn(ctx)
+		if err != nil {
+			t.Fatalf("failed to get connection: %v", err)
+		}
+		defer conn.Close()
+
+		// First query returns null
+		nullRows := sqlmock.NewRows([]string{"current_schema"}).AddRow(nil)
+		mock.ExpectQuery("SELECT current_schema").WillReturnRows(nullRows)
+
+		// Second query returns schema from information_schema
+		schemaRows := sqlmock.NewRows([]string{"schema_name"}).AddRow("app_public")
+		mock.ExpectQuery("SELECT schema_name FROM information_schema.schemata").WillReturnRows(schemaRows)
+
+		schema, err := GetDefaultSchema(ctx, conn)
+		if err != nil {
+			t.Fatalf("GetDefaultSchema failed: %v", err)
+		}
+		if schema != "app_public" {
+			t.Errorf("expected 'app_public', got %q", schema)
+		}
+
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
+		}
+	})
+
+	t.Run("fallback_to_public", func(t *testing.T) {
+		conn, err := db.Conn(ctx)
+		if err != nil {
+			t.Fatalf("failed to get connection: %v", err)
+		}
+		defer conn.Close()
+
+		// First query returns null
+		nullRows := sqlmock.NewRows([]string{"current_schema"}).AddRow(nil)
+		mock.ExpectQuery("SELECT current_schema").WillReturnRows(nullRows)
+
+		// Second query returns no rows (sql.ErrNoRows)
+		emptyRows := sqlmock.NewRows([]string{"schema_name"})
+		mock.ExpectQuery("SELECT schema_name FROM information_schema.schemata").WillReturnRows(emptyRows)
+
+		schema, err := GetDefaultSchema(ctx, conn)
+		if err != nil {
+			t.Fatalf("GetDefaultSchema failed: %v", err)
+		}
+		if schema != "public" {
+			t.Errorf("expected 'public' fallback, got %q", schema)
+		}
+
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
+		}
+	})
+
+	t.Run("query_error", func(t *testing.T) {
+		conn, err := db.Conn(ctx)
+		if err != nil {
+			t.Fatalf("failed to get connection: %v", err)
+		}
+		defer conn.Close()
+
+		mock.ExpectQuery("SELECT current_schema").WillReturnError(fmt.Errorf("connection lost"))
+
+		_, err = GetDefaultSchema(ctx, conn)
+		if err == nil {
+			t.Fatal("expected error for query failure")
+		}
+	})
+}
+
+// TestResolveSchemaWithConnection tests ResolveSchema with actual connection
+func TestResolveSchemaWithConnection(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create sqlmock: %v", err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+
+	t.Run("explicit_schema", func(t *testing.T) {
+		conn, err := db.Conn(ctx)
+		if err != nil {
+			t.Fatalf("failed to get connection: %v", err)
+		}
+		defer conn.Close()
+
+		// With explicit schema, should not query DB
+		result, err := ResolveSchema(ctx, conn, "custom_schema")
+		if err != nil {
+			t.Fatalf("ResolveSchema failed: %v", err)
+		}
+		if result != `"custom_schema"` {
+			t.Errorf("expected '\"custom_schema\"', got %q", result)
+		}
+	})
+
+	t.Run("empty_schema_calls_get_default", func(t *testing.T) {
+		conn, err := db.Conn(ctx)
+		if err != nil {
+			t.Fatalf("failed to get connection: %v", err)
+		}
+		defer conn.Close()
+
+		rows := sqlmock.NewRows([]string{"current_schema"}).AddRow("detected_schema")
+		mock.ExpectQuery("SELECT current_schema").WillReturnRows(rows)
+
+		result, err := ResolveSchema(ctx, conn, "")
+		if err != nil {
+			t.Fatalf("ResolveSchema failed: %v", err)
+		}
+		if result != `"detected_schema"` {
+			t.Errorf("expected '\"detected_schema\"', got %q", result)
+		}
+
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
+		}
+	})
+}
+
 func floatEqual(left, right float64) bool {
 	return math.Abs(left-right) < 1e-9
 }
