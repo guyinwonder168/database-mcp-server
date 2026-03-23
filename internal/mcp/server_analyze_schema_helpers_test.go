@@ -609,7 +609,7 @@ func TestDescribePostgresTableColumnsWithSQLiteMetadata(t *testing.T) {
 		}
 	}
 
-	columns, err := describePostgresTableColumns(ctx, dbConn, "users")
+	columns, err := describePostgresTableColumns(ctx, dbConn, "users", "public")
 	if err != nil {
 		t.Fatalf("describePostgresTableColumns failed: %v", err)
 	}
