@@ -775,7 +775,7 @@ func TestTopicFilteredToolHelpResult(t *testing.T) {
 
 	// Test errors topic
 	result = topicFilteredToolHelpResult("test-tool", "errors", entry)
-	if result.CommonErrors == nil || len(result.CommonErrors) == 0 {
+	if len(result.CommonErrors) == 0 {
 		t.Error("Expected CommonErrors to be set")
 	}
 
