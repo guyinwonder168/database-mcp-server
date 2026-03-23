@@ -7,6 +7,7 @@ import (
 	"database-mcp-provider/internal/config"
 	"database/sql"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"strings"
@@ -615,6 +616,43 @@ func TestDescribePostgresTableColumns(t *testing.T) {
 		}
 		if len(columns) != 1 {
 			t.Fatalf("expected one column, got %d", len(columns))
+		}
+
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
+		}
+	})
+
+	// Test query error
+	t.Run("query_error", func(t *testing.T) {
+		mock.ExpectQuery("SELECT.*FROM information_schema.columns").
+			WithArgs("users", "public").
+			WillReturnError(fmt.Errorf("query failed"))
+
+		_, err := describePostgresTableColumns(ctx, db, "users", "public")
+		if err == nil {
+			t.Error("expected error, got nil")
+		}
+
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
+		}
+	})
+
+	// Test scan error (column count mismatch)
+	t.Run("scan_error", func(t *testing.T) {
+		// Return fewer columns than expected to trigger scan error
+		rows := sqlmock.NewRows([]string{
+			"name", "type", // only 2 columns instead of 9
+		}).AddRow("id", "bigint")
+
+		mock.ExpectQuery("SELECT.*FROM information_schema.columns").
+			WithArgs("users", "public").
+			WillReturnRows(rows)
+
+		_, err := describePostgresTableColumns(ctx, db, "users", "public")
+		if err == nil {
+			t.Error("expected error, got nil")
 		}
 
 		if err := mock.ExpectationsWereMet(); err != nil {
