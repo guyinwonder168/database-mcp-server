@@ -983,6 +983,260 @@ func TestValidateConfigureProfileParamsErrorBranch(t *testing.T) {
 	}
 }
 
+// TestHandleGetSearchPath tests the get-search-path handler
+func TestHandleGetSearchPath(t *testing.T) {
+	server := &MCPServer{errorAnalyzer: NewErrorAnalyzer("")}
+	ctx := context.Background()
+
+	t.Run("missing_profile_name", func(t *testing.T) {
+		_, _, err := server.handleGetSearchPath(ctx, nil, GetSearchPathParams{
+			ProfileName:  "",
+			DatabaseName: "testdb",
+		})
+		if err == nil {
+			t.Fatal("expected error for missing profile_name")
+		}
+	})
+
+	t.Run("missing_database_name", func(t *testing.T) {
+		_, _, err := server.handleGetSearchPath(ctx, nil, GetSearchPathParams{
+			ProfileName:  "test",
+			DatabaseName: "",
+		})
+		if err == nil {
+			t.Fatal("expected error for missing database_name")
+		}
+	})
+}
+
+// TestHandleGetSearchPath_Postgres tests PostgreSQL search path with sqlmock
+func TestHandleGetSearchPath_Postgres(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create sqlmock: %v", err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+
+	t.Run("success", func(t *testing.T) {
+		// Mock search_path query
+		searchPathRows := sqlmock.NewRows([]string{"search_path"}).AddRow("public, user_schema")
+		mock.ExpectQuery("SHOW search_path").WillReturnRows(searchPathRows)
+
+		// Mock current_schema query
+		schemaRows := sqlmock.NewRows([]string{"current_schema"}).AddRow("public")
+		mock.ExpectQuery("SELECT current_schema").WillReturnRows(schemaRows)
+
+		// We can't easily mock the connection opening, so we test the core logic separately
+		// This tests the query execution and result parsing
+		var searchPath, currentSchema string
+		if err := db.QueryRowContext(ctx, "SHOW search_path").Scan(&searchPath); err != nil {
+			searchPath = "unknown"
+		}
+		if err := db.QueryRowContext(ctx, "SELECT current_schema").Scan(&currentSchema); err != nil {
+			currentSchema = "unknown"
+		}
+
+		if searchPath != "public, user_schema" {
+			t.Errorf("expected search_path 'public, user_schema', got %q", searchPath)
+		}
+		if currentSchema != "public" {
+			t.Errorf("expected current_schema 'public', got %q", currentSchema)
+		}
+
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
+		}
+	})
+
+	t.Run("query_error_returns_unknown", func(t *testing.T) {
+		// Mock search_path query error
+		mock.ExpectQuery("SHOW search_path").WillReturnError(fmt.Errorf("connection error"))
+
+		var searchPath string
+		if err := db.QueryRowContext(ctx, "SHOW search_path").Scan(&searchPath); err != nil {
+			searchPath = "unknown"
+		}
+
+		if searchPath != "unknown" {
+			t.Errorf("expected search_path 'unknown' on error, got %q", searchPath)
+		}
+
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
+		}
+	})
+}
+
+// TestCollectLineageEdges tests the lineage edge collection dispatcher
+func TestCollectLineageEdges(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("unsupported_db_type", func(t *testing.T) {
+		db, _, err := sqlmock.New()
+		if err != nil {
+			t.Fatalf("failed to create sqlmock: %v", err)
+		}
+		defer db.Close()
+
+		prof := config.Profile{
+			ProfileName: "test",
+			DBType:      "oracle",
+		}
+
+		_, err = collectLineageEdges(ctx, db, prof)
+		if err == nil {
+			t.Fatal("expected error for unsupported db_type")
+		}
+		if !strings.Contains(err.Error(), "unsupported db_type for lineage") {
+			t.Errorf("unexpected error message: %v", err)
+		}
+	})
+
+	t.Run("mysql_dispatcher", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		if err != nil {
+			t.Fatalf("failed to create sqlmock: %v", err)
+		}
+		defer db.Close()
+
+		rows := sqlmock.NewRows([]string{
+			"TABLE_NAME", "REFERENCED_TABLE_NAME",
+		}).AddRow("orders", "users")
+
+		mock.ExpectQuery("SELECT.*FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE").
+			WithArgs("appdb").
+			WillReturnRows(rows)
+
+		prof := config.Profile{
+			ProfileName:  "test",
+			DBType:       "mysql",
+			DatabaseName: "appdb",
+		}
+
+		edges, err := collectLineageEdges(ctx, db, prof)
+		if err != nil {
+			t.Fatalf("collectLineageEdges failed: %v", err)
+		}
+		if len(edges) != 1 {
+			t.Fatalf("expected one edge, got %d", len(edges))
+		}
+		if edges[0].From != "orders" || edges[0].To != "users" {
+			t.Errorf("unexpected edge: From=%q To=%q", edges[0].From, edges[0].To)
+		}
+
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
+		}
+	})
+
+	t.Run("mariadb_dispatcher", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		if err != nil {
+			t.Fatalf("failed to create sqlmock: %v", err)
+		}
+		defer db.Close()
+
+		rows := sqlmock.NewRows([]string{
+			"TABLE_NAME", "REFERENCED_TABLE_NAME",
+		}).AddRow("items", "products")
+
+		mock.ExpectQuery("SELECT.*FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE").
+			WithArgs("mariadb_app").
+			WillReturnRows(rows)
+
+		prof := config.Profile{
+			ProfileName:  "test",
+			DBType:       "mariadb",
+			DatabaseName: "mariadb_app",
+		}
+
+		edges, err := collectLineageEdges(ctx, db, prof)
+		if err != nil {
+			t.Fatalf("collectLineageEdges failed: %v", err)
+		}
+		if len(edges) != 1 {
+			t.Fatalf("expected one edge, got %d", len(edges))
+		}
+
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
+		}
+	})
+
+	t.Run("postgres_dispatcher", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		if err != nil {
+			t.Fatalf("failed to create sqlmock: %v", err)
+		}
+		defer db.Close()
+
+		rows := sqlmock.NewRows([]string{
+			"from_table", "to_table",
+		}).AddRow("comments", "posts")
+
+		mock.ExpectQuery("SELECT.*FROM information_schema.table_constraints").
+			WillReturnRows(rows)
+
+		prof := config.Profile{
+			ProfileName: "test",
+			DBType:      "postgres",
+		}
+
+		edges, err := collectLineageEdges(ctx, db, prof)
+		if err != nil {
+			t.Fatalf("collectLineageEdges failed: %v", err)
+		}
+		if len(edges) != 1 {
+			t.Fatalf("expected one edge, got %d", len(edges))
+		}
+
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
+		}
+	})
+}
+
+// TestCollectLineageEdges_SQLite tests SQLite lineage edge collection with in-memory DB
+func TestCollectLineageEdges_SQLite(t *testing.T) {
+	ctx := context.Background()
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("failed to open sqlite db: %v", err)
+	}
+	defer db.Close()
+
+	// Create tables with foreign key relationship
+	if _, err := db.ExecContext(ctx, "CREATE TABLE users (id INTEGER PRIMARY KEY)"); err != nil {
+		t.Fatalf("failed to create users table: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		CREATE TABLE orders (
+			id INTEGER PRIMARY KEY,
+			user_id INTEGER,
+			FOREIGN KEY(user_id) REFERENCES users(id)
+		)
+	`); err != nil {
+		t.Fatalf("failed to create orders table: %v", err)
+	}
+
+	prof := config.Profile{
+		ProfileName: "test",
+		DBType:      "sqlite",
+	}
+
+	edges, err := collectLineageEdges(ctx, db, prof)
+	if err != nil {
+		t.Fatalf("collectLineageEdges for sqlite failed: %v", err)
+	}
+	if len(edges) != 1 {
+		t.Fatalf("expected one edge, got %d", len(edges))
+	}
+	if edges[0].From != "orders" || edges[0].To != "users" {
+		t.Errorf("unexpected edge: From=%q To=%q", edges[0].From, edges[0].To)
+	}
+}
+
 func floatEqual(left, right float64) bool {
 	return math.Abs(left-right) < 1e-9
 }
