@@ -489,64 +489,48 @@ func TestScanAnalyzeSchemaColumnHelpers(t *testing.T) {
 	logAnalyzeSchemaColumnScanError("mysql", "users", errors.New("scan error"))
 }
 
-func TestDescribeMySQLTableColumnsWithAttachedSQLiteSchema(t *testing.T) {
-	dbConn, err := sql.Open("sqlite3", ":memory:")
+func TestDescribeMySQLTableColumns(t *testing.T) {
+	db, mock, err := sqlmock.New()
 	if err != nil {
-		t.Fatalf("failed to open sqlite memory db: %v", err)
+		t.Fatalf("failed to create sqlmock: %v", err)
 	}
-	defer dbConn.Close()
-
+	defer db.Close()
 	ctx := context.Background()
-	if _, err := dbConn.ExecContext(ctx, "ATTACH DATABASE ':memory:' AS INFORMATION_SCHEMA"); err != nil {
-		t.Fatalf("failed to attach INFORMATION_SCHEMA db: %v", err)
-	}
 
-	createSQL := `CREATE TABLE INFORMATION_SCHEMA.COLUMNS (
-		COLUMN_NAME TEXT,
-		COLUMN_TYPE TEXT,
-		IS_NULLABLE TEXT,
-		COLUMN_KEY TEXT,
-		COLUMN_DEFAULT TEXT,
-		COLUMN_COMMENT TEXT,
-		EXTRA TEXT,
-		CHARACTER_SET_NAME TEXT,
-		COLLATION_NAME TEXT,
-		CHARACTER_MAXIMUM_LENGTH INTEGER,
-		NUMERIC_PRECISION INTEGER,
-		NUMERIC_SCALE INTEGER,
-		TABLE_SCHEMA TEXT,
-		TABLE_NAME TEXT,
-		ORDINAL_POSITION INTEGER
-	)`
-	if _, err := dbConn.ExecContext(ctx, createSQL); err != nil {
-		t.Fatalf("failed to create INFORMATION_SCHEMA.COLUMNS: %v", err)
-	}
-
-	insertSQL := `INSERT INTO INFORMATION_SCHEMA.COLUMNS (
-		COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_DEFAULT, COLUMN_COMMENT, EXTRA,
-		CHARACTER_SET_NAME, COLLATION_NAME, CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, NUMERIC_SCALE,
-		TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err = dbConn.ExecContext(
-		ctx,
-		insertSQL,
-		"id", "bigint", "NO", "PRI", "0", "identifier", "auto_increment",
-		"utf8mb4", "utf8mb4_general_ci", 255, 20, 0,
-		"appdb", "users", 1,
+	// Mock the INFORMATION_SCHEMA.COLUMNS query
+	rows := sqlmock.NewRows([]string{
+		"name", "type", "nullable", "key_type", "default_value",
+		"comment", "extra", "character_set", "collation",
+		"max_length", "precision", "scale",
+	}).AddRow(
+		"id", "bigint", "NO", "PRI", "0",
+		"identifier", "auto_increment", "utf8mb4", "utf8mb4_general_ci",
+		255, 20, 0,
 	)
-	if err != nil {
-		t.Fatalf("failed to insert INFORMATION_SCHEMA row: %v", err)
-	}
 
-	columns, err := describeMySQLTableColumns(ctx, dbConn, "appdb", "users")
+	mock.ExpectQuery("SELECT.*FROM INFORMATION_SCHEMA.COLUMNS").
+		WithArgs("appdb", "users").
+		WillReturnRows(rows)
+
+	columns, err := describeMySQLTableColumns(ctx, db, "appdb", "users")
 	if err != nil {
 		t.Fatalf("describeMySQLTableColumns failed: %v", err)
 	}
 	if len(columns) != 1 {
 		t.Fatalf("expected one column, got %d", len(columns))
 	}
-	if columns[0].Name != "id" || !columns[0].AutoIncrement {
-		t.Fatalf("unexpected described column: %+v", columns[0])
+	if columns[0].Name != "id" {
+		t.Errorf("expected column name 'id', got %q", columns[0].Name)
+	}
+	if columns[0].Key != "PRI" {
+		t.Errorf("expected key 'PRI', got %q", columns[0].Key)
+	}
+	if !columns[0].AutoIncrement {
+		t.Errorf("expected AutoIncrement to be true")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
 	}
 }
 
