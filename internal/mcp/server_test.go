@@ -700,7 +700,6 @@ func TestHandleListDatabases(t *testing.T) {
 	}
 }
 
-
 func TestHandleListSchemas(t *testing.T) {
 	testConfig := setupTestConfig(t)
 	defer os.Remove(testConfig)
@@ -732,7 +731,6 @@ func TestHandleListSchemas(t *testing.T) {
 		t.Errorf("Expected default_schema 'main' for SQLite, got %q", result.DefaultSchema)
 	}
 }
-
 
 // TestProfileWorkflowSQLite runs an end-to-end happy path on SQLite covering profile creation,
 // table creation, insert, select, list tables, describe, and sample-data.

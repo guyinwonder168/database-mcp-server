@@ -587,7 +587,6 @@ func (s *MCPServer) registerAllTools() {
 		addTool(s, tool, s.handleListDatabases)
 	}
 
-
 	// get-search-path
 	{
 		tool := &mcp.Tool{
@@ -3128,32 +3127,41 @@ func (s *MCPServer) handleListSchemas(ctx context.Context, _ *mcp.CallToolReques
 	}
 	defer conn.Close() //nolint:errcheck
 
-	rows, err := conn.QueryContext(ctx,
-		`SELECT schema_name FROM information_schema.schemata 
-		 WHERE schema_name NOT IN ('pg_catalog', 'information_schema') 
-		 AND schema_name NOT LIKE 'pg_%' 
-		 ORDER BY schema_name`)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to query schemas: %w", err)
-	}
-	defer rows.Close() //nolint:errcheck
-
 	var schemas []string
-	for rows.Next() {
-		var schema string
-		if err := rows.Scan(&schema); err != nil {
-			return nil, nil, fmt.Errorf("failed to scan schema: %w", err)
-		}
-		schemas = append(schemas, schema)
-	}
-
 	var defaultSchema string
-	if prof.DBType == "postgres" {
-		if err := conn.QueryRowContext(ctx, "SELECT current_schema()").Scan(&defaultSchema); err != nil {
-			defaultSchema = "public"
-		}
+
+	// SQLite doesn't have information_schema.schemata - use "main" as the default schema
+	if prof.DBType == "sqlite" {
+		schemas = []string{"main"}
+		defaultSchema = "main"
 	} else {
-		defaultSchema = input.DatabaseName
+		// PostgreSQL, MySQL, MariaDB have information_schema.schemata
+		rows, err := conn.QueryContext(ctx,
+			`SELECT schema_name FROM information_schema.schemata 
+			 WHERE schema_name NOT IN ('pg_catalog', 'information_schema') 
+			 AND schema_name NOT LIKE 'pg_%' 
+			 ORDER BY schema_name`)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to query schemas: %w", err)
+		}
+		defer rows.Close() //nolint:errcheck
+
+		for rows.Next() {
+			var schema string
+			if err := rows.Scan(&schema); err != nil {
+				return nil, nil, fmt.Errorf("failed to scan schema: %w", err)
+			}
+			schemas = append(schemas, schema)
+		}
+
+		if prof.DBType == "postgres" {
+			if err := conn.QueryRowContext(ctx, "SELECT current_schema()").Scan(&defaultSchema); err != nil {
+				defaultSchema = "public"
+			}
+		} else {
+			// MySQL/MariaDB - use database name as default schema
+			defaultSchema = input.DatabaseName
+		}
 	}
 
 	result := ListSchemasResult{
