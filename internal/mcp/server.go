@@ -587,6 +587,25 @@ func (s *MCPServer) registerAllTools() {
 		addTool(s, tool, s.handleListDatabases)
 	}
 
+
+	// get-search-path
+	{
+		tool := &mcp.Tool{
+			Name: "get-search-path",
+			Description: descriptionFormatter(`Get the current search_path and effective schema (read-only diagnostic).
+   
+   This tool queries the database to show the current search_path setting and the active schema.
+   Note: This server uses connection pooling. Schema should be explicitly qualified in queries.
+   
+   Input: profile_name (required), database_name (required)
+   Returns: search_path, current_schema, and optional connection pooling warning
+   Example:
+   {"profile_name":"some-profile-name","database_name":"some-database-name"}`),
+			InputSchema: inputSchemaFor[GetSearchPathParams](),
+		}
+		addTool(s, tool, s.handleGetSearchPath)
+	}
+
 	// analyze-schema
 	{
 		tool := &mcp.Tool{
@@ -1278,6 +1297,31 @@ type AnalyzeDataLineageResult struct {
 // ListToolsResult represents the response from the list-tools action
 type ListToolsResult struct {
 	Tools []ToolInfo `json:"tools"`
+}
+
+// ListSchemasParams represents parameters for the list-schemas tool
+type ListSchemasParams struct {
+	ProfileName  string `json:"profile_name"`
+	DatabaseName string `json:"database_name"`
+}
+
+// ListSchemasResult represents the response from the list-schemas tool
+type ListSchemasResult struct {
+	Schemas       []string `json:"schemas"`
+	DefaultSchema string   `json:"default_schema"`
+}
+
+// GetSearchPathParams represents parameters for the get-search-path tool
+type GetSearchPathParams struct {
+	ProfileName  string `json:"profile_name"`
+	DatabaseName string `json:"database_name"`
+}
+
+// GetSearchPathResult represents the response from the get-search-path tool
+type GetSearchPathResult struct {
+	SearchPath               string `json:"search_path"`
+	CurrentSchema            string `json:"current_schema"`
+	ConnectionPoolingWarning string `json:"connection_pooling_warning,omitempty"`
 }
 
 func (s *MCPServer) handleListTools(
@@ -3065,6 +3109,106 @@ func validateDescribeTableParams(p DescribeTableParams) *mcp.CallToolResult {
 		},
 	)
 	return errorResult(structErr)
+}
+
+func (s *MCPServer) handleListSchemas(ctx context.Context, _ *mcp.CallToolRequest, input ListSchemasParams) (*mcp.CallToolResult, any, error) {
+	if input.ProfileName == "" || input.DatabaseName == "" {
+		return nil, nil, fmt.Errorf("profile_name and database_name are required")
+	}
+
+	cfg, prof, err := s.findProfile(input.ProfileName)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	conn, errResult := s.openExecuteSQLConnection(ctx, input.ProfileName, input.DatabaseName, cfg.MaxPoolSize, prof)
+	if errResult != nil {
+		return errResult, nil, nil
+	}
+	defer conn.Close() //nolint:errcheck
+
+	rows, err := conn.QueryContext(ctx,
+		`SELECT schema_name FROM information_schema.schemata 
+		 WHERE schema_name NOT IN ('pg_catalog', 'information_schema') 
+		 AND schema_name NOT LIKE 'pg_%' 
+		 ORDER BY schema_name`)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to query schemas: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var schemas []string
+	for rows.Next() {
+		var schema string
+		if err := rows.Scan(&schema); err != nil {
+			return nil, nil, fmt.Errorf("failed to scan schema: %w", err)
+		}
+		schemas = append(schemas, schema)
+	}
+
+	var defaultSchema string
+	if prof.DBType == "postgres" {
+		if err := conn.QueryRowContext(ctx, "SELECT current_schema()").Scan(&defaultSchema); err != nil {
+			defaultSchema = "public"
+		}
+	} else {
+		defaultSchema = input.DatabaseName
+	}
+
+	result := ListSchemasResult{
+		Schemas:       schemas,
+		DefaultSchema: defaultSchema,
+	}
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: string(mustJSONMarshal(result)),
+			},
+		},
+	}, nil, nil
+}
+
+func (s *MCPServer) handleGetSearchPath(ctx context.Context, _ *mcp.CallToolRequest, input GetSearchPathParams) (*mcp.CallToolResult, any, error) {
+	if input.ProfileName == "" || input.DatabaseName == "" {
+		return nil, nil, fmt.Errorf("profile_name and database_name are required")
+	}
+
+	cfg, prof, err := s.findProfile(input.ProfileName)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	conn, errResult := s.openExecuteSQLConnection(ctx, input.ProfileName, input.DatabaseName, cfg.MaxPoolSize, prof)
+	if errResult != nil {
+		return errResult, nil, nil
+	}
+	defer conn.Close() //nolint:errcheck
+
+	var searchPath, currentSchema string
+	if prof.DBType == "postgres" {
+		if err := conn.QueryRowContext(ctx, "SHOW search_path").Scan(&searchPath); err != nil {
+			searchPath = "unknown"
+		}
+		if err := conn.QueryRowContext(ctx, "SELECT current_schema()").Scan(&currentSchema); err != nil {
+			currentSchema = "unknown"
+		}
+	} else {
+		searchPath = input.DatabaseName
+		currentSchema = input.DatabaseName
+	}
+
+	result := GetSearchPathResult{
+		SearchPath:               searchPath,
+		CurrentSchema:            currentSchema,
+		ConnectionPoolingWarning: "This server uses connection pooling. Schema should be explicitly qualified in queries.",
+	}
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: string(mustJSONMarshal(result)),
+			},
+		},
+	}, nil, nil
 }
 
 func (s *MCPServer) resolveDescribeTableProfile(profileName string) (*config.Config, *config.Profile, *mcp.CallToolResult, error) {

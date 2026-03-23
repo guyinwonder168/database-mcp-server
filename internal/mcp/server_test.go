@@ -700,6 +700,40 @@ func TestHandleListDatabases(t *testing.T) {
 	}
 }
 
+
+func TestHandleListSchemas(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+
+	res, _, err := server.handleListSchemas(ctx, nil, ListSchemasParams{
+		ProfileName:  "testsqlite",
+		DatabaseName: "test.db",
+	})
+	if err != nil {
+		t.Fatalf("handleListSchemas error: %v", err)
+	}
+	if res == nil || res.Content == nil {
+		t.Fatalf("handleListSchemas returned nil content")
+	}
+
+	var result ListSchemasResult
+	if err := json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &result); err != nil {
+		t.Fatalf("Failed to unmarshal result: %v", err)
+	}
+
+	if len(result.Schemas) == 0 {
+		t.Fatalf("Expected at least one schema for SQLite, got %d", len(result.Schemas))
+	}
+
+	if result.DefaultSchema != "main" {
+		t.Errorf("Expected default_schema 'main' for SQLite, got %q", result.DefaultSchema)
+	}
+}
+
+
 // TestProfileWorkflowSQLite runs an end-to-end happy path on SQLite covering profile creation,
 // table creation, insert, select, list tables, describe, and sample-data.
 func TestProfileWorkflowSQLite(t *testing.T) {
