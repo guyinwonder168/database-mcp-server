@@ -1244,6 +1244,7 @@ type SampleDataParams struct {
 	ProfileName  string `json:"profile_name"`
 	TableName    string `json:"table_name"`
 	DatabaseName string `json:"database_name"`
+	Schema       string `json:"schema,omitempty"`
 	SampleSize   int    `json:"sample_size,omitempty"`
 }
 
