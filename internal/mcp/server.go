@@ -64,7 +64,7 @@ const (
 	errorProfileNotFound                = "profile not found"
 	messageFailedToConnectToDatabase    = "Failed to connect to database"
 	queryShowFullTables                 = "SHOW FULL TABLES"
-	queryPostgresPublicInformationTable = "SELECT table_name FROM information_schema.tables WHERE table_schema='public'"
+	queryPostgresPublicInformationTable = "SELECT table_schema, table_name FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog', 'information_schema') AND table_schema NOT LIKE 'pg_%' ORDER BY table_schema, table_name"
 	errorUnsupportedDBType              = "unsupported db_type"
 	messageFailedToListTables           = "Failed to list tables"
 	messageFailedToLoadConfiguration    = "Failed to load configuration"
@@ -1109,8 +1109,13 @@ type ListTablesParams struct {
 	DatabaseName string `json:"database_name"`
 }
 
+type TableRef struct {
+	Schema string `json:"schema"`
+	Name   string `json:"table"`
+}
+
 type ListTablesResult struct {
-	Tables []string `json:"tables"`
+	Tables []TableRef `json:"tables"`
 }
 
 type DescribeTableParams struct {
@@ -1751,6 +1756,28 @@ func scanTableName(rows *sql.Rows, dbType string) (string, error) {
 		return "", err
 	}
 	return name, nil
+}
+
+func scanTableInfo(rows *sql.Rows, dbType string) (TableRef, error) {
+	if dbType == "mysql" || dbType == "mariadb" {
+		var schema, name, tableType string
+		if err := rows.Scan(&schema, &name, &tableType); err != nil {
+			return TableRef{}, err
+		}
+		return TableRef{Schema: schema, Name: name}, nil
+	}
+	if dbType == "postgres" {
+		var schema, name string
+		if err := rows.Scan(&schema, &name); err != nil {
+			return TableRef{}, err
+		}
+		return TableRef{Schema: schema, Name: name}, nil
+	}
+	var name string
+	if err := rows.Scan(&name); err != nil {
+		return TableRef{}, err
+	}
+	return TableRef{Schema: "", Name: name}, nil
 }
 
 func smartBuilderNoTableMatchResult(tables []string) *mcp.CallToolResult {
@@ -2961,7 +2988,7 @@ func (s *MCPServer) queryTableNames(
 	ctx context.Context,
 	conn *sql.DB,
 	profileName, databaseName, dbType string,
-) ([]string, *mcp.CallToolResult, error) {
+) ([]TableRef, *mcp.CallToolResult, error) {
 	query, err := tableListQuery(dbType)
 	if err != nil {
 		return nil, nil, err
@@ -2979,13 +3006,13 @@ func (s *MCPServer) queryTableNames(
 	}
 	defer rows.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 
-	tables := make([]string, 0)
+	tables := make([]TableRef, 0)
 	for rows.Next() {
-		name, scanErr := scanTableName(rows, dbType)
+		info, scanErr := scanTableInfo(rows, dbType)
 		if scanErr != nil {
 			return nil, nil, scanErr
 		}
-		tables = append(tables, name)
+		tables = append(tables, info)
 	}
 	return tables, nil, nil
 }
@@ -3768,7 +3795,16 @@ func (s *MCPServer) listAnalyzeSchemaTables(
 	prof *config.Profile,
 	dbName string,
 ) ([]string, *mcp.CallToolResult, error) {
-	return s.queryTableNames(ctx, conn, p.ProfileName, dbName, prof.DBType)
+	tableRefs, errResult, err := s.queryTableNames(ctx, conn, p.ProfileName, dbName, prof.DBType)
+	if errResult != nil || err != nil {
+		return nil, errResult, err
+	}
+	// Extract just the table names for compatibility
+	tableNames := make([]string, len(tableRefs))
+	for i, ref := range tableRefs {
+		tableNames[i] = ref.Name
+	}
+	return tableNames, nil, nil
 }
 
 func filterAnalyzeSchemaTables(tables, includeTables, excludeTables []string) []string {
