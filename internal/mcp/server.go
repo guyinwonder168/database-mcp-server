@@ -3382,6 +3382,9 @@ func describePostgresTableColumns(ctx context.Context, conn *sql.DB, tableName, 
 		return nil, fmt.Errorf("failed to resolve schema: %w", err)
 	}
 
+	// Remove quotes for use as a parameter value (ResolveSchema returns quoted identifier)
+	resolvedSchema = strings.Trim(resolvedSchema, "\"")
+
 	query := `SELECT
 		c.column_name as name,
 		c.data_type as type,
@@ -3406,10 +3409,10 @@ func describePostgresTableColumns(ctx context.Context, conn *sql.DB, tableName, 
 		AND kcu.table_name = c.table_name AND kcu.table_schema = c.table_schema
 	LEFT JOIN information_schema.table_constraints tc ON tc.constraint_name = kcu.constraint_name
 		AND tc.table_name = c.table_name AND tc.table_schema = c.table_schema
-	WHERE c.table_schema = ` + resolvedSchema + ` AND c.table_name = $1
+	WHERE c.table_schema = $2 AND c.table_name = $1
 	ORDER BY c.ordinal_position`
 
-	rows, err := conn.QueryContext(ctx, query, tableName)
+	rows, err := conn.QueryContext(ctx, query, tableName, resolvedSchema)
 	if err != nil {
 		return nil, err
 	}

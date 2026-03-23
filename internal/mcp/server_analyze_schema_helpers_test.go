@@ -563,9 +563,9 @@ func TestDescribePostgresTableColumns(t *testing.T) {
 			nil, 64, 0, "PRI",
 		)
 
-		// PostgreSQL uses $1 parameter placeholder
+		// PostgreSQL uses $1 and $2 parameter placeholders
 		mock.ExpectQuery("SELECT.*FROM information_schema.columns").
-			WithArgs("users").
+			WithArgs("users", "public").
 			WillReturnRows(rows)
 
 		columns, err := describePostgresTableColumns(ctx, db, "users", "public")
@@ -606,7 +606,7 @@ func TestDescribePostgresTableColumns(t *testing.T) {
 		)
 
 		mock.ExpectQuery("SELECT.*FROM information_schema.columns").
-			WithArgs("items").
+			WithArgs("items", "public").
 			WillReturnRows(rows)
 
 		columns, err := describePostgresTableColumns(ctx, db, "items", "")
