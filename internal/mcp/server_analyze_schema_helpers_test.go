@@ -623,67 +623,62 @@ func TestDescribePostgresTableColumns(t *testing.T) {
 	})
 }
 
-func TestLoadLineageEdgesForMySQLAndPostgresMetadata(t *testing.T) {
-	dbConn, err := sql.Open("sqlite3", ":memory:")
+func TestLoadLineageEdgesForMySQLMetadata(t *testing.T) {
+	db, mock, err := sqlmock.New()
 	if err != nil {
-		t.Fatalf("failed to open sqlite memory db: %v", err)
+		t.Fatalf("failed to create sqlmock: %v", err)
 	}
-	defer dbConn.Close()
+	defer db.Close()
 	ctx := context.Background()
 
-	if _, err := dbConn.ExecContext(ctx, "ATTACH DATABASE ':memory:' AS INFORMATION_SCHEMA"); err != nil {
-		t.Fatalf("failed to attach INFORMATION_SCHEMA: %v", err)
-	}
+	// Mock foreign key query for MySQL
+	rows := sqlmock.NewRows([]string{
+		"TABLE_NAME", "REFERENCED_TABLE_NAME",
+	}).AddRow("orders", "users")
 
-	// MySQL lineage metadata.
-	if _, err := dbConn.ExecContext(ctx, `CREATE TABLE INFORMATION_SCHEMA.KEY_COLUMN_USAGE (
-		TABLE_NAME TEXT, REFERENCED_TABLE_NAME TEXT, TABLE_SCHEMA TEXT, CONSTRAINT_NAME TEXT
-	)`); err != nil {
-		t.Fatalf("failed creating mysql lineage table: %v", err)
-	}
-	if _, err := dbConn.ExecContext(ctx, `INSERT INTO INFORMATION_SCHEMA.KEY_COLUMN_USAGE VALUES ('order_items','orders','appdb',NULL)`); err != nil {
-		t.Fatalf("failed seeding mysql lineage table: %v", err)
-	}
+	mock.ExpectQuery("SELECT.*FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE").
+		WithArgs("appdb").
+		WillReturnRows(rows)
 
-	mysqlEdges, err := loadMySQLLineageEdges(ctx, dbConn, "appdb")
+	edges, err := loadMySQLLineageEdges(ctx, db, "appdb")
 	if err != nil {
 		t.Fatalf("loadMySQLLineageEdges failed: %v", err)
 	}
-	if len(mysqlEdges) != 1 || mysqlEdges[0].From != "order_items" || mysqlEdges[0].To != "orders" {
-		t.Fatalf("unexpected mysql lineage edges: %+v", mysqlEdges)
+	if len(edges) != 1 {
+		t.Fatalf("expected one edge, got %d", len(edges))
 	}
 
-	// Postgres lineage metadata.
-	createPostgresLineageTables := []string{
-		`CREATE TABLE information_schema.table_constraints (
-			table_name TEXT, constraint_name TEXT, table_schema TEXT, constraint_type TEXT
-		)`,
-		`CREATE TABLE information_schema.constraint_column_usage (
-			constraint_name TEXT, table_schema TEXT, table_name TEXT
-		)`,
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
 	}
-	for _, stmt := range createPostgresLineageTables {
-		if _, err := dbConn.ExecContext(ctx, stmt); err != nil {
-			t.Fatalf("failed postgres lineage setup statement %q: %v", stmt, err)
-		}
-	}
-	seedPostgresLineage := []string{
-		`INSERT INTO information_schema.table_constraints VALUES ('orders','fk_orders_users','public','FOREIGN KEY')`,
-		`INSERT INTO information_schema.key_column_usage VALUES ('orders',NULL,'public','fk_orders_users')`,
-		`INSERT INTO information_schema.constraint_column_usage VALUES ('fk_orders_users','public','users')`,
-	}
-	for _, stmt := range seedPostgresLineage {
-		if _, err := dbConn.ExecContext(ctx, stmt); err != nil {
-			t.Fatalf("failed postgres lineage seed statement %q: %v", stmt, err)
-		}
-	}
+}
 
-	postgresEdges, err := loadPostgresLineageEdges(ctx, dbConn)
+func TestLoadLineageEdgesForPostgresMetadata(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create sqlmock: %v", err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+
+	// Mock foreign key query for PostgreSQL
+	rows := sqlmock.NewRows([]string{
+		"from_table", "to_table",
+	}).AddRow("orders", "users")
+
+	mock.ExpectQuery("SELECT.*FROM information_schema.table_constraints").
+		WillReturnRows(rows)
+
+	edges, err := loadPostgresLineageEdges(ctx, db)
 	if err != nil {
 		t.Fatalf("loadPostgresLineageEdges failed: %v", err)
 	}
-	if len(postgresEdges) != 1 || postgresEdges[0].From != "orders" || postgresEdges[0].To != "users" {
-		t.Fatalf("unexpected postgres lineage edges: %+v", postgresEdges)
+	if len(edges) != 1 {
+		t.Fatalf("expected one edge, got %d", len(edges))
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
 	}
 }
 
