@@ -661,3 +661,164 @@ func TestGetDefaultSchema(t *testing.T) {
 		t.Errorf("unfulfilled expectations: %v", err)
 	}
 }
+
+// TestHandleGetToolHelp tests the handleGetToolHelp function
+func TestHandleGetToolHelp(t *testing.T) {
+	server := NewMCPServer()
+
+	// Test case 1: empty tool name
+	_, _, err := server.handleGetToolHelp(context.Background(), nil, GetToolHelpParams{})
+	if err == nil {
+		t.Error("Expected error for empty tool_name")
+	}
+
+	// Test case 2: invalid topic
+	_, _, err = server.handleGetToolHelp(context.Background(), nil, GetToolHelpParams{ToolName: "list-tools", Topic: "invalid_topic"})
+	if err == nil {
+		t.Error("Expected error for invalid topic")
+	}
+
+	// Test case 3: tool not found
+	result, _, err := server.handleGetToolHelp(context.Background(), nil, GetToolHelpParams{ToolName: "nonexistent-tool"})
+	if err != nil {
+		t.Fatalf("handleGetToolHelp failed: %v", err)
+	}
+	if result == nil {
+		t.Fatal("handleGetToolHelp returned nil result")
+	}
+
+	// Test case 4: valid tool with all topic
+	result, _, err = server.handleGetToolHelp(context.Background(), nil, GetToolHelpParams{ToolName: "list-tools", Topic: "all"})
+	if err != nil {
+		t.Fatalf("handleGetToolHelp failed: %v", err)
+	}
+	if result == nil {
+		t.Fatal("handleGetToolHelp returned nil result")
+	}
+
+	// Test case 5: valid tool with summary topic
+	result, _, err = server.handleGetToolHelp(context.Background(), nil, GetToolHelpParams{ToolName: "list-tools", Topic: "summary"})
+	if err != nil {
+		t.Fatalf("handleGetToolHelp failed: %v", err)
+	}
+	if result == nil {
+		t.Fatal("handleGetToolHelp returned nil result")
+	}
+
+	// Test case 6: get-search-path tool (added in this PR)
+	result, _, err = server.handleGetToolHelp(context.Background(), nil, GetToolHelpParams{ToolName: "get-search-path", Topic: "all"})
+	if err != nil {
+		t.Fatalf("handleGetToolHelp failed for get-search-path: %v", err)
+	}
+	if result == nil {
+		t.Fatal("handleGetToolHelp returned nil result for get-search-path")
+	}
+}
+
+// TestIsSupportedToolHelpTopic tests the isSupportedToolHelpTopic function
+func TestIsSupportedToolHelpTopic(t *testing.T) {
+	// Test empty topic (should return true - defaults to "all")
+	if !isSupportedToolHelpTopic("") {
+		t.Error("Expected empty topic to be supported")
+	}
+
+	// Test valid topics
+	validTopics := []string{"summary", "minimal_example", "advanced_example", "errors", "all"}
+	for _, topic := range validTopics {
+		if !isSupportedToolHelpTopic(topic) {
+			t.Errorf("Expected topic %q to be supported", topic)
+		}
+	}
+
+	// Test invalid topic
+	if isSupportedToolHelpTopic("invalid_topic") {
+		t.Error("Expected invalid_topic to not be supported")
+	}
+}
+
+// TestTopicFilteredToolHelpResult tests the topicFilteredToolHelpResult function
+func TestTopicFilteredToolHelpResult(t *testing.T) {
+	entry := toolHelpEntry{
+		Summary:         "Test summary",
+		MinimalExample:  map[string]any{"key": "value"},
+		AdvancedExample: map[string]any{"key2": "value2"},
+		CommonErrors:    []ToolHelpError{{Error: "err1", Cause: "cause1", Fix: "fix1"}},
+		Notes:           []string{"note1", "note2"},
+	}
+
+	// Test empty topic (should default to all)
+	result := topicFilteredToolHelpResult("test-tool", "", entry)
+	if !result.Found {
+		t.Error("Expected Found to be true")
+	}
+	if len(result.Topics) == 0 {
+		t.Error("Expected Topics to be populated")
+	}
+
+	// Test summary topic
+	result = topicFilteredToolHelpResult("test-tool", "summary", entry)
+	if result.Summary != "Test summary" {
+		t.Errorf("Expected summary, got %q", result.Summary)
+	}
+
+	// Test minimal_example topic
+	result = topicFilteredToolHelpResult("test-tool", "minimal_example", entry)
+	if result.MinimalExample == nil {
+		t.Error("Expected MinimalExample to be set")
+	}
+
+	// Test advanced_example topic
+	result = topicFilteredToolHelpResult("test-tool", "advanced_example", entry)
+	if result.AdvancedExample == nil {
+		t.Error("Expected AdvancedExample to be set")
+	}
+
+	// Test errors topic
+	result = topicFilteredToolHelpResult("test-tool", "errors", entry)
+	if result.CommonErrors == nil || len(result.CommonErrors) == 0 {
+		t.Error("Expected CommonErrors to be set")
+	}
+
+	// Test all topic
+	result = topicFilteredToolHelpResult("test-tool", "all", entry)
+	if result.Summary != "Test summary" {
+		t.Errorf("Expected all topics to include summary, got %q", result.Summary)
+	}
+	if result.MinimalExample == nil {
+		t.Error("Expected all topics to include minimal_example")
+	}
+	if result.AdvancedExample == nil {
+		t.Error("Expected all topics to include advanced_example")
+	}
+	if result.CommonErrors == nil {
+		t.Error("Expected all topics to include common_errors")
+	}
+	if result.Notes == nil {
+		t.Error("Expected all topics to include notes")
+	}
+}
+
+// TestMarshalToolHelpResult tests the marshalToolHelpResult function
+func TestMarshalToolHelpResult(t *testing.T) {
+	result := GetToolHelpResult{
+		ToolName: "test-tool",
+		Found:    true,
+		Summary:  "Test summary",
+		Topics:   []string{"summary", "all"},
+	}
+
+	// Test successful marshaling
+	mcpResult, output, err := marshalToolHelpResult(result)
+	if err != nil {
+		t.Fatalf("marshalToolHelpResult failed: %v", err)
+	}
+	if mcpResult == nil {
+		t.Fatal("marshalToolHelpResult returned nil result")
+	}
+	if output != nil {
+		t.Error("Expected nil output")
+	}
+	if len(mcpResult.Content) == 0 {
+		t.Error("Expected non-empty content")
+	}
+}
