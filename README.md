@@ -171,8 +171,22 @@ Please read our [**Code of Conduct**](CODE_OF_CONDUCT.md) for community guidelin
 ## 🧪 Testing
 
 ```bash
+# Run all tests
 go test ./...
+
+# Run tests with coverage
+go test -cover ./...
+
+# Run specific test suites
+go test ./internal/mcp -run "TestDescribe" -v  # MySQL/PostgreSQL descriptor tests
+go test ./internal/mcp -run "TestLoadLineage" -v  # Lineage edge tests
 ```
+
+### Testing Strategy
+
+- **MySQL/PostgreSQL**: Uses [go-sqlmock](https://github.com/DATA-DOG/go-sqlmock) for database-specific query testing without requiring real database connections
+- **SQLite**: Uses real in-memory databases for actual SQLite functionality testing
+- **Live Integration**: Optional live database tests via `DB_MCP_IT_*` environment variables
 
 ## 📊 Project Status
 

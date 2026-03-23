@@ -61,6 +61,8 @@ Roadmap slices are complete:
 ## Testing and Quality
 
 - Unit and integration test suites are in place under `internal/mcp/*_test.go`
+- **MySQL/PostgreSQL tests use go-sqlmock** for database-specific query testing (converts from SQLite-mocking approach)
+- **SQLite tests use real in-memory databases** for actual SQLite functionality testing
 - Live integration tests available for PostgreSQL and MySQL/MariaDB using `DB_MCP_IT_*` environment variables
 - CI includes linting, tests, and Sonar quality checks
 
