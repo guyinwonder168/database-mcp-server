@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	sqlmock "github.com/DATA-DOG/go-sqlmock"
 )
 
 func TestFilterAnalyzeSchemaTables(t *testing.T) {
