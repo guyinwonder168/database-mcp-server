@@ -545,14 +545,82 @@ func TestMarshalAnalyzeSchemaResultError(t *testing.T) {
 	}
 }
 
-// TestDescribePostgresTableColumns uses go-sqlmock to properly mock PostgreSQL
-// system catalog queries. This is the correct approach for testing PostgreSQL-specific
-// functionality without requiring a real database connection.
 func TestDescribePostgresTableColumns(t *testing.T) {
-	// Skip if sqlmock is not available - use build tag to control
-	// The test requires mocking PostgreSQL-specific queries and system catalogs
-	// which cannot be replicated with SQLite.
-	t.Skip("requires go-sqlmock with PostgreSQL driver mocking - use integration tests for real PostgreSQL")
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create sqlmock: %v", err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+
+	// Test with explicit schema (no schema resolution needed)
+	t.Run("with_explicit_schema", func(t *testing.T) {
+		rows := sqlmock.NewRows([]string{
+			"name", "type", "nullable", "default_value", "comment",
+			"character_maximum_length", "numeric_precision", "numeric_scale", "key_type",
+		}).AddRow(
+			"id", "bigint", "NO", "nextval('users_id_seq'::regclass)", "identifier",
+			nil, 64, 0, "PRI",
+		)
+
+		// PostgreSQL uses $1 parameter placeholder
+		mock.ExpectQuery("SELECT.*FROM information_schema.columns").
+			WithArgs("users").
+			WillReturnRows(rows)
+
+		columns, err := describePostgresTableColumns(ctx, db, "users", "public")
+		if err != nil {
+			t.Fatalf("describePostgresTableColumns failed: %v", err)
+		}
+		if len(columns) != 1 {
+			t.Fatalf("expected one column, got %d", len(columns))
+		}
+		if columns[0].Name != "id" {
+			t.Errorf("expected column name 'id', got %q", columns[0].Name)
+		}
+		if columns[0].Key != "PRI" {
+			t.Errorf("expected key 'PRI', got %q", columns[0].Key)
+		}
+		if !columns[0].AutoIncrement {
+			t.Errorf("expected AutoIncrement to be true (nextval)")
+		}
+
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
+		}
+	})
+
+	// Test with empty schema (requires mock of current_schema query)
+	t.Run("with_empty_schema_uses_default", func(t *testing.T) {
+		// Mock current_schema() query
+		schemaRows := sqlmock.NewRows([]string{"current_schema"}).AddRow("public")
+		mock.ExpectQuery("SELECT current_schema").
+			WillReturnRows(schemaRows)
+
+		rows := sqlmock.NewRows([]string{
+			"name", "type", "nullable", "default_value", "comment",
+			"character_maximum_length", "numeric_precision", "numeric_scale", "key_type",
+		}).AddRow(
+			"name", "text", "YES", nil, nil,
+			nil, nil, nil, "",
+		)
+
+		mock.ExpectQuery("SELECT.*FROM information_schema.columns").
+			WithArgs("items").
+			WillReturnRows(rows)
+
+		columns, err := describePostgresTableColumns(ctx, db, "items", "")
+		if err != nil {
+			t.Fatalf("describePostgresTableColumns with empty schema failed: %v", err)
+		}
+		if len(columns) != 1 {
+			t.Fatalf("expected one column, got %d", len(columns))
+		}
+
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unfulfilled expectations: %v", err)
+		}
+	})
 }
 
 func TestLoadLineageEdgesForMySQLAndPostgresMetadata(t *testing.T) {
