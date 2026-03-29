@@ -6,10 +6,10 @@ This document tracks the current implementation status of the Database MCP Serve
 
 ## Project Information
 
-- Version: `v1.3.0`
+- Version: `v1.4.0`
 - Status: Production Ready
 - Author: `guyinwonder`
-- Toolchain: `go 1.26` with `go1.26.0`
+- Toolchain: `go 1.26` with `go1.26.1`
 - MCP SDK: `github.com/modelcontextprotocol/go-sdk v1.2.0`
 - Distribution:
   - GitHub Releases (binary artifacts)
@@ -28,7 +28,7 @@ This document tracks the current implementation status of the Database MCP Serve
 
 ## MCP Tool Status (Runtime)
 
-The runtime currently registers **19 MCP tools**.
+The runtime currently registers **21 MCP tools**.
 
 | Tool | Status | Notes |
 |---|---|---|
@@ -50,6 +50,9 @@ The runtime currently registers **19 MCP tools**.
 | `sample-data` | ✅ Implemented | Sample rows for value/type inference |
 | `mcp-info` | ✅ Implemented | Provider metadata/version |
 | `list-tools` | ✅ Implemented | Runtime tool discovery |
+| `get-tool-help` | ✅ Implemented | Per-tool help, examples, and troubleshooting |
+| `list-schemas` | ✅ Implemented | List all accessible database schemas (PostgreSQL) |
+| `get-search-path` | ✅ Implemented | Current search_path and effective schema diagnostic |
 
 ## Implementation Phases
 
@@ -57,6 +60,7 @@ Roadmap slices are complete:
 - Phase 1 complete: `optimize-query`, `validate-query`, smart-query-builder enhancements
 - Phase 2 complete: `analyze-data-lineage`, `discover-insights`
 - Phase 3 complete: `track-schema-changes`, advanced `analyze-schema` profiling, `federated-query`
+- Phase 3.5 complete: PostgreSQL multi-schema support (`list-schemas`, `get-search-path`, schema-aware tools)
 
 ## Testing and Quality
 

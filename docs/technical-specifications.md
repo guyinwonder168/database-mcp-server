@@ -5,9 +5,9 @@
 Database MCP Server is a production MCP provider for SQL databases, built in Go.
 
 Current implementation baseline:
-- Runtime version: `v1.3.0`
-- Registered tools: `19`
-- Go module baseline: `go 1.26` (`toolchain go1.26.0`)
+- Runtime version: `v1.4.0`
+- Registered tools: `21`
+- Go module baseline: `go 1.26` (`toolchain go1.26.1`)
 - MCP SDK: `github.com/modelcontextprotocol/go-sdk v1.2.0`
 
 ## Runtime Architecture
@@ -92,7 +92,7 @@ The server registers these 19 tools:
 
 - Dockerfile is multi-stage and builds `./cmd/server/main.go`
 - Published images:
-  - `ghcr.io/guyinwonder168/database-mcp-server:v1.3.0`
+  - `ghcr.io/guyinwonder168/database-mcp-server:v1.4.0`
   - `ghcr.io/guyinwonder168/database-mcp-server:latest`
 
 ### Release
