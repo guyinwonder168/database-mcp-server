@@ -3111,6 +3111,42 @@ func validateDescribeTableParams(p DescribeTableParams) *mcp.CallToolResult {
 	return errorResult(structErr)
 }
 
+// fetchSchemasFromDB queries information_schema.schemata and returns the list of schema names.
+func fetchSchemasFromDB(ctx context.Context, conn *sql.DB) ([]string, error) {
+	rows, err := conn.QueryContext(ctx,
+		`SELECT schema_name FROM information_schema.schemata 
+		 WHERE schema_name NOT IN ('pg_catalog', 'information_schema') 
+		 AND schema_name NOT LIKE 'pg_%' 
+		 ORDER BY schema_name`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query schemas: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var schemas []string
+	for rows.Next() {
+		var schema string
+		if err := rows.Scan(&schema); err != nil {
+			return nil, fmt.Errorf("failed to scan schema: %w", err)
+		}
+		schemas = append(schemas, schema)
+	}
+	return schemas, nil
+}
+
+// resolveDefaultSchema determines the default schema based on DB type.
+func resolveDefaultSchema(ctx context.Context, conn *sql.DB, dbType, databaseName string) string {
+	if dbType == "postgres" {
+		var schema string
+		if err := conn.QueryRowContext(ctx, "SELECT current_schema()").Scan(&schema); err != nil {
+			return "public"
+		}
+		return schema
+	}
+	// MySQL/MariaDB
+	return databaseName
+}
+
 func (s *MCPServer) handleListSchemas(ctx context.Context, _ *mcp.CallToolRequest, input ListSchemasParams) (*mcp.CallToolResult, any, error) {
 	if input.ProfileName == "" || input.DatabaseName == "" {
 		return nil, nil, fmt.Errorf("profile_name and database_name are required")
@@ -3130,38 +3166,15 @@ func (s *MCPServer) handleListSchemas(ctx context.Context, _ *mcp.CallToolReques
 	var schemas []string
 	var defaultSchema string
 
-	// SQLite doesn't have information_schema.schemata - use "main" as the default schema
 	if prof.DBType == "sqlite" {
 		schemas = []string{"main"}
 		defaultSchema = "main"
 	} else {
-		// PostgreSQL, MySQL, MariaDB have information_schema.schemata
-		rows, err := conn.QueryContext(ctx,
-			`SELECT schema_name FROM information_schema.schemata 
-			 WHERE schema_name NOT IN ('pg_catalog', 'information_schema') 
-			 AND schema_name NOT LIKE 'pg_%' 
-			 ORDER BY schema_name`)
+		schemas, err = fetchSchemasFromDB(ctx, conn)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to query schemas: %w", err)
+			return nil, nil, err
 		}
-		defer rows.Close() //nolint:errcheck
-
-		for rows.Next() {
-			var schema string
-			if err := rows.Scan(&schema); err != nil {
-				return nil, nil, fmt.Errorf("failed to scan schema: %w", err)
-			}
-			schemas = append(schemas, schema)
-		}
-
-		if prof.DBType == "postgres" {
-			if err := conn.QueryRowContext(ctx, "SELECT current_schema()").Scan(&defaultSchema); err != nil {
-				defaultSchema = "public"
-			}
-		} else {
-			// MySQL/MariaDB - use database name as default schema
-			defaultSchema = input.DatabaseName
-		}
+		defaultSchema = resolveDefaultSchema(ctx, conn, prof.DBType, input.DatabaseName)
 	}
 
 	result := ListSchemasResult{
@@ -3369,6 +3382,33 @@ func setMySQLDescribeColumnOptionalFields(col *ColumnInfo, row mysqlDescribeColu
 	}
 }
 
+// mapPostgresColumn maps scanned PostgreSQL column fields into a ColumnInfo struct.
+func mapPostgresColumn(name, typ, nullable, keyType string, defaultVal, comment sql.NullString, maxLength, precision, scale sql.NullInt64) ColumnInfo {
+	col := ColumnInfo{
+		Name:          name,
+		Type:          typ,
+		Nullable:      nullable == "YES",
+		Key:           keyType,
+		AutoIncrement: strings.Contains(defaultVal.String, "nextval"),
+	}
+	if defaultVal.Valid {
+		col.Default = &defaultVal.String
+	}
+	if comment.Valid {
+		col.Comment = comment.String
+	}
+	if maxLength.Valid {
+		col.MaxLength = &maxLength.Int64
+	}
+	if precision.Valid {
+		col.Precision = &precision.Int64
+	}
+	if scale.Valid {
+		col.Scale = &scale.Int64
+	}
+	return col
+}
+
 func describePostgresTableColumns(ctx context.Context, conn *sql.DB, tableName, schema string) ([]ColumnInfo, error) {
 	// Resolve schema using ResolveSchema with auto-detection fallback
 	sqlConn, err := conn.Conn(ctx)
@@ -3426,29 +3466,7 @@ func describePostgresTableColumns(ctx context.Context, conn *sql.DB, tableName, 
 		if err := rows.Scan(&name, &typ, &nullable, &defaultVal, &comment, &maxLength, &precision, &scale, &keyType); err != nil {
 			return nil, err
 		}
-		col := ColumnInfo{
-			Name:          name,
-			Type:          typ,
-			Nullable:      nullable == "YES",
-			Key:           keyType,
-			AutoIncrement: strings.Contains(defaultVal.String, "nextval"),
-		}
-		if defaultVal.Valid {
-			col.Default = &defaultVal.String
-		}
-		if comment.Valid {
-			col.Comment = comment.String
-		}
-		if maxLength.Valid {
-			col.MaxLength = &maxLength.Int64
-		}
-		if precision.Valid {
-			col.Precision = &precision.Int64
-		}
-		if scale.Valid {
-			col.Scale = &scale.Int64
-		}
-		columns = append(columns, col)
+		columns = append(columns, mapPostgresColumn(name, typ, nullable, keyType, defaultVal, comment, maxLength, precision, scale))
 	}
 	return columns, nil
 }
