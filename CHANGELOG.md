@@ -6,6 +6,30 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+## [v1.4.0] - 2026-03-30
+
+### Added
+- **PostgreSQL Multi-Schema Support**: Full schema awareness across all relevant MCP tools.
+  - `list-schemas` MCP tool to discover all accessible database schemas.
+  - `get-search-path` MCP tool for read-only diagnostic of current `search_path` and effective schema.
+  - `list-tables` now returns `[]TableRef` (schema + table name) instead of `[]string`.
+  - `describe-table`, `sample-data`, and `analyze-schema` accept optional `schema` parameter with auto-detection fallback (`current_schema()` → first accessible → `'public'`).
+  - Schema quoting via `pq.QuoteIdentifier()` for safe SQL interpolation.
+  - Default schema detection utility (`getDefaultSchema`) with graceful fallback chain.
+- Schema-aware tests converted to [go-sqlmock](https://github.com/DATA-DOG/go-sqlmock) for MySQL and PostgreSQL (no live DB required).
+- Coverage tests for schema resolution functions, table info scanning, and error paths.
+
+### Changed
+- Go toolchain bumped to 1.26.1.
+- `describePostgresTableColumns` refactored to use parameterized schema query (gosec G202 fix).
+- Extracted helper functions from `handleListSchemas` and `describePostgresTableColumns` to reduce cognitive complexity.
+- CI govulncheck step replaced with manual `go install` + `govulncheck ./...` to avoid intermittent `Duplicate header: Authorization` bug from `govulncheck-action`.
+
+### Fixed
+- Resolved SonarCloud `go:S107` (too many parameters) and `unparam` lint issues.
+- Resolved lint warnings in coverage tests.
+- Fixed gosec G202 (SQL string concatenation) by using parameterized queries for schema filtering.
+
 ## [v1.3.0] - 2026-02-21
 
 ### Added

@@ -2,13 +2,13 @@
 
 [![Go](https://img.shields.io/badge/Go-1.26.0%2B-00ADD8?logo=Go&logoColor=white)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/Version-v1.3.0-blue.svg)](https://github.com/guyinwonder168/database-mcp-server/releases/tag/v1.3.0)
+[![Version](https://img.shields.io/badge/Version-v1.4.0-blue.svg)](https://github.com/guyinwonder168/database-mcp-server/releases/tag/v1.4.0)
 [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=guyinwonder168_database-mcp-server&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=guyinwonder168_database-mcp-server)
 [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=guyinwonder168_database-mcp-server&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=guyinwonder168_database-mcp-server)
 [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=guyinwonder168_database-mcp-server&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=guyinwonder168_database-mcp-server)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=guyinwonder168_database-mcp-server&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=guyinwonder168_database-mcp-server)
 
-A production-ready Model Context Protocol (MCP) provider for SQL databases, built using various vibe coding tools. Supports MySQL, MariaDB, PostgreSQL, and SQLite. Features robust connection pooling, secure AES-GCM credential storage, structured JSON logging, comprehensive schema introspection, and a full suite of 19 MCP tools. Built and tested with Go 1.26.0.
+A production-ready Model Context Protocol (MCP) provider for SQL databases, built using various vibe coding tools. Supports MySQL, MariaDB, PostgreSQL, and SQLite. Features robust connection pooling, secure AES-GCM credential storage, structured JSON logging, comprehensive schema introspection, and a full suite of 21 MCP tools. Built and tested with Go 1.26.0.
 
 ## 🚀 Quick Start
 
@@ -28,10 +28,10 @@ go build -o mcp-server ./cmd/server/main.go
 
 ```bash
 # Pull the release image
-docker pull ghcr.io/guyinwonder168/database-mcp-server:v1.3.0
+docker pull ghcr.io/guyinwonder168/database-mcp-server:v1.4.0
 
 # Run with stdio transport
-docker run --rm -i ghcr.io/guyinwonder168/database-mcp-server:v1.3.0
+docker run --rm -i ghcr.io/guyinwonder168/database-mcp-server:v1.4.0
 ```
 
 ```bash
@@ -39,7 +39,7 @@ docker run --rm -i ghcr.io/guyinwonder168/database-mcp-server:v1.3.0
 mkdir -p ./.mcp-data
 docker run --rm -i \
   -v "$(pwd)/.mcp-data:/app" \
-  ghcr.io/guyinwonder168/database-mcp-server:v1.3.0
+  ghcr.io/guyinwonder168/database-mcp-server:v1.4.0
 ```
 
 Package registry: `https://github.com/guyinwonder168/database-mcp-server/pkgs/container/database-mcp-server`
@@ -98,7 +98,7 @@ Package registry: `https://github.com/guyinwonder168/database-mcp-server/pkgs/co
 
 - Default schema mode is `compact` for tool-first and strict declaration-budget clients.
 - Optional `standard` mode keeps verbose tool descriptions for human-readable metadata.
-- All 19 MCP tools are always registered.
+- All 21 MCP tools are always registered.
 - **Gemini Compatibility**: Schemas are automatically sanitized to comply with Google Gemini's OpenAPI 3.0 subset requirements (single `type` values, no `additionalProperties: false`, proper `items` schemas).
 - Use `get-tool-help` for per-tool examples and troubleshooting without inflating startup metadata.
 
@@ -190,10 +190,10 @@ go test ./internal/mcp -run "TestLoadLineage" -v  # Lineage edge tests
 
 ## 📊 Project Status
 
-- **Version:** v1.3.0
+- **Version:** v1.4.0
 - **Built with:** Various vibe coding tools
 - **Status:** Production Ready ✅
-- All 19 MCP tools are fully implemented and OpenAPI-aligned.
+- All 21 MCP tools are fully implemented and OpenAPI-aligned.
 - Enhanced schema introspection and sample data features.
 - Optional advanced profiling in `analyze-schema` for column-level statistics, pattern detection, and quality scoring.
 - AES-GCM encryption, connection pooling, and structured error handling are enforced.
