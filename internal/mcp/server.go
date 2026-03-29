@@ -64,7 +64,7 @@ const (
 	errorProfileNotFound                = "profile not found"
 	messageFailedToConnectToDatabase    = "Failed to connect to database"
 	queryShowFullTables                 = "SHOW FULL TABLES"
-	queryPostgresPublicInformationTable = "SELECT table_name FROM information_schema.tables WHERE table_schema='public'"
+	queryPostgresPublicInformationTable = "SELECT table_schema, table_name FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog', 'information_schema') AND table_schema NOT LIKE 'pg_%' ORDER BY table_schema, table_name"
 	errorUnsupportedDBType              = "unsupported db_type"
 	messageFailedToListTables           = "Failed to list tables"
 	messageFailedToLoadConfiguration    = "Failed to load configuration"
@@ -585,6 +585,24 @@ func (s *MCPServer) registerAllTools() {
 			InputSchema: inputSchemaFor[ListDatabasesParams](),
 		}
 		addTool(s, tool, s.handleListDatabases)
+	}
+
+	// get-search-path
+	{
+		tool := &mcp.Tool{
+			Name: "get-search-path",
+			Description: descriptionFormatter(`Get the current search_path and effective schema (read-only diagnostic).
+   
+   This tool queries the database to show the current search_path setting and the active schema.
+   Note: This server uses connection pooling. Schema should be explicitly qualified in queries.
+   
+   Input: profile_name (required), database_name (required)
+   Returns: search_path, current_schema, and optional connection pooling warning
+   Example:
+   {"profile_name":"some-profile-name","database_name":"some-database-name"}`),
+			InputSchema: inputSchemaFor[GetSearchPathParams](),
+		}
+		addTool(s, tool, s.handleGetSearchPath)
 	}
 
 	// analyze-schema
@@ -1109,14 +1127,20 @@ type ListTablesParams struct {
 	DatabaseName string `json:"database_name"`
 }
 
+type TableRef struct {
+	Schema string `json:"schema"`
+	Name   string `json:"table"`
+}
+
 type ListTablesResult struct {
-	Tables []string `json:"tables"`
+	Tables []TableRef `json:"tables"`
 }
 
 type DescribeTableParams struct {
 	ProfileName  string `json:"profile_name"`
 	DatabaseName string `json:"database_name"`
 	TableName    string `json:"table_name"`
+	Schema       string `json:"schema,omitempty"`
 }
 
 type DescribeTableResult struct {
@@ -1219,6 +1243,7 @@ type SampleDataParams struct {
 	ProfileName  string `json:"profile_name"`
 	TableName    string `json:"table_name"`
 	DatabaseName string `json:"database_name"`
+	Schema       string `json:"schema,omitempty"`
 	SampleSize   int    `json:"sample_size,omitempty"`
 }
 
@@ -1272,6 +1297,31 @@ type AnalyzeDataLineageResult struct {
 // ListToolsResult represents the response from the list-tools action
 type ListToolsResult struct {
 	Tools []ToolInfo `json:"tools"`
+}
+
+// ListSchemasParams represents parameters for the list-schemas tool
+type ListSchemasParams struct {
+	ProfileName  string `json:"profile_name"`
+	DatabaseName string `json:"database_name"`
+}
+
+// ListSchemasResult represents the response from the list-schemas tool
+type ListSchemasResult struct {
+	Schemas       []string `json:"schemas"`
+	DefaultSchema string   `json:"default_schema"`
+}
+
+// GetSearchPathParams represents parameters for the get-search-path tool
+type GetSearchPathParams struct {
+	ProfileName  string `json:"profile_name"`
+	DatabaseName string `json:"database_name"`
+}
+
+// GetSearchPathResult represents the response from the get-search-path tool
+type GetSearchPathResult struct {
+	SearchPath               string `json:"search_path"`
+	CurrentSchema            string `json:"current_schema"`
+	ConnectionPoolingWarning string `json:"connection_pooling_warning,omitempty"`
 }
 
 func (s *MCPServer) handleListTools(
@@ -1751,6 +1801,28 @@ func scanTableName(rows *sql.Rows, dbType string) (string, error) {
 		return "", err
 	}
 	return name, nil
+}
+
+func scanTableInfo(rows *sql.Rows, dbType string) (TableRef, error) {
+	if dbType == "mysql" || dbType == "mariadb" {
+		var schema, name, tableType string
+		if err := rows.Scan(&schema, &name, &tableType); err != nil {
+			return TableRef{}, err
+		}
+		return TableRef{Schema: schema, Name: name}, nil
+	}
+	if dbType == "postgres" {
+		var schema, name string
+		if err := rows.Scan(&schema, &name); err != nil {
+			return TableRef{}, err
+		}
+		return TableRef{Schema: schema, Name: name}, nil
+	}
+	var name string
+	if err := rows.Scan(&name); err != nil {
+		return TableRef{}, err
+	}
+	return TableRef{Schema: "", Name: name}, nil
 }
 
 func smartBuilderNoTableMatchResult(tables []string) *mcp.CallToolResult {
@@ -2961,7 +3033,7 @@ func (s *MCPServer) queryTableNames(
 	ctx context.Context,
 	conn *sql.DB,
 	profileName, databaseName, dbType string,
-) ([]string, *mcp.CallToolResult, error) {
+) ([]TableRef, *mcp.CallToolResult, error) {
 	query, err := tableListQuery(dbType)
 	if err != nil {
 		return nil, nil, err
@@ -2979,13 +3051,13 @@ func (s *MCPServer) queryTableNames(
 	}
 	defer rows.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
 
-	tables := make([]string, 0)
+	tables := make([]TableRef, 0)
 	for rows.Next() {
-		name, scanErr := scanTableName(rows, dbType)
+		info, scanErr := scanTableInfo(rows, dbType)
 		if scanErr != nil {
 			return nil, nil, scanErr
 		}
-		tables = append(tables, name)
+		tables = append(tables, info)
 	}
 	return tables, nil, nil
 }
@@ -3039,6 +3111,128 @@ func validateDescribeTableParams(p DescribeTableParams) *mcp.CallToolResult {
 	return errorResult(structErr)
 }
 
+// fetchSchemasFromDB queries information_schema.schemata and returns the list of schema names.
+func fetchSchemasFromDB(ctx context.Context, conn *sql.DB) ([]string, error) {
+	rows, err := conn.QueryContext(ctx,
+		`SELECT schema_name FROM information_schema.schemata 
+		 WHERE schema_name NOT IN ('pg_catalog', 'information_schema') 
+		 AND schema_name NOT LIKE 'pg_%' 
+		 ORDER BY schema_name`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query schemas: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var schemas []string
+	for rows.Next() {
+		var schema string
+		if err := rows.Scan(&schema); err != nil {
+			return nil, fmt.Errorf("failed to scan schema: %w", err)
+		}
+		schemas = append(schemas, schema)
+	}
+	return schemas, nil
+}
+
+// resolveDefaultSchema determines the default schema based on DB type.
+func resolveDefaultSchema(ctx context.Context, conn *sql.DB, dbType, databaseName string) string {
+	if dbType == "postgres" {
+		var schema string
+		if err := conn.QueryRowContext(ctx, "SELECT current_schema()").Scan(&schema); err != nil {
+			return "public"
+		}
+		return schema
+	}
+	// MySQL/MariaDB
+	return databaseName
+}
+
+func (s *MCPServer) handleListSchemas(ctx context.Context, _ *mcp.CallToolRequest, input ListSchemasParams) (*mcp.CallToolResult, any, error) { //nolint:unparam // MCP SDK requires 3-return signature
+	if input.ProfileName == "" || input.DatabaseName == "" {
+		return nil, nil, fmt.Errorf("profile_name and database_name are required")
+	}
+
+	cfg, prof, err := s.findProfile(input.ProfileName)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	conn, errResult := s.openExecuteSQLConnection(ctx, input.ProfileName, input.DatabaseName, cfg.MaxPoolSize, prof)
+	if errResult != nil {
+		return errResult, nil, nil
+	}
+	defer conn.Close() //nolint:errcheck
+
+	var schemas []string
+	var defaultSchema string
+
+	if prof.DBType == "sqlite" {
+		schemas = []string{"main"}
+		defaultSchema = "main"
+	} else {
+		schemas, err = fetchSchemasFromDB(ctx, conn)
+		if err != nil {
+			return nil, nil, err
+		}
+		defaultSchema = resolveDefaultSchema(ctx, conn, prof.DBType, input.DatabaseName)
+	}
+
+	result := ListSchemasResult{
+		Schemas:       schemas,
+		DefaultSchema: defaultSchema,
+	}
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: string(mustJSONMarshal(result)),
+			},
+		},
+	}, nil, nil
+}
+
+func (s *MCPServer) handleGetSearchPath(ctx context.Context, _ *mcp.CallToolRequest, input GetSearchPathParams) (*mcp.CallToolResult, any, error) {
+	if input.ProfileName == "" || input.DatabaseName == "" {
+		return nil, nil, fmt.Errorf("profile_name and database_name are required")
+	}
+
+	cfg, prof, err := s.findProfile(input.ProfileName)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	conn, errResult := s.openExecuteSQLConnection(ctx, input.ProfileName, input.DatabaseName, cfg.MaxPoolSize, prof)
+	if errResult != nil {
+		return errResult, nil, nil
+	}
+	defer conn.Close() //nolint:errcheck
+
+	var searchPath, currentSchema string
+	if prof.DBType == "postgres" {
+		if err := conn.QueryRowContext(ctx, "SHOW search_path").Scan(&searchPath); err != nil {
+			searchPath = "unknown"
+		}
+		if err := conn.QueryRowContext(ctx, "SELECT current_schema()").Scan(&currentSchema); err != nil {
+			currentSchema = "unknown"
+		}
+	} else {
+		searchPath = input.DatabaseName
+		currentSchema = input.DatabaseName
+	}
+
+	result := GetSearchPathResult{
+		SearchPath:               searchPath,
+		CurrentSchema:            currentSchema,
+		ConnectionPoolingWarning: "This server uses connection pooling. Schema should be explicitly qualified in queries.",
+	}
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: string(mustJSONMarshal(result)),
+			},
+		},
+	}, nil, nil
+}
+
 func (s *MCPServer) resolveDescribeTableProfile(profileName string) (*config.Config, *config.Profile, *mcp.CallToolResult, error) {
 	cfg, prof, err := s.findProfile(profileName)
 	if err == nil {
@@ -3071,7 +3265,7 @@ func (s *MCPServer) queryDescribeTableColumns(
 		columns, err := describeMySQLTableColumns(ctx, conn, p.DatabaseName, p.TableName)
 		return columns, describeTableErrorResult(s.errorAnalyzer, err, p, dbType), nil
 	case "postgres":
-		columns, err := describePostgresTableColumns(ctx, conn, p.TableName)
+		columns, err := describePostgresTableColumns(ctx, conn, p.TableName, p.Schema)
 		return columns, describeTableErrorResult(s.errorAnalyzer, err, p, dbType), nil
 	case "sqlite":
 		columns, err := describeSQLiteTableColumns(ctx, conn, p.TableName)
@@ -3090,6 +3284,7 @@ func describeTableErrorResult(analyzer *ErrorAnalyzer, err error, p DescribeTabl
 		"profile_name":  p.ProfileName,
 		"database_name": p.DatabaseName,
 		"table_name":    p.TableName,
+		"schema":        p.Schema,
 		"operation":     "describe_table",
 		"db_type":       dbType,
 	})
@@ -3187,7 +3382,56 @@ func setMySQLDescribeColumnOptionalFields(col *ColumnInfo, row mysqlDescribeColu
 	}
 }
 
-func describePostgresTableColumns(ctx context.Context, conn *sql.DB, tableName string) ([]ColumnInfo, error) {
+// postgresColumnRow holds the scanned fields for a PostgreSQL column from information_schema.
+type postgresColumnRow struct {
+	name, typ, nullable, keyType string
+	defaultVal, comment          sql.NullString
+	maxLength, precision, scale  sql.NullInt64
+}
+
+// mapPostgresColumn maps scanned PostgreSQL column fields into a ColumnInfo struct.
+func mapPostgresColumn(row postgresColumnRow) ColumnInfo {
+	col := ColumnInfo{
+		Name:          row.name,
+		Type:          row.typ,
+		Nullable:      row.nullable == "YES",
+		Key:           row.keyType,
+		AutoIncrement: strings.Contains(row.defaultVal.String, "nextval"),
+	}
+	if row.defaultVal.Valid {
+		col.Default = &row.defaultVal.String
+	}
+	if row.comment.Valid {
+		col.Comment = row.comment.String
+	}
+	if row.maxLength.Valid {
+		col.MaxLength = &row.maxLength.Int64
+	}
+	if row.precision.Valid {
+		col.Precision = &row.precision.Int64
+	}
+	if row.scale.Valid {
+		col.Scale = &row.scale.Int64
+	}
+	return col
+}
+
+func describePostgresTableColumns(ctx context.Context, conn *sql.DB, tableName, schema string) ([]ColumnInfo, error) {
+	// Resolve schema using ResolveSchema with auto-detection fallback
+	sqlConn, err := conn.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get connection: %w", err)
+	}
+	defer sqlConn.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
+
+	resolvedSchema, err := ResolveSchema(ctx, sqlConn, schema)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve schema: %w", err)
+	}
+
+	// Remove quotes for use as a parameter value (ResolveSchema returns quoted identifier)
+	resolvedSchema = strings.Trim(resolvedSchema, "\"")
+
 	query := `SELECT
 		c.column_name as name,
 		c.data_type as type,
@@ -3212,10 +3456,10 @@ func describePostgresTableColumns(ctx context.Context, conn *sql.DB, tableName s
 		AND kcu.table_name = c.table_name AND kcu.table_schema = c.table_schema
 	LEFT JOIN information_schema.table_constraints tc ON tc.constraint_name = kcu.constraint_name
 		AND tc.table_name = c.table_name AND tc.table_schema = c.table_schema
-	WHERE c.table_schema = $1 AND c.table_name = $2
+	WHERE c.table_schema = $2 AND c.table_name = $1
 	ORDER BY c.ordinal_position`
 
-	rows, err := conn.QueryContext(ctx, query, "public", tableName)
+	rows, err := conn.QueryContext(ctx, query, tableName, resolvedSchema)
 	if err != nil {
 		return nil, err
 	}
@@ -3223,35 +3467,11 @@ func describePostgresTableColumns(ctx context.Context, conn *sql.DB, tableName s
 
 	columns := make([]ColumnInfo, 0)
 	for rows.Next() {
-		var name, typ, nullable, keyType string
-		var defaultVal, comment sql.NullString
-		var maxLength, precision, scale sql.NullInt64
-		if err := rows.Scan(&name, &typ, &nullable, &defaultVal, &comment, &maxLength, &precision, &scale, &keyType); err != nil {
+		var row postgresColumnRow
+		if err := rows.Scan(&row.name, &row.typ, &row.nullable, &row.defaultVal, &row.comment, &row.maxLength, &row.precision, &row.scale, &row.keyType); err != nil {
 			return nil, err
 		}
-		col := ColumnInfo{
-			Name:          name,
-			Type:          typ,
-			Nullable:      nullable == "YES",
-			Key:           keyType,
-			AutoIncrement: strings.Contains(defaultVal.String, "nextval"),
-		}
-		if defaultVal.Valid {
-			col.Default = &defaultVal.String
-		}
-		if comment.Valid {
-			col.Comment = comment.String
-		}
-		if maxLength.Valid {
-			col.MaxLength = &maxLength.Int64
-		}
-		if precision.Valid {
-			col.Precision = &precision.Int64
-		}
-		if scale.Valid {
-			col.Scale = &scale.Int64
-		}
-		columns = append(columns, col)
+		columns = append(columns, mapPostgresColumn(row))
 	}
 	return columns, nil
 }
@@ -3768,7 +3988,16 @@ func (s *MCPServer) listAnalyzeSchemaTables(
 	prof *config.Profile,
 	dbName string,
 ) ([]string, *mcp.CallToolResult, error) {
-	return s.queryTableNames(ctx, conn, p.ProfileName, dbName, prof.DBType)
+	tableRefs, errResult, err := s.queryTableNames(ctx, conn, p.ProfileName, dbName, prof.DBType)
+	if errResult != nil || err != nil {
+		return nil, errResult, err
+	}
+	// Extract just the table names for compatibility
+	tableNames := make([]string, len(tableRefs))
+	for i, ref := range tableRefs {
+		tableNames[i] = ref.Name
+	}
+	return tableNames, nil, nil
 }
 
 func filterAnalyzeSchemaTables(tables, includeTables, excludeTables []string) []string {

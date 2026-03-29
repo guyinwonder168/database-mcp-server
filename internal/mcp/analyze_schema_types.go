@@ -33,6 +33,7 @@ If AnalysisLevel is empty or invalid, validation will fail.
 type AnalyzeSchemaParams struct {
 	ProfileName    string   `json:"profile_name"`            // Required: Database profile to analyze
 	DatabaseName   string   `json:"database_name,omitempty"` // Optional: Specific database (uses profile default if empty)
+	Schema         string   `json:"schema,omitempty"`        // Optional: Specific schema (auto-detected if empty)
 	AnalysisLevel  string   `json:"analysis_level"`          // REQUIRED: "basic", "detailed", "comprehensive"
 	IncludeTables  []string `json:"include_tables,omitempty"`
 	ExcludeTables  []string `json:"exclude_tables,omitempty"`

@@ -104,6 +104,8 @@ The server registers these 19 tools:
 
 - Unit tests adjacent to implementation (`*_test.go`)
 - Integration tests in `internal/mcp/*integration*_test.go`
+- **MySQL/PostgreSQL mocking** with go-sqlmock for database-specific tests (see `server_analyze_schema_helpers_test.go`)
+- **SQLite tests** use real in-memory databases for actual SQLite functionality testing
 - Optional live DB tests through `DB_MCP_IT_*` environment variables
 
 ## Source-of-Truth Note

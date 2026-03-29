@@ -639,7 +639,49 @@ func TestHandleDescribeTable(t *testing.T) {
 	}
 }
 
-// TestHandleListDatabases tests the list-databases MCP action.
+// TestHandleDescribeTableWithSchema tests the describe-table MCP action with explicit schema parameter.
+func TestHandleDescribeTableWithSchema(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+
+	res, _, err := server.handleDescribeTable(ctx, nil, DescribeTableParams{
+		ProfileName:  "testsqlite",
+		DatabaseName: testSQLiteDBPath,
+		TableName:    "sqlite_master",
+		Schema:       "",
+	})
+	if err != nil {
+		t.Fatalf("handleDescribeTable with empty schema error: %v", err)
+	}
+	if res == nil || res.Content == nil {
+		t.Fatalf("handleDescribeTable with empty schema returned nil content")
+	}
+}
+
+// TestHandleDescribeTableAutoDetectSchema tests the describe-table MCP action with schema auto-detection.
+func TestHandleDescribeTableAutoDetectSchema(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+
+	res, _, err := server.handleDescribeTable(ctx, nil, DescribeTableParams{
+		ProfileName:  "testsqlite",
+		DatabaseName: testSQLiteDBPath,
+		TableName:    "sqlite_master",
+	})
+	if err != nil {
+		t.Fatalf("handleDescribeTable auto-detect schema error: %v", err)
+	}
+	if res == nil || res.Content == nil {
+		t.Fatalf("handleDescribeTable auto-detect schema returned nil content")
+	}
+}
+
 func TestHandleListDatabases(t *testing.T) {
 	testConfig := setupTestConfig(t)
 	defer os.Remove(testConfig)
@@ -655,6 +697,38 @@ func TestHandleListDatabases(t *testing.T) {
 	}
 	if res == nil || res.Content == nil {
 		t.Fatalf("handleListDatabases returned nil content")
+	}
+}
+
+func TestHandleListSchemas(t *testing.T) {
+	testConfig := setupTestConfig(t)
+	defer os.Remove(testConfig)
+
+	server := NewMCPServerWithConfig(testConfig)
+	ctx := context.Background()
+
+	res, _, err := server.handleListSchemas(ctx, nil, ListSchemasParams{
+		ProfileName:  "testsqlite",
+		DatabaseName: "test.db",
+	})
+	if err != nil {
+		t.Fatalf("handleListSchemas error: %v", err)
+	}
+	if res == nil || res.Content == nil {
+		t.Fatalf("handleListSchemas returned nil content")
+	}
+
+	var result ListSchemasResult
+	if err := json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &result); err != nil {
+		t.Fatalf("Failed to unmarshal result: %v", err)
+	}
+
+	if len(result.Schemas) == 0 {
+		t.Fatalf("Expected at least one schema for SQLite, got %d", len(result.Schemas))
+	}
+
+	if result.DefaultSchema != "main" {
+		t.Errorf("Expected default_schema 'main' for SQLite, got %q", result.DefaultSchema)
 	}
 }
 

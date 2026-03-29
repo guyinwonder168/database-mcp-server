@@ -125,6 +125,10 @@ var toolHelpCatalog = map[string]toolHelpEntry{
 		Summary:        "Return examples and troubleshooting for a tool.",
 		MinimalExample: map[string]any{"tool_name": "execute-sql", "topic": "all"},
 	},
+	"get-search-path": {
+		Summary:        "Get the current search_path and effective schema for PostgreSQL.",
+		MinimalExample: map[string]any{"profile_name": "analytics_db", "database_name": "analytics_db"},
+	},
 }
 
 func (s *MCPServer) handleGetToolHelp(

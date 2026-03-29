@@ -95,8 +95,16 @@ When adding new MCP tools:
 
 - Unit tests for all new functions
 - Integration tests for MCP tools
+- **Database-specific testing with go-sqlmock** for MySQL/PostgreSQL tests (see `server_analyze_schema_helpers_test.go` for examples)
+- **Real SQLite testing** using in-memory databases for SQLite functionality
 - Live database tests when applicable
 - Test error scenarios and edge cases
+
+### Testing Approach by Database
+
+- **MySQL/MariaDB & PostgreSQL**: Use go-sqlmock for mocking database-specific queries and system catalogs (INFORMATION_SCHEMA, information_schema)
+- **SQLite**: Use real in-memory databases (`:memory:`) to test actual SQLite functionality
+- **Live Integration**: Use `DB_MCP_IT_*` environment variables for testing against real database instances
 
 ## Code Review Process
 

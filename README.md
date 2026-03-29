@@ -49,7 +49,8 @@ Package registry: `https://github.com/guyinwonder168/database-mcp-server/pkgs/co
 - 🔧 **Interactive Setup** - Auto-creates `config.yaml` if missing; all configuration is managed via MCP actions
 - 👥 **Profile Management** - Create, update, delete, or clone database profiles via MCP
 - ⚡ **SQL Execution** - Run arbitrary SQL queries (with read-only enforcement)
-- 🔍 **Schema Introspection** - List tables/views, describe table schemas, list databases, and discover joins
+- 🔍 **Schema Introspection** - List tables/views with schema info, describe table schemas, list databases, discover joins, and browse schemas
+- 🗂️ **Multi-Schema Support** - Work with tables in any PostgreSQL schema with automatic detection and schema-qualified queries
 - 📊 **Sample Data Fetching** - Fetch sample rows to infer data formats and value ranges
 - 🔗 **Automated Join Discovery** - Suggest JOIN SQL for building complex queries
 - 🚦 **Query Optimization** - EXPLAIN-based analysis with findings and performance estimates
@@ -74,9 +75,11 @@ Package registry: `https://github.com/guyinwonder168/database-mcp-server/pkgs/co
 | `configure-profile` | Create, update, delete, or clone database connection profiles |
 | `list-profiles` | List all configured database profiles |
 | `execute-sql` | Execute arbitrary SQL queries with read-only enforcement |
-| `list-tables` | List tables in selected database |
-| `describe-table` | Describe comprehensive table schema with metadata |
+| `list-tables` | List tables with schema information in selected database |
+| `describe-table` | Describe comprehensive table schema with metadata (supports schema parameter) |
 | `list-databases` | List accessible databases for profile |
+| `list-schemas` | List all accessible database schemas with default schema |
+| `get-search-path` | Get current search_path and effective schema (read-only diagnostic) |
 | `smart-query-builder` | Generate SQL from high-level intent |
 | `optimize-query` | Run EXPLAIN, return plan, findings, and performance estimate |
 | `validate-query` | Validate SQL syntax and flag risky patterns before execution |
@@ -168,8 +171,22 @@ Please read our [**Code of Conduct**](CODE_OF_CONDUCT.md) for community guidelin
 ## 🧪 Testing
 
 ```bash
+# Run all tests
 go test ./...
+
+# Run tests with coverage
+go test -cover ./...
+
+# Run specific test suites
+go test ./internal/mcp -run "TestDescribe" -v  # MySQL/PostgreSQL descriptor tests
+go test ./internal/mcp -run "TestLoadLineage" -v  # Lineage edge tests
 ```
+
+### Testing Strategy
+
+- **MySQL/PostgreSQL**: Uses [go-sqlmock](https://github.com/DATA-DOG/go-sqlmock) for database-specific query testing without requiring real database connections
+- **SQLite**: Uses real in-memory databases for actual SQLite functionality testing
+- **Live Integration**: Optional live database tests via `DB_MCP_IT_*` environment variables
 
 ## 📊 Project Status
 
@@ -208,5 +225,46 @@ go test ./...
 - [Data Migration Design](docs/data-migration-design.md) - Phase 4 implementation plan
 - [Project Plan (History)](docs/history/project-plan-roadmap.md) - Comprehensive implementation strategy
 - [Vertical Slices (History)](docs/history/vertical-slices.md) - Detailed phase breakdowns
+
+## 🔍 Multi-Schema Support (PostgreSQL)
+
+This server provides comprehensive multi-schema support for PostgreSQL databases:
+
+### Schema-Aware Tools
+
+| Tool | Schema Support |
+|------|---------------|
+| `list-tables` | Returns schema information for all tables |
+| `describe-table` | Optional `schema` parameter with auto-detection |
+| `sample-data` | Optional `schema` parameter |
+| `analyze-schema` | Optional `schema` parameter |
+| `list-schemas` | Discover all accessible schemas |
+| `get-search-path` | Diagnostic tool for current schema context |
+
+### Connection Pooling Note
+
+This server uses connection pooling per database profile. Due to this architecture:
+
+- **`set-search-path` is intentionally NOT implemented** - Session-level `search_path` changes would contaminate other clients using the same pooled connection
+- **Use explicit schema qualification** via the `schema` parameter on relevant tools
+- **Auto-detection** falls back gracefully: `current_schema()` → first accessible schema → `'public'`
+
+### Example Usage
+
+```json
+// Describe table in specific schema
+{
+  "profile_name": "mydb",
+  "database_name": "mydb",
+  "table_name": "users",
+  "schema": "bitnami_redmine"
+}
+
+// List all schemas
+{
+  "profile_name": "mydb",
+  "database_name": "mydb"
+}
+```
 
 **Ready for immediate enhancement development while maintaining production stability.**
