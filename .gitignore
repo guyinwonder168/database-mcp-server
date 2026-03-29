@@ -44,3 +44,6 @@ pkg/log/*.log.*
 docs/plans/
 #exclude wiki from main repo
 wiki/
+
+# Test artifacts
+internal/mcp/test.db
