@@ -1729,14 +1729,17 @@ func TestResolveDefaultSchema(t *testing.T) {
 
 func TestMapPostgresColumn(t *testing.T) {
 	t.Run("all_fields_valid", func(t *testing.T) {
-		col := mapPostgresColumn(
-			"id", "integer", "NO", "PRI",
-			sql.NullString{String: "nextval('seq')", Valid: true},
-			sql.NullString{String: "primary key", Valid: true},
-			sql.NullInt64{Int64: 0, Valid: true},
-			sql.NullInt64{Int64: 10, Valid: true},
-			sql.NullInt64{Int64: 0, Valid: true},
-		)
+		col := mapPostgresColumn(postgresColumnRow{
+			name:       "id",
+			typ:        "integer",
+			nullable:   "NO",
+			keyType:    "PRI",
+			defaultVal: sql.NullString{String: "nextval('seq')", Valid: true},
+			comment:    sql.NullString{String: "primary key", Valid: true},
+			maxLength:  sql.NullInt64{Int64: 0, Valid: true},
+			precision:  sql.NullInt64{Int64: 10, Valid: true},
+			scale:      sql.NullInt64{Int64: 0, Valid: true},
+		})
 		if col.Name != "id" {
 			t.Errorf("expected name 'id', got %q", col.Name)
 		}
@@ -1767,14 +1770,12 @@ func TestMapPostgresColumn(t *testing.T) {
 	})
 
 	t.Run("nullable_with_no_default", func(t *testing.T) {
-		col := mapPostgresColumn(
-			"name", "varchar", "YES", "",
-			sql.NullString{Valid: false},
-			sql.NullString{Valid: false},
-			sql.NullInt64{Int64: 255, Valid: true},
-			sql.NullInt64{Valid: false},
-			sql.NullInt64{Valid: false},
-		)
+		col := mapPostgresColumn(postgresColumnRow{
+			name:      "name",
+			typ:       "varchar",
+			nullable:  "YES",
+			maxLength: sql.NullInt64{Int64: 255, Valid: true},
+		})
 		if !col.Nullable {
 			t.Error("expected Nullable=true for 'YES'")
 		}
@@ -1790,14 +1791,12 @@ func TestMapPostgresColumn(t *testing.T) {
 	})
 
 	t.Run("no_auto_increment_without_nextval", func(t *testing.T) {
-		col := mapPostgresColumn(
-			"status", "text", "NO", "",
-			sql.NullString{String: "'active'", Valid: true},
-			sql.NullString{Valid: false},
-			sql.NullInt64{Valid: false},
-			sql.NullInt64{Valid: false},
-			sql.NullInt64{Valid: false},
-		)
+		col := mapPostgresColumn(postgresColumnRow{
+			name:       "status",
+			typ:        "text",
+			nullable:   "NO",
+			defaultVal: sql.NullString{String: "'active'", Valid: true},
+		})
 		if col.AutoIncrement {
 			t.Error("expected AutoIncrement=false without nextval")
 		}

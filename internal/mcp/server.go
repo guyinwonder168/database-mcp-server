@@ -3147,7 +3147,7 @@ func resolveDefaultSchema(ctx context.Context, conn *sql.DB, dbType, databaseNam
 	return databaseName
 }
 
-func (s *MCPServer) handleListSchemas(ctx context.Context, _ *mcp.CallToolRequest, input ListSchemasParams) (*mcp.CallToolResult, any, error) {
+func (s *MCPServer) handleListSchemas(ctx context.Context, _ *mcp.CallToolRequest, input ListSchemasParams) (*mcp.CallToolResult, any, error) { //nolint:unparam // MCP SDK requires 3-return signature
 	if input.ProfileName == "" || input.DatabaseName == "" {
 		return nil, nil, fmt.Errorf("profile_name and database_name are required")
 	}
@@ -3382,29 +3382,36 @@ func setMySQLDescribeColumnOptionalFields(col *ColumnInfo, row mysqlDescribeColu
 	}
 }
 
+// postgresColumnRow holds the scanned fields for a PostgreSQL column from information_schema.
+type postgresColumnRow struct {
+	name, typ, nullable, keyType string
+	defaultVal, comment          sql.NullString
+	maxLength, precision, scale  sql.NullInt64
+}
+
 // mapPostgresColumn maps scanned PostgreSQL column fields into a ColumnInfo struct.
-func mapPostgresColumn(name, typ, nullable, keyType string, defaultVal, comment sql.NullString, maxLength, precision, scale sql.NullInt64) ColumnInfo {
+func mapPostgresColumn(row postgresColumnRow) ColumnInfo {
 	col := ColumnInfo{
-		Name:          name,
-		Type:          typ,
-		Nullable:      nullable == "YES",
-		Key:           keyType,
-		AutoIncrement: strings.Contains(defaultVal.String, "nextval"),
+		Name:          row.name,
+		Type:          row.typ,
+		Nullable:      row.nullable == "YES",
+		Key:           row.keyType,
+		AutoIncrement: strings.Contains(row.defaultVal.String, "nextval"),
 	}
-	if defaultVal.Valid {
-		col.Default = &defaultVal.String
+	if row.defaultVal.Valid {
+		col.Default = &row.defaultVal.String
 	}
-	if comment.Valid {
-		col.Comment = comment.String
+	if row.comment.Valid {
+		col.Comment = row.comment.String
 	}
-	if maxLength.Valid {
-		col.MaxLength = &maxLength.Int64
+	if row.maxLength.Valid {
+		col.MaxLength = &row.maxLength.Int64
 	}
-	if precision.Valid {
-		col.Precision = &precision.Int64
+	if row.precision.Valid {
+		col.Precision = &row.precision.Int64
 	}
-	if scale.Valid {
-		col.Scale = &scale.Int64
+	if row.scale.Valid {
+		col.Scale = &row.scale.Int64
 	}
 	return col
 }
@@ -3460,13 +3467,11 @@ func describePostgresTableColumns(ctx context.Context, conn *sql.DB, tableName, 
 
 	columns := make([]ColumnInfo, 0)
 	for rows.Next() {
-		var name, typ, nullable, keyType string
-		var defaultVal, comment sql.NullString
-		var maxLength, precision, scale sql.NullInt64
-		if err := rows.Scan(&name, &typ, &nullable, &defaultVal, &comment, &maxLength, &precision, &scale, &keyType); err != nil {
+		var row postgresColumnRow
+		if err := rows.Scan(&row.name, &row.typ, &row.nullable, &row.defaultVal, &row.comment, &row.maxLength, &row.precision, &row.scale, &row.keyType); err != nil {
 			return nil, err
 		}
-		columns = append(columns, mapPostgresColumn(name, typ, nullable, keyType, defaultVal, comment, maxLength, precision, scale))
+		columns = append(columns, mapPostgresColumn(row))
 	}
 	return columns, nil
 }
