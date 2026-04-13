@@ -39,7 +39,7 @@ jobs:
 
       - name: Upload test report
         if: always()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-report
           path: report.json
@@ -50,14 +50,14 @@ jobs:
 
       - name: Upload coverage report
         if: success()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-report
           path: coverage.html
 
       - name: Upload coverage data
         if: success()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-data
           path: coverage.out
@@ -247,7 +247,7 @@ jobs:
         run: go build -v -o mcp-server-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }} ./cmd/server/main.go
 
       - name: Upload binary
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mcp-server-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
           path: mcp-server-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
