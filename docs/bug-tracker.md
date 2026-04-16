@@ -128,3 +128,9 @@ Updated `topicFilteredToolHelpResult` to include Description and Parameters in a
 | BUG-003 (`get-tool-help` unhelpful) | P1 | Medium | Fixed |
 
 **Fix applied (2026-04-16):** BUG-001 and BUG-002 were resolved by unifying `scanTableInfo` to a 3-column signature and creating `tableInfoListQuery()` with column-aligned queries per dbType. BUG-003 was resolved by adding `ToolParamInfo` struct, `Description`/`Parameters`/`ResponseFormat` fields, and populating all 18 tool help entries.
+
+---
+
+## See Also
+
+- [bug-tracker-analyze-schema.md](./bug-tracker-analyze-schema.md) — Accuracy and quality issues in `analyze-schema` (BUG-004 through BUG-009)

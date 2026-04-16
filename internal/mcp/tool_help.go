@@ -55,6 +55,15 @@ type toolHelpEntry struct {
 
 var supportedToolHelpTopics = []string{"summary", "minimal_example", "advanced_example", "errors", "all"}
 
+// Shared string constants to reduce duplication (SonarQube go:S1192).
+const (
+	errStrTableNotFound       = "Table not found"
+	errStrMissingRequired     = "Missing required parameters"
+	fixStrListTables          = "Use list-tables to see available tables"
+	fixStrProvideAllRequired  = "Provide all required fields"
+	fixStrProvideBothRequired = "Provide both required fields"
+)
+
 // Shared parameter definitions to reduce duplication.
 var (
 	paramProfile = ToolParamInfo{Name: "profile_name", Type: "string", Required: true, Description: "Database profile to use"}
@@ -67,8 +76,14 @@ var (
 	paramSchemaOpt = ToolParamInfo{Name: "schema", Type: "string", Required: false, Description: "Schema name (PostgreSQL only, auto-detected if empty)"}
 
 	// Shared error definitions.
-	errProfileNotFound = ToolHelpError{Error: "Profile not found", Cause: "profile_name does not match a configured profile", Fix: "Use list-profiles to see available profiles"}
-	errTableNotFound   = ToolHelpError{Error: "Table not found", Cause: "table_name does not exist in the specified database", Fix: "Use list-tables to see available tables"}
+	errProfileNotFound       = ToolHelpError{Error: "Profile not found", Cause: "profile_name does not match a configured profile", Fix: "Use list-profiles to see available profiles"}
+	errTableNotFound         = ToolHelpError{Error: errStrTableNotFound, Cause: "table_name does not exist in the specified database", Fix: fixStrListTables}
+	errMissingSQLParms       = ToolHelpError{Error: errStrMissingRequired, Cause: "profile_name/database_name/sql omitted", Fix: fixStrProvideAllRequired}
+	errMissingProfileSQL     = ToolHelpError{Error: errStrMissingRequired, Cause: "profile_name or sql omitted", Fix: fixStrProvideBothRequired}
+	errMissingProfileTable   = ToolHelpError{Error: errStrMissingRequired, Cause: "profile_name or table_name omitted", Fix: fixStrProvideBothRequired}
+	errMissingProfileDBTable = ToolHelpError{Error: errStrMissingRequired, Cause: "profile_name/database_name/table_name omitted", Fix: fixStrProvideAllRequired}
+	errTableNotFoundInDB     = ToolHelpError{Error: errStrTableNotFound, Cause: "table_name does not exist in the database", Fix: fixStrListTables}
+	errTableNotFoundGeneric  = ToolHelpError{Error: errStrTableNotFound, Cause: "table_name does not exist", Fix: fixStrListTables}
 
 	// No-parameter tool boilerplate.
 	noParamParams   = []ToolParamInfo{}
@@ -121,7 +136,7 @@ var toolHelpCatalog = map[string]toolHelpEntry{
 		MinimalExample:  map[string]any{"profile_name": "analytics_db", "database_name": "analytics_db", "sql": "SELECT 1"},
 		AdvancedExample: map[string]any{"profile_name": "analytics_db", "database_name": "analytics_db", "sql": "SELECT * FROM orders WHERE customer_id = ?", "params": []any{123}},
 		CommonErrors: []ToolHelpError{
-			{Error: "Missing required parameters", Cause: "profile_name/database_name/sql omitted", Fix: "Provide all required fields"},
+			errMissingSQLParms,
 			errProfileNotFound,
 			{Error: "Read-only violation", Cause: "Attempting INSERT/UPDATE/DELETE on a read-only profile", Fix: "Use a non-read-only profile or SELECT queries only"},
 		},
@@ -208,7 +223,7 @@ var toolHelpCatalog = map[string]toolHelpEntry{
 		MinimalExample:  map[string]any{"profile_name": "analytics_db", "database_name": "analytics_db", "sql": "SELECT * FROM orders WHERE customer_id = 123"},
 		AdvancedExample: map[string]any{"profile_name": "analytics_db", "database_name": "analytics_db", "sql": "SELECT * FROM orders WHERE customer_id = ?", "params": []any{123}},
 		CommonErrors: []ToolHelpError{
-			{Error: "Missing required parameters", Cause: "profile_name/database_name/sql omitted", Fix: "Provide all required fields"},
+			errMissingSQLParms,
 			{Error: "SQL syntax error", Cause: "The provided SQL is invalid", Fix: "Check SQL syntax and try again"},
 		},
 		ResponseFormat: "JSON object with plan, findings, estimation, and summary",
@@ -225,7 +240,7 @@ var toolHelpCatalog = map[string]toolHelpEntry{
 		MinimalExample:  map[string]any{"profile_name": "analytics_db", "sql": "SELECT * FROM users"},
 		AdvancedExample: map[string]any{"profile_name": "analytics_db", "database_name": "analytics_db", "sql": "SELECT * FROM users WHERE id = ?", "params": []any{42}},
 		CommonErrors: []ToolHelpError{
-			{Error: "Missing required parameters", Cause: "profile_name or sql omitted", Fix: "Provide both required fields"},
+			errMissingProfileSQL,
 			{Error: "SQL syntax error", Cause: "The SQL contains syntax errors", Fix: "Review the validation issues in the response for details"},
 		},
 		ResponseFormat: "JSON object with is_valid, issues, and summary",
@@ -243,8 +258,8 @@ var toolHelpCatalog = map[string]toolHelpEntry{
 		MinimalExample:  map[string]any{"profile_name": "analytics_db", "table_name": "orders", "scope": "both"},
 		AdvancedExample: map[string]any{"profile_name": "analytics_db", "database_name": "analytics_db", "table_name": "orders", "scope": "upstream", "tables": []any{"orders", "customers", "products"}},
 		CommonErrors: []ToolHelpError{
-			{Error: "Missing required parameters", Cause: "profile_name or table_name omitted", Fix: "Provide both required fields"},
-			{Error: "Table not found", Cause: "table_name does not exist in the database", Fix: "Use list-tables to see available tables"},
+			errMissingProfileTable,
+			errTableNotFoundInDB,
 		},
 		ResponseFormat: "JSON object with upstream, downstream arrays, edges, summary, and scope",
 	},
@@ -261,8 +276,8 @@ var toolHelpCatalog = map[string]toolHelpEntry{
 		MinimalExample:  map[string]any{"profile_name": "analytics_db", "table_name": "orders"},
 		AdvancedExample: map[string]any{"profile_name": "analytics_db", "table_name": "orders", "columns": []any{"revenue", "order_date"}, "insight_types": []any{"kpi", "trend"}, "max_results": 10},
 		CommonErrors: []ToolHelpError{
-			{Error: "Missing required parameters", Cause: "profile_name or table_name omitted", Fix: "Provide both required fields"},
-			{Error: "Table not found", Cause: "table_name does not exist", Fix: "Use list-tables to see available tables"},
+			errMissingProfileTable,
+			errTableNotFoundGeneric,
 			{Error: "No numeric columns", Cause: "Table has no numeric columns for insight analysis", Fix: "Choose a table with numeric data columns"},
 		},
 		ResponseFormat: "JSON object with list of insights containing type, column, description, and metrics",
@@ -332,7 +347,7 @@ var toolHelpCatalog = map[string]toolHelpEntry{
 		MinimalExample:  map[string]any{"profile_name": "analytics_db", "database_name": "analytics_db", "table_name": "users"},
 		AdvancedExample: map[string]any{"profile_name": "analytics_db", "database_name": "analytics_db", "table_name": "users", "schema": "public", "sample_size": 10},
 		CommonErrors: []ToolHelpError{
-			{Error: "Missing required parameters", Cause: "profile_name/database_name/table_name omitted", Fix: "Provide all required fields"},
+			errMissingProfileDBTable,
 			errTableNotFound,
 		},
 		ResponseFormat: "JSON object with table_name, sample_size, columns, sample_rows, and summary",
