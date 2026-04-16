@@ -4,6 +4,7 @@ package mcp
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
@@ -329,6 +330,43 @@ func TestTableListQuery(t *testing.T) {
 	_, err = tableListQuery("oracle")
 	if err == nil {
 		t.Error("Expected error for unsupported db type")
+	}
+}
+
+// TestTableInfoListQuery tests the tableInfoListQuery function which returns
+// 3-column-aligned queries suitable for scanTableInfo. This is a regression
+// test for BUG-001/002 where scanTableInfo expected 3 columns but the query
+// returned only 2 (mysql/mariadb SHOW FULL TABLES).
+func TestTableInfoListQuery(t *testing.T) {
+	tests := []struct {
+		name       string
+		dbType     string
+		wantPrefix string // query should start with this
+		wantErr    bool
+	}{
+		{name: "mysql", dbType: "mysql", wantPrefix: "SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE", wantErr: false},
+		{name: "mariadb", dbType: "mariadb", wantPrefix: "SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE", wantErr: false},
+		{name: "postgres", dbType: "postgres", wantPrefix: "SELECT table_schema, table_name, table_type", wantErr: false},
+		{name: "sqlite", dbType: "sqlite", wantPrefix: "SELECT '' AS schema, name, type", wantErr: false},
+		{name: "unsupported", dbType: "oracle", wantPrefix: "", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			query, err := tableInfoListQuery(tt.dbType)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error for unsupported db type")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !strings.HasPrefix(query, tt.wantPrefix) {
+				t.Errorf("query for %s should start with %q, got %q", tt.dbType, tt.wantPrefix, query)
+			}
+		})
 	}
 }
 

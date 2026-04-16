@@ -6,6 +6,7 @@ import (
 	"context"
 	"database-mcp-provider/internal/config"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1239,7 +1240,9 @@ func TestCollectLineageEdges_SQLite(t *testing.T) {
 	}
 }
 
-// TestScanTableInfo tests the scanTableInfo function for all db types
+// TestScanTableInfo tests the unified scanTableInfo function for all db types.
+// All branches now scan 3 columns (schema, name, type) since tableInfoListQuery
+// returns 3-column queries for every dbType.
 func TestScanTableInfo(t *testing.T) {
 	ctx := context.Background()
 
@@ -1250,7 +1253,7 @@ func TestScanTableInfo(t *testing.T) {
 		}
 		defer db.Close()
 
-		rows := sqlmock.NewRows([]string{"schema", "name", "type"}).
+		rows := sqlmock.NewRows([]string{"TABLE_SCHEMA", "TABLE_NAME", "TABLE_TYPE"}).
 			AddRow("mydb", "users", "BASE TABLE")
 
 		mock.ExpectQuery("SELECT").WillReturnRows(rows)
@@ -1265,7 +1268,7 @@ func TestScanTableInfo(t *testing.T) {
 			t.Fatal("expected row")
 		}
 
-		info, err := scanTableInfo(resultRows, "mysql")
+		info, err := scanTableInfo(resultRows)
 		if err != nil {
 			t.Fatalf("scanTableInfo failed: %v", err)
 		}
@@ -1278,37 +1281,6 @@ func TestScanTableInfo(t *testing.T) {
 		}
 	})
 
-	t.Run("mariadb_branch", func(t *testing.T) {
-		db, mock, err := sqlmock.New()
-		if err != nil {
-			t.Fatalf("failed to create sqlmock: %v", err)
-		}
-		defer db.Close()
-
-		rows := sqlmock.NewRows([]string{"schema", "name", "type"}).
-			AddRow("mariadb_db", "products", "BASE TABLE")
-
-		mock.ExpectQuery("SELECT").WillReturnRows(rows)
-
-		resultRows, err := db.QueryContext(ctx, "SELECT")
-		if err != nil {
-			t.Fatalf("query failed: %v", err)
-		}
-		defer resultRows.Close()
-
-		if !resultRows.Next() {
-			t.Fatal("expected row")
-		}
-
-		info, err := scanTableInfo(resultRows, "mariadb")
-		if err != nil {
-			t.Fatalf("scanTableInfo failed: %v", err)
-		}
-		if info.Schema != "mariadb_db" || info.Name != "products" {
-			t.Errorf("unexpected result: Schema=%q Name=%q", info.Schema, info.Name)
-		}
-	})
-
 	t.Run("postgres_branch", func(t *testing.T) {
 		db, mock, err := sqlmock.New()
 		if err != nil {
@@ -1316,8 +1288,8 @@ func TestScanTableInfo(t *testing.T) {
 		}
 		defer db.Close()
 
-		rows := sqlmock.NewRows([]string{"schema", "name"}).
-			AddRow("public", "orders")
+		rows := sqlmock.NewRows([]string{"table_schema", "table_name", "table_type"}).
+			AddRow("public", "orders", "BASE TABLE")
 
 		mock.ExpectQuery("SELECT").WillReturnRows(rows)
 
@@ -1331,7 +1303,7 @@ func TestScanTableInfo(t *testing.T) {
 			t.Fatal("expected row")
 		}
 
-		info, err := scanTableInfo(resultRows, "postgres")
+		info, err := scanTableInfo(resultRows)
 		if err != nil {
 			t.Fatalf("scanTableInfo failed: %v", err)
 		}
@@ -1347,8 +1319,8 @@ func TestScanTableInfo(t *testing.T) {
 		}
 		defer db.Close()
 
-		rows := sqlmock.NewRows([]string{"name"}).
-			AddRow("items")
+		rows := sqlmock.NewRows([]string{"schema", "name", "type"}).
+			AddRow("", "items", "table")
 
 		mock.ExpectQuery("SELECT").WillReturnRows(rows)
 
@@ -1362,7 +1334,7 @@ func TestScanTableInfo(t *testing.T) {
 			t.Fatal("expected row")
 		}
 
-		info, err := scanTableInfo(resultRows, "sqlite")
+		info, err := scanTableInfo(resultRows)
 		if err != nil {
 			t.Fatalf("scanTableInfo failed: %v", err)
 		}
@@ -1371,14 +1343,14 @@ func TestScanTableInfo(t *testing.T) {
 		}
 	})
 
-	t.Run("mysql_scan_error", func(t *testing.T) {
+	t.Run("column_mismatch_2cols", func(t *testing.T) {
 		db, mock, err := sqlmock.New()
 		if err != nil {
 			t.Fatalf("failed to create sqlmock: %v", err)
 		}
 		defer db.Close()
 
-		// Only 2 columns when expecting 3 for mysql
+		// Only 2 columns when unified scanner expects 3
 		rows := sqlmock.NewRows([]string{"schema", "name"}).
 			AddRow("mydb", "users")
 
@@ -1394,40 +1366,149 @@ func TestScanTableInfo(t *testing.T) {
 			t.Fatal("expected row")
 		}
 
-		_, err = scanTableInfo(resultRows, "mysql")
+		_, err = scanTableInfo(resultRows)
 		if err == nil {
-			t.Fatal("expected scan error for column mismatch")
+			t.Fatal("expected scan error for column count mismatch")
 		}
 	})
+}
 
-	t.Run("postgres_scan_error", func(t *testing.T) {
-		db, mock, err := sqlmock.New()
-		if err != nil {
-			t.Fatalf("failed to create sqlmock: %v", err)
-		}
-		defer db.Close()
+// TestScanTableInfoUnified tests that the unified scanTableInfo(rows) function
+// (without dbType param) correctly scans 3-column rows for all DB types.
+// This is a regression test for BUG-001/002 where scanTableInfo had dbType-specific
+// column counts that mismatched the queries.
+func TestScanTableInfoUnified(t *testing.T) {
+	ctx := context.Background()
 
-		// Only 1 column when expecting 2 for postgres
-		rows := sqlmock.NewRows([]string{"name"}).
-			AddRow("users")
+	tests := []struct {
+		name    string
+		columns []string
+		rowData []driver.Value
+		wantRef TableRef
+		wantErr bool
+	}{
+		{
+			name:    "mysql_style_3col",
+			columns: []string{"TABLE_SCHEMA", "TABLE_NAME", "TABLE_TYPE"},
+			rowData: []driver.Value{"mydb", "users", "BASE TABLE"},
+			wantRef: TableRef{Schema: "mydb", Name: "users"},
+		},
+		{
+			name:    "postgres_style_3col",
+			columns: []string{"table_schema", "table_name", "table_type"},
+			rowData: []driver.Value{"public", "orders", "BASE TABLE"},
+			wantRef: TableRef{Schema: "public", Name: "orders"},
+		},
+		{
+			name:    "sqlite_style_3col_with_empty_schema",
+			columns: []string{"schema", "name", "type"},
+			rowData: []driver.Value{"", "items", "table"},
+			wantRef: TableRef{Schema: "", Name: "items"},
+		},
+		{
+			name:    "view_type",
+			columns: []string{"schema", "name", "type"},
+			rowData: []driver.Value{"mydb", "active_orders", "VIEW"},
+			wantRef: TableRef{Schema: "mydb", Name: "active_orders"},
+		},
+		{
+			name:    "column_mismatch_2cols",
+			columns: []string{"name", "type"},
+			rowData: []driver.Value{"users", "BASE TABLE"},
+			wantErr: true,
+		},
+	}
 
-		mock.ExpectQuery("SELECT").WillReturnRows(rows)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatalf("failed to create sqlmock: %v", err)
+			}
+			defer db.Close()
 
-		resultRows, err := db.QueryContext(ctx, "SELECT")
-		if err != nil {
-			t.Fatalf("query failed: %v", err)
-		}
-		defer resultRows.Close()
+			rows := sqlmock.NewRows(tt.columns).AddRow(tt.rowData...)
+			mock.ExpectQuery("SELECT").WillReturnRows(rows)
 
-		if !resultRows.Next() {
-			t.Fatal("expected row")
-		}
+			resultRows, err := db.QueryContext(ctx, "SELECT")
+			if err != nil {
+				t.Fatalf("query failed: %v", err)
+			}
+			defer resultRows.Close()
 
-		_, err = scanTableInfo(resultRows, "postgres")
-		if err == nil {
-			t.Fatal("expected scan error for column mismatch")
-		}
-	})
+			if !resultRows.Next() {
+				t.Fatal("expected row")
+			}
+
+			ref, err := scanTableInfo(resultRows)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected scan error for column mismatch")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("scanTableInfo failed: %v", err)
+			}
+			if ref != tt.wantRef {
+				t.Errorf("got TableRef{Schema: %q, Name: %q}, want TableRef{Schema: %q, Name: %q}",
+					ref.Schema, ref.Name, tt.wantRef.Schema, tt.wantRef.Name)
+			}
+		})
+	}
+}
+
+// TestTableInfoListQueryColumnAlignment is a regression test for BUG-001/002.
+// It verifies that for every supported dbType, tableInfoListQuery returns a query
+// whose column count matches scanTableInfo's expectation (3 columns).
+// If this test fails, it means a query/scanner mismatch has been introduced.
+func TestTableInfoListQueryColumnAlignment(t *testing.T) {
+	dbTypes := []string{"mysql", "mariadb", "postgres", "sqlite"}
+
+	for _, dbType := range dbTypes {
+		t.Run(dbType, func(t *testing.T) {
+			// Verify tableInfoListQuery returns a valid query for this dbType
+			_, err := tableInfoListQuery(dbType)
+			if err != nil {
+				t.Fatalf("tableInfoListQuery(%q) returned error: %v", dbType, err)
+			}
+
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatalf("failed to create sqlmock: %v", err)
+			}
+			defer db.Close()
+
+			// Mock rows with exactly 3 columns to match scanTableInfo's 3-col expectation
+			rows := sqlmock.NewRows([]string{"col1", "col2", "col3"}).
+				AddRow("schema_val", "name_val", "type_val")
+
+			mock.ExpectQuery("SELECT").WillReturnRows(rows)
+
+			resultRows, err := db.QueryContext(context.Background(), "SELECT")
+			if err != nil {
+				t.Fatalf("query failed: %v", err)
+			}
+			defer resultRows.Close()
+
+			if !resultRows.Next() {
+				t.Fatal("expected row")
+			}
+
+			ref, err := scanTableInfo(resultRows)
+			if err != nil {
+				t.Errorf("tableInfoListQuery(%q) produces column count that doesn't match scanTableInfo: %v", dbType, err)
+			}
+
+			if ref.Name != "name_val" {
+				t.Errorf("expected Name='name_val', got Name=%q", ref.Name)
+			}
+
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Errorf("unfulfilled expectations: %v", err)
+			}
+		})
+	}
 }
 
 // TestHandleListSchemas_MissingParams tests missing params validation

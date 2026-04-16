@@ -64,6 +64,9 @@ const (
 	errorProfileNotFound                = "profile not found"
 	messageFailedToConnectToDatabase    = "Failed to connect to database"
 	queryShowFullTables                 = "SHOW FULL TABLES"
+	queryMysqlTableInfoList             = "SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME"
+	queryPostgresTableInfoList          = "SELECT table_schema, table_name, table_type FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog', 'information_schema') AND table_schema NOT LIKE 'pg_%' ORDER BY table_schema, table_name"
+	querySqliteTableInfoList            = "SELECT '' AS schema, name, type FROM sqlite_master WHERE type IN ('table', 'view') ORDER BY name"
 	queryPostgresPublicInformationTable = "SELECT table_schema, table_name FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog', 'information_schema') AND table_schema NOT LIKE 'pg_%' ORDER BY table_schema, table_name"
 	errorUnsupportedDBType              = "unsupported db_type"
 	messageFailedToListTables           = "Failed to list tables"
@@ -1788,6 +1791,23 @@ func tableListQuery(dbType string) (string, error) {
 	}
 }
 
+// tableInfoListQuery returns a SQL query that yields exactly 3 columns
+// (schema, name, type) suitable for scanTableInfo. This eliminates the
+// column-count mismatch between query and scanner that caused BUG-001/002
+// when SHOW FULL TABLES (2 cols) was paired with scanTableInfo (3-col scan).
+func tableInfoListQuery(dbType string) (string, error) {
+	switch dbType {
+	case "mysql", "mariadb":
+		return queryMysqlTableInfoList, nil
+	case "postgres":
+		return queryPostgresTableInfoList, nil
+	case "sqlite":
+		return querySqliteTableInfoList, nil
+	default:
+		return "", errors.New(errorUnsupportedDBType)
+	}
+}
+
 func scanTableName(rows *sql.Rows, dbType string) (string, error) {
 	if dbType == "mysql" || dbType == "mariadb" {
 		var name, tableType string
@@ -1803,26 +1823,16 @@ func scanTableName(rows *sql.Rows, dbType string) (string, error) {
 	return name, nil
 }
 
-func scanTableInfo(rows *sql.Rows, dbType string) (TableRef, error) {
-	if dbType == "mysql" || dbType == "mariadb" {
-		var schema, name, tableType string
-		if err := rows.Scan(&schema, &name, &tableType); err != nil {
-			return TableRef{}, err
-		}
-		return TableRef{Schema: schema, Name: name}, nil
-	}
-	if dbType == "postgres" {
-		var schema, name string
-		if err := rows.Scan(&schema, &name); err != nil {
-			return TableRef{}, err
-		}
-		return TableRef{Schema: schema, Name: name}, nil
-	}
-	var name string
-	if err := rows.Scan(&name); err != nil {
+// scanTableInfo scans a 3-column row (schema, name, type) from a table info
+// query. All dbTypes now use 3-column queries from tableInfoListQuery, so
+// no dbType branching is needed. The type column is scanned but discarded
+// since TableRef only stores Schema and Name.
+func scanTableInfo(rows *sql.Rows) (TableRef, error) {
+	var schema, name, tableType string
+	if err := rows.Scan(&schema, &name, &tableType); err != nil {
 		return TableRef{}, err
 	}
-	return TableRef{Schema: "", Name: name}, nil
+	return TableRef{Schema: schema, Name: name}, nil
 }
 
 func smartBuilderNoTableMatchResult(tables []string) *mcp.CallToolResult {
@@ -3034,7 +3044,7 @@ func (s *MCPServer) queryTableNames(
 	conn *sql.DB,
 	profileName, databaseName, dbType string,
 ) ([]TableRef, *mcp.CallToolResult, error) {
-	query, err := tableListQuery(dbType)
+	query, err := tableInfoListQuery(dbType)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -3053,7 +3063,7 @@ func (s *MCPServer) queryTableNames(
 
 	tables := make([]TableRef, 0)
 	for rows.Next() {
-		info, scanErr := scanTableInfo(rows, dbType)
+		info, scanErr := scanTableInfo(rows)
 		if scanErr != nil {
 			return nil, nil, scanErr
 		}
