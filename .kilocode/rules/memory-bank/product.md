@@ -28,7 +28,7 @@ Database MCP Server provides a unified MCP tool interface with consistent behavi
 - Better query quality through validate/optimize flow
 
 ### For AI Agents
-- Discoverable capabilities via `list-tools`
+- Discoverable capabilities via `list-tools` and `get-tool-help`
 - Schema-aware SQL workflows
 - Reliable structured responses for chaining tasks
 
@@ -39,7 +39,7 @@ Database MCP Server provides a unified MCP tool interface with consistent behavi
 
 ## Supported Tool Surface
 
-The product currently exposes 18 tools, spanning:
+The product currently exposes 20 tools, spanning:
 - profile/connectivity,
 - schema discovery,
 - SQL execution,
