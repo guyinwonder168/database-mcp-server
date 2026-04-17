@@ -20,7 +20,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
-          go-version: '1.26.1'
+          go-version: '1.26.2'
           cache: true
 
       - name: Download dependencies
@@ -74,7 +74,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
-          go-version: '1.26.1'
+          go-version: '1.26.2'
           cache: true
 
       - name: Run go vet
@@ -112,7 +112,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
-          go-version: '1.26.1'
+          go-version: '1.26.2'
 
       - name: Run Gosec Security Scanner
         uses: securego/gosec@223e19b8856e00f02cc67804499a83f77e208f3c # v2.25.0
@@ -170,7 +170,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
-          go-version: '1.26.1'
+          go-version: '1.26.2'
 
       - name: Run integration tests (Postgres)
         env:
@@ -238,7 +238,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
-          go-version: '1.26.1'
+          go-version: '1.26.2'
 
       - name: Build binary
         env:
