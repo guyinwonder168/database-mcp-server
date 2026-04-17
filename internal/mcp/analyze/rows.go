@@ -6,8 +6,83 @@ import (
 	"fmt"
 )
 
-// rows.go handles row count queries for all backends.
+// rows.go handles row count queries and sample row fetching for all backends.
 // BUG-005 fix: populates TableInfo.RowCount from information_schema.TABLES / pg_stat_user_tables / COUNT(*).
+
+// --- Sample Row Fetching ---
+
+// NormalizeSampleSize returns a valid sample size, defaulting to 10 if <= 0.
+func NormalizeSampleSize(sampleSize int) int {
+	if sampleSize <= 0 {
+		return 10
+	}
+	return sampleSize
+}
+
+// FetchSampleRows retrieves sample rows from a table for the given database type.
+// Returns empty slice on error (never fails the caller).
+func FetchSampleRows(ctx context.Context, db *sql.DB, tableName, dbType string, sampleSize int) []map[string]interface{} {
+	sampleQuery, ok := SampleQueryForDB(dbType, tableName, sampleSize)
+	if !ok {
+		return []map[string]interface{}{}
+	}
+	rows, err := db.QueryContext(ctx, sampleQuery)
+	if err != nil {
+		return []map[string]interface{}{}
+	}
+	defer rows.Close() //nolint:errcheck
+	return ScanSampleRows(rows, tableName)
+}
+
+// SampleQueryForDB returns the SQL query to fetch sample rows and whether the dbType is supported.
+func SampleQueryForDB(dbType, tableName string, sampleSize int) (string, bool) {
+	switch dbType {
+	case "mysql", "mariadb":
+		return fmt.Sprintf("SELECT * FROM `%s` LIMIT %d", tableName, sampleSize), true
+	case "postgres", "postgresql":
+		return fmt.Sprintf("SELECT * FROM \"%s\" LIMIT %d", tableName, sampleSize), true
+	case "sqlite":
+		return fmt.Sprintf("SELECT * FROM '%s' LIMIT %d", tableName, sampleSize), true
+	default:
+		return "", false
+	}
+}
+
+// ScanSampleRows scans sql.Rows into a slice of row maps.
+func ScanSampleRows(rows *sql.Rows, tableName string) []map[string]interface{} {
+	sampleRows := make([]map[string]interface{}, 0)
+	columns, err := rows.Columns()
+	if err != nil {
+		return sampleRows
+	}
+	for rows.Next() {
+		row := make([]interface{}, len(columns))
+		ptrs := make([]interface{}, len(columns))
+		for idx := range row {
+			ptrs[idx] = &row[idx]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			continue
+		}
+		sampleRows = append(sampleRows, NormalizeSampleRow(columns, row))
+	}
+	return sampleRows
+}
+
+// NormalizeSampleRow converts a scanned row into a map, converting []byte to string.
+func NormalizeSampleRow(columns []string, row []interface{}) map[string]interface{} {
+	rowMap := make(map[string]interface{}, len(columns))
+	for idx, value := range row {
+		if bytes, ok := value.([]byte); ok {
+			rowMap[columns[idx]] = string(bytes)
+			continue
+		}
+		rowMap[columns[idx]] = value
+	}
+	return rowMap
+}
+
+// --- Row Count Fetching ---
 
 // FetchRowCounts retrieves estimated row counts for the given tables.
 // MySQL/MariaDB: uses information_schema.TABLES.TABLE_ROWS (fast estimate).

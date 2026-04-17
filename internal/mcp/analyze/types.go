@@ -110,6 +110,7 @@ type TableEntity struct {
 	ColumnCount   int    `json:"column_count,omitempty"`   // Number of columns
 	PrimaryKey    string `json:"primary_key,omitempty"`    // Primary key column
 	EstimatedRows string `json:"estimated_rows,omitempty"` // Estimated row count (e.g., "~50k")
+	BusinessRole  string `json:"business_role,omitempty"`  // Role: core, lookup, junction, audit
 }
 
 // TableInfo provides detailed schema info for a table.

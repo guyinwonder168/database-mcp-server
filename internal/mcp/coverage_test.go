@@ -4,6 +4,7 @@ package mcp
 
 import (
 	"context"
+	"database-mcp-provider/internal/mcp/analyze"
 	"strings"
 	"testing"
 
@@ -600,7 +601,7 @@ func TestDetectImplicitRelationships(t *testing.T) {
 // TestUpdateForeignKeyPatternCounts tests the updateForeignKeyPatternCounts function
 func TestUpdateForeignKeyPatternCounts(t *testing.T) {
 	// Test with _id suffix
-	suffix, prefix, total := updateForeignKeyPatternCounts("user_id", 0, 0, 0)
+	suffix, prefix, total := analyze.UpdateForeignKeyPatternCounts("user_id", 0, 0, 0)
 	if suffix != 1 {
 		t.Errorf("Expected suffix count 1, got %d", suffix)
 	}
@@ -612,7 +613,7 @@ func TestUpdateForeignKeyPatternCounts(t *testing.T) {
 	}
 
 	// Test with id_ prefix
-	suffix2, prefix2, total2 := updateForeignKeyPatternCounts("id_user", 0, 0, 0)
+	suffix2, prefix2, total2 := analyze.UpdateForeignKeyPatternCounts("id_user", 0, 0, 0)
 	if suffix2 != 0 {
 		t.Errorf("Expected suffix count 0, got %d", suffix2)
 	}
@@ -624,7 +625,7 @@ func TestUpdateForeignKeyPatternCounts(t *testing.T) {
 	}
 
 	// Test with no pattern
-	suffix3, prefix3, total3 := updateForeignKeyPatternCounts("name", 5, 3, 10)
+	suffix3, prefix3, total3 := analyze.UpdateForeignKeyPatternCounts("name", 5, 3, 10)
 	if suffix3 != 5 {
 		t.Errorf("Expected suffix count to remain 5, got %d", suffix3)
 	}
@@ -642,7 +643,7 @@ func TestNamingValueStringSlice(t *testing.T) {
 	data := map[string]interface{}{
 		"items": []interface{}{"a", "b", "c"},
 	}
-	result := namingValueStringSlice(data, "items")
+	result := analyze.NamingValueStringSlice(data, "items")
 	if len(result) != 3 {
 		t.Errorf("Expected 3 items, got %d", len(result))
 	}
@@ -651,7 +652,7 @@ func TestNamingValueStringSlice(t *testing.T) {
 	data2 := map[string]interface{}{
 		"items": []interface{}{"a", 123, "c"},
 	}
-	result2 := namingValueStringSlice(data2, "items")
+	result2 := analyze.NamingValueStringSlice(data2, "items")
 	if len(result2) != 3 {
 		t.Errorf("Expected 3 items (non-strings converted), got %d", len(result2))
 	}
@@ -662,7 +663,7 @@ func TestNamingValueStringSlice(t *testing.T) {
 
 	// Test with missing key
 	data3 := map[string]interface{}{}
-	result3 := namingValueStringSlice(data3, "missing")
+	result3 := analyze.NamingValueStringSlice(data3, "missing")
 	if len(result3) != 0 {
 		t.Errorf("Expected empty slice for missing key, got %d", len(result3))
 	}
