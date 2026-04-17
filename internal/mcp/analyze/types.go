@@ -285,6 +285,15 @@ type KPI struct {
 	Benchmark   string `json:"benchmark,omitempty"` // Benchmark value/range
 }
 
+// IndexInfo describes an index on a table.
+type IndexInfo struct {
+	IndexName  string   `json:"index_name"`
+	TableName  string   `json:"table_name"`
+	Columns    []string `json:"columns"`
+	IsUnique   bool     `json:"is_unique"`
+	IsPrimary  bool     `json:"is_primary"`
+}
+
 // PerformanceOptimization provides index and query hints.
 type PerformanceOptimization struct {
 	RecommendedIndexes []RecommendedIndex `json:"recommended_indexes,omitempty"` // Index recommendations
