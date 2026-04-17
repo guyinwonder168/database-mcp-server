@@ -199,6 +199,8 @@ type SemanticRelationship struct {
 	ConfidenceScore  float64  `json:"confidence_score"`           // Confidence in relationship
 	BusinessMeaning  string   `json:"business_meaning,omitempty"` // Natural language explanation
 	SuggestedJoin    string   `json:"suggested_join,omitempty"`   // SQL join suggestion
+	FromColumn       string   `json:"from_column,omitempty"`      // Source column (for implicit matches)
+	ToColumn         string   `json:"to_column,omitempty"`        // Target column (for implicit matches)
 }
 
 // BusinessContext provides inferred business context.

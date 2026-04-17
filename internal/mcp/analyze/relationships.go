@@ -124,3 +124,167 @@ func discoverFKsSQLite(ctx context.Context, db *sql.DB, tableNames []string) ([]
 
 	return fks, nil
 }
+
+// commonColumns lists column names too generic to imply FK relationships.
+// These appear in many tables (audit columns, generic identifiers) and cause false positives.
+var commonColumns = map[string]bool{
+	"id": true, "created": true, "updated": true, "deleted": true,
+	"name": true, "description": true, "status": true, "type": true,
+	"notes": true, "active": true, "enabled": true, "sort_order": true,
+	"created_at": true, "updated_at": true, "deleted_at": true,
+	"created_by": true, "updated_by": true,
+}
+
+// isCommonColumn returns true if the column name is too generic to imply a FK relationship.
+func isCommonColumn(col string) bool {
+	return commonColumns[col]
+}
+
+// DetectImplicitRelationships infers relationships from column naming conventions.
+// BUG-006 fix: only matches columns with _id suffix that reference a table name.
+// Common columns (id, created, name, etc.) are excluded to prevent false positives.
+func DetectImplicitRelationships(tableColumns map[string][]SchemaColumnInfo) []SemanticRelationship {
+	var rels []SemanticRelationship
+
+	// Build a set of table names for quick lookup
+	tableSet := make(map[string]bool)
+	for t := range tableColumns {
+		tableSet[t] = true
+	}
+
+	// For each table, look for columns that imply relationships
+	for fromTable, columns := range tableColumns {
+		for _, col := range columns {
+			if col.IsPrimaryKey {
+				continue
+			}
+			if isCommonColumn(col.ColumnName) {
+				continue
+			}
+
+			// Pattern 1: exact "targetTable_id" — highest confidence
+			if matchedTable, ok := matchExactID(col.ColumnName, tableSet); ok {
+				rels = append(rels, SemanticRelationship{
+					Tables:          []string{fromTable, matchedTable},
+					RelationshipType: "many_to_one",
+					ConnectionBasis:  "naming_convention:exact_id",
+					ConfidenceScore:  0.8,
+					FromColumn:       col.ColumnName,
+					ToColumn:         "id",
+				})
+				continue
+			}
+
+			// Pattern 2: "*_id" suffix matching a table name — moderate confidence
+			if matchedTable, ok := matchSuffixID(col.ColumnName, tableSet); ok {
+				rels = append(rels, SemanticRelationship{
+					Tables:          []string{fromTable, matchedTable},
+					RelationshipType: "many_to_one",
+					ConnectionBasis:  "naming_convention:suffix_id",
+					ConfidenceScore:  0.7,
+					FromColumn:       col.ColumnName,
+					ToColumn:         "id",
+				})
+			}
+		}
+	}
+
+	return rels
+}
+
+// matchExactID checks if columnName is "tableName_id" or a singularized variant.
+// e.g., "user_id" matches "users", "product_id" matches "products".
+func matchExactID(colName string, tableSet map[string]bool) (string, bool) {
+	if len(colName) <= 3 {
+		return "", false
+	}
+	if colName[len(colName)-3:] != "_id" {
+		return "", false
+	}
+	prefix := colName[:len(colName)-3]
+
+	// Direct match: column "users_id" matches table "users"
+	if tableSet[prefix] {
+		return prefix, true
+	}
+
+	// Singular→plural: column "user_id" matches table "users"
+	if matched, ok := singularToPluralMatch(prefix, tableSet); ok {
+		return matched, true
+	}
+
+	// Plural→singular: column "users_id" matches table "user"
+	if len(prefix) > 1 && prefix[len(prefix)-1] == 's' {
+		singular := prefix[:len(prefix)-1]
+		if tableSet[singular] {
+			return singular, true
+		}
+	}
+
+	return "", false
+}
+
+// singularToPluralMatch tries common English pluralization rules to find a matching table.
+// Handles: +s, +es, -y→-ies, -on→-a.
+func singularToPluralMatch(singular string, tableSet map[string]bool) (string, bool) {
+	candidates := []string{
+		singular + "s",                  // user → users
+		singular + "es",                 // box → boxes
+	}
+	// -y → -ies (category → categories)
+	if len(singular) > 1 && singular[len(singular)-1] == 'y' {
+		candidates = append(candidates, singular[:len(singular)-1]+"ies")
+	}
+	// -on → -a (criterion → criteria)
+	if len(singular) > 2 && singular[len(singular)-2:] == "on" {
+		candidates = append(candidates, singular[:len(singular)-2]+"a")
+	}
+
+	for _, c := range candidates {
+		if tableSet[c] {
+			return c, true
+		}
+	}
+	return "", false
+}
+// matchSuffixID checks if columnName ends with "_id" and the part before _id
+// contains a table name (e.g., "order_items_product_id" matches "products").
+func matchSuffixID(colName string, tableSet map[string]bool) (string, bool) {
+	if len(colName) <= 3 {
+		return "", false
+	}
+	if colName[len(colName)-3:] != "_id" {
+		return "", false
+	}
+	prefix := colName[:len(colName)-3]
+
+	// Already exact-matched by matchExactID
+	if tableSet[prefix] {
+		return "", false
+	}
+
+	// Check each underscore-delimited segment as a potential table name
+	// e.g., "order_product" → try "order" and "product"
+	for i := 0; i < len(prefix); i++ {
+		if prefix[i] == '_' {
+			sub := prefix[i+1:]
+			// Direct match
+			if tableSet[sub] {
+				return sub, true
+			}
+			// Singular→plural
+			if matched, ok := singularToPluralMatch(sub, tableSet); ok {
+				return matched, true
+			}
+			// Plural→singular
+			if len(sub) > 1 && sub[len(sub)-1] == 's' {
+				singular := sub[:len(sub)-1]
+				if tableSet[singular] {
+					return singular, true
+				}
+			}
+		}
+	}
+
+	return "", false
+}
