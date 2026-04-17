@@ -118,3 +118,127 @@ func fetchColumnsBulkPostgres(ctx context.Context, db *sql.DB, schema string, re
 
 	return rows.Err()
 }
+
+// FetchColumnsPerTable retrieves columns one table at a time.
+// Used for SQLite (no information_schema) and as fallback for MySQL/PostgreSQL bulk failures.
+// Individual table failures are silently skipped — the function never returns an error
+// for a single table's query failure.
+func FetchColumnsPerTable(ctx context.Context, db *sql.DB, dbType string, tableNames []string) (map[string][]SchemaColumnInfo, error) {
+	result := make(map[string][]SchemaColumnInfo)
+
+	for _, table := range tableNames {
+		var query string
+		switch dbType {
+		case "sqlite":
+			query = fmt.Sprintf("PRAGMA table_info('%s')", table)
+		case "mysql", "mariadb":
+			query = fmt.Sprintf("SHOW COLUMNS FROM `%s`", table)
+		case "postgres", "postgresql":
+			query = fmt.Sprintf(`SELECT column_name, data_type, is_nullable, column_default
+				FROM information_schema.columns WHERE table_name = '%s' AND table_schema = 'public'
+				ORDER BY ordinal_position`, table)
+		default:
+			continue
+		}
+
+		rows, err := db.QueryContext(ctx, query)
+		if err != nil {
+			// Silently skip — individual table failures shouldn't abort entire analysis
+			continue
+		}
+
+		var cols []SchemaColumnInfo
+		switch dbType {
+		case "sqlite":
+			cols = scanSQLiteColumns(rows)
+		case "mysql", "mariadb":
+			cols = scanMySQLShowColumns(rows)
+		case "postgres", "postgresql":
+			cols = scanPostgresFallbackColumns(rows)
+		}
+		rows.Close()
+
+		result[table] = cols
+	}
+
+	return result, nil
+}
+
+func scanSQLiteColumns(rows *sql.Rows) []SchemaColumnInfo {
+	var cols []SchemaColumnInfo
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notnull int
+		var dfltValue sql.NullString
+		var pk int
+
+		if err := rows.Scan(&cid, &name, &colType, &notnull, &dfltValue, &pk); err != nil {
+			continue
+		}
+
+		col := SchemaColumnInfo{
+			ColumnName:   name,
+			DataType:     colType,
+			IsNullable:   notnull == 0,
+			IsPrimaryKey: pk > 0,
+		}
+		if dfltValue.Valid {
+			col.DefaultValue = dfltValue.String
+		}
+
+		cols = append(cols, col)
+	}
+	return cols
+}
+
+func scanMySQLShowColumns(rows *sql.Rows) []SchemaColumnInfo {
+	var cols []SchemaColumnInfo
+	for rows.Next() {
+		var colName, colType, null, colKey, extra string
+		var colDefault sql.NullString
+
+		if err := rows.Scan(&colName, &colType, &colDefault, &null, &colKey, &extra); err != nil {
+			continue
+		}
+
+		col := SchemaColumnInfo{
+			ColumnName:   colName,
+			DataType:     colType,
+			IsNullable:   strings.ToUpper(null) == "YES",
+			IsPrimaryKey: colKey == "PRI",
+			Unique:       colKey == "PRI" || colKey == "UNI",
+			Indexed:      colKey != "",
+		}
+		if colDefault.Valid {
+			col.DefaultValue = colDefault.String
+		}
+
+		cols = append(cols, col)
+	}
+	return cols
+}
+
+func scanPostgresFallbackColumns(rows *sql.Rows) []SchemaColumnInfo {
+	var cols []SchemaColumnInfo
+	for rows.Next() {
+		var colName, dataType, isNullable string
+		var colDefault sql.NullString
+
+		if err := rows.Scan(&colName, &dataType, &isNullable, &colDefault); err != nil {
+			continue
+		}
+
+		col := SchemaColumnInfo{
+			ColumnName: colName,
+			DataType:   dataType,
+			IsNullable: strings.ToUpper(isNullable) == "YES",
+		}
+		if colDefault.Valid {
+			col.DefaultValue = colDefault.String
+		}
+
+		cols = append(cols, col)
+	}
+	return cols
+}
