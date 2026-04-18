@@ -201,21 +201,19 @@ func buildRelationshipGraph(fks []ForeignKeyRelationship, implicitRels []Semanti
 	// Build suggested joins from FKs
 	for i := range fks {
 		fk := &fks[i]
-		join := fmt.Sprintf("SELECT * FROM %s JOIN %s ON %s.%s = %s.%s",
-			fk.FromTable, fk.ToTable,
-			fk.FromTable, fk.FromColumn,
-			fk.ToTable, fk.ToColumn)
-		fk.SuggestedJoin = join
+		fk.SuggestedJoin = "SELECT * FROM " + fk.FromTable +
+			" JOIN " + fk.ToTable +
+			" ON " + fk.FromTable + "." + fk.FromColumn +
+			" = " + fk.ToTable + "." + fk.ToColumn
 	}
 	// Build suggested joins from semantic relationships
 	for i := range implicitRels {
 		rel := &implicitRels[i]
 		if len(rel.Tables) >= 2 && rel.FromColumn != "" && rel.ToColumn != "" {
-			join := fmt.Sprintf("SELECT * FROM %s JOIN %s ON %s.%s = %s.%s",
-				rel.Tables[0], rel.Tables[1],
-				rel.Tables[0], rel.FromColumn,
-				rel.Tables[1], rel.ToColumn)
-			rel.SuggestedJoin = join
+			rel.SuggestedJoin = "SELECT * FROM " + rel.Tables[0] +
+				" JOIN " + rel.Tables[1] +
+				" ON " + rel.Tables[0] + "." + rel.FromColumn +
+				" = " + rel.Tables[1] + "." + rel.ToColumn
 		}
 	}
 	return RelationshipGraph{
