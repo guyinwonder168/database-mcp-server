@@ -145,52 +145,48 @@ func isCommonColumn(col string) bool {
 // BUG-006 fix: only matches columns with _id suffix that reference a table name.
 // Common columns (id, created, name, etc.) are excluded to prevent false positives.
 func DetectImplicitRelationships(tableColumns map[string][]SchemaColumnInfo) []SemanticRelationship {
-	var rels []SemanticRelationship
-
-	// Build a set of table names for quick lookup
 	tableSet := make(map[string]bool)
 	for t := range tableColumns {
 		tableSet[t] = true
 	}
 
-	// For each table, look for columns that imply relationships
+	var rels []SemanticRelationship
 	for fromTable, columns := range tableColumns {
 		for _, col := range columns {
-			if col.IsPrimaryKey {
-				continue
-			}
-			if isCommonColumn(col.ColumnName) {
-				continue
-			}
-
-			// Pattern 1: exact "targetTable_id" — highest confidence
-			if matchedTable, ok := matchExactID(col.ColumnName, tableSet); ok {
-				rels = append(rels, SemanticRelationship{
-					Tables:           []string{fromTable, matchedTable},
-					RelationshipType: "many_to_one",
-					ConnectionBasis:  "naming_convention:exact_id",
-					ConfidenceScore:  0.8,
-					FromColumn:       col.ColumnName,
-					ToColumn:         "id",
-				})
-				continue
-			}
-
-			// Pattern 2: "*_id" suffix matching a table name — moderate confidence
-			if matchedTable, ok := matchSuffixID(col.ColumnName, tableSet); ok {
-				rels = append(rels, SemanticRelationship{
-					Tables:           []string{fromTable, matchedTable},
-					RelationshipType: "many_to_one",
-					ConnectionBasis:  "naming_convention:suffix_id",
-					ConfidenceScore:  0.7,
-					FromColumn:       col.ColumnName,
-					ToColumn:         "id",
-				})
+			if rel, ok := matchColumnRelationship(fromTable, col, tableSet); ok {
+				rels = append(rels, rel)
 			}
 		}
 	}
-
 	return rels
+}
+
+// matchColumnRelationship checks if a single column implies a semantic relationship.
+func matchColumnRelationship(fromTable string, col SchemaColumnInfo, tableSet map[string]bool) (SemanticRelationship, bool) {
+	if col.IsPrimaryKey || isCommonColumn(col.ColumnName) {
+		return SemanticRelationship{}, false
+	}
+	if matchedTable, ok := matchExactID(col.ColumnName, tableSet); ok {
+		return SemanticRelationship{
+			Tables:           []string{fromTable, matchedTable},
+			RelationshipType: "many_to_one",
+			ConnectionBasis:  "naming_convention:exact_id",
+			ConfidenceScore:  0.8,
+			FromColumn:       col.ColumnName,
+			ToColumn:         "id",
+		}, true
+	}
+	if matchedTable, ok := matchSuffixID(col.ColumnName, tableSet); ok {
+		return SemanticRelationship{
+			Tables:           []string{fromTable, matchedTable},
+			RelationshipType: "many_to_one",
+			ConnectionBasis:  "naming_convention:suffix_id",
+			ConfidenceScore:  0.7,
+			FromColumn:       col.ColumnName,
+			ToColumn:         "id",
+		}, true
+	}
+	return SemanticRelationship{}, false
 }
 
 // matchExactID checks if columnName is "tableName_id" or a singularized variant.
@@ -252,10 +248,7 @@ func singularToPluralMatch(singular string, tableSet map[string]bool) (string, b
 // matchSuffixID checks if columnName ends with "_id" and the part before _id
 // contains a table name (e.g., "order_items_product_id" matches "products").
 func matchSuffixID(colName string, tableSet map[string]bool) (string, bool) {
-	if len(colName) <= 3 {
-		return "", false
-	}
-	if colName[len(colName)-3:] != "_id" {
+	if len(colName) <= 3 || colName[len(colName)-3:] != "_id" {
 		return "", false
 	}
 	prefix := colName[:len(colName)-3]
@@ -266,27 +259,29 @@ func matchSuffixID(colName string, tableSet map[string]bool) (string, bool) {
 	}
 
 	// Check each underscore-delimited segment as a potential table name
-	// e.g., "order_product" → try "order" and "product"
 	for i := 0; i < len(prefix); i++ {
 		if prefix[i] == '_' {
-			sub := prefix[i+1:]
-			// Direct match
-			if tableSet[sub] {
-				return sub, true
-			}
-			// Singular→plural
-			if matched, ok := singularToPluralMatch(sub, tableSet); ok {
+			if matched, ok := matchTableSegment(prefix[i+1:], tableSet); ok {
 				return matched, true
-			}
-			// Plural→singular
-			if len(sub) > 1 && sub[len(sub)-1] == 's' {
-				singular := sub[:len(sub)-1]
-				if tableSet[singular] {
-					return singular, true
-				}
 			}
 		}
 	}
+	return "", false
+}
 
+// matchTableSegment tries to match a substring segment against table names.
+func matchTableSegment(sub string, tableSet map[string]bool) (string, bool) {
+	if tableSet[sub] {
+		return sub, true
+	}
+	if matched, ok := singularToPluralMatch(sub, tableSet); ok {
+		return matched, true
+	}
+	if len(sub) > 1 && sub[len(sub)-1] == 's' {
+		singular := sub[:len(sub)-1]
+		if tableSet[singular] {
+			return singular, true
+		}
+	}
 	return "", false
 }

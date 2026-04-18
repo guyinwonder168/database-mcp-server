@@ -108,35 +108,12 @@ func fetchIndexesPostgres(ctx context.Context, db *sql.DB, schema string) ([]Ind
 	defer func() { _ = rows.Close() }()
 
 	var result []IndexInfo
-
-	// Regex to extract columns from indexdef like:
-	// CREATE UNIQUE INDEX idx_name ON public.table USING btree (col1, col2)
-	colRegex := regexp.MustCompile(`\(([^)]+)\)`)
-
 	for rows.Next() {
 		var tableName, indexName, indexdef string
 		if err := rows.Scan(&tableName, &indexName, &indexdef); err != nil {
 			continue
 		}
-
-		// Extract columns from the indexdef
-		var columns []string
-		matches := colRegex.FindStringSubmatch(indexdef)
-		if len(matches) > 1 {
-			colStr := matches[1]
-			for _, col := range strings.Split(colStr, ",") {
-				col = strings.TrimSpace(col)
-				// Remove expression wrappers like (col)::text
-				if idx := strings.Index(col, "::"); idx != -1 {
-					col = col[:idx]
-				}
-				col = strings.TrimSpace(col)
-				if col != "" {
-					columns = append(columns, col)
-				}
-			}
-		}
-
+		columns := parseIndexColumns(indexdef)
 		isPrimary := strings.HasSuffix(indexName, "_pkey")
 		isUnique := strings.Contains(strings.ToUpper(indexdef), "UNIQUE")
 
@@ -152,63 +129,96 @@ func fetchIndexesPostgres(ctx context.Context, db *sql.DB, schema string) ([]Ind
 	return result, rows.Err()
 }
 
+// colRegex extracts column names from indexdef like:
+// CREATE UNIQUE INDEX idx_name ON public.table USING btree (col1, col2)
+var colRegex = regexp.MustCompile(`\(([^)]+)\)`)
+
+// parseIndexColumns extracts the column list from a PostgreSQL indexdef string.
+func parseIndexColumns(indexdef string) []string {
+	matches := colRegex.FindStringSubmatch(indexdef)
+	if len(matches) <= 1 {
+		return nil
+	}
+	var columns []string
+	for _, col := range strings.Split(matches[1], ",") {
+		col = strings.TrimSpace(col)
+		if idx := strings.Index(col, "::"); idx != -1 {
+			col = col[:idx]
+		}
+		col = strings.TrimSpace(col)
+		if col != "" {
+			columns = append(columns, col)
+		}
+	}
+	return columns
+}
+
 func fetchIndexesSQLite(ctx context.Context, db *sql.DB, tableNames []string) ([]IndexInfo, error) {
 	var result []IndexInfo
 
 	for _, table := range tableNames {
-		// Get list of indexes for this table via TVF (bind parameter — no fmt.Sprintf)
-		listRows, err := db.QueryContext(ctx,
-			`SELECT seq, name, "unique" FROM pragma_index_list WHERE arg = ?`,
-			table)
-		if err != nil {
-			continue
-		}
-
-		for listRows.Next() {
-			var seq int
-			var indexName string
-			var unique int
-			if err := listRows.Scan(&seq, &indexName, &unique); err != nil {
-				continue
-			}
-
-			// Get columns for this index via TVF (bind parameter — no fmt.Sprintf)
-			infoRows, err := db.QueryContext(ctx,
-				`SELECT seqno, cid, name FROM pragma_index_info WHERE arg = ?`,
-				indexName)
-			if err != nil {
-				continue
-			}
-
-			var columns []string
-			for infoRows.Next() {
-				var seqno, cid int
-				var colName string
-				if err := infoRows.Scan(&seqno, &cid, &colName); err != nil {
-					continue
-				}
-				// Ensure columns are in order
-				for len(columns) <= seqno {
-					columns = append(columns, "")
-				}
-				columns[seqno] = colName
-			}
-			_ = infoRows.Close()
-
-			isPrimary := strings.HasPrefix(indexName, "sqlite_autoindex_")
-
-			result = append(result, IndexInfo{
-				TableName: table,
-				IndexName: indexName,
-				Columns:   columns,
-				IsUnique:  unique == 1,
-				IsPrimary: isPrimary,
-			})
-		}
-		_ = listRows.Close()
+		indexes := fetchSQLiteIndexesForTable(ctx, db, table)
+		result = append(result, indexes...)
 	}
 
 	return result, nil
+}
+
+// fetchSQLiteIndexesForTable retrieves all indexes for a single SQLite table.
+func fetchSQLiteIndexesForTable(ctx context.Context, db *sql.DB, table string) []IndexInfo {
+	listRows, err := db.QueryContext(ctx,
+		`SELECT seq, name, "unique" FROM pragma_index_list WHERE arg = ?`,
+		table)
+	if err != nil {
+		return nil
+	}
+
+	var indexes []IndexInfo
+	for listRows.Next() {
+		var seq int
+		var indexName string
+		var unique int
+		if err := listRows.Scan(&seq, &indexName, &unique); err != nil {
+			continue
+		}
+		columns := fetchSQLiteIndexColumns(ctx, db, indexName)
+		isPrimary := strings.HasPrefix(indexName, "sqlite_autoindex_")
+
+		indexes = append(indexes, IndexInfo{
+			TableName: table,
+			IndexName: indexName,
+			Columns:   columns,
+			IsUnique:  unique == 1,
+			IsPrimary: isPrimary,
+		})
+	}
+	_ = listRows.Close()
+	return indexes
+}
+
+// fetchSQLiteIndexColumns retrieves the column list for a single SQLite index.
+func fetchSQLiteIndexColumns(ctx context.Context, db *sql.DB, indexName string) []string {
+	infoRows, err := db.QueryContext(ctx,
+		`SELECT seqno, cid, name FROM pragma_index_info WHERE arg = ?`,
+		indexName)
+	if err != nil {
+		return nil
+	}
+
+	var columns []string
+	for infoRows.Next() {
+		var seqno, cid int
+		var colName string
+		if err := infoRows.Scan(&seqno, &cid, &colName); err != nil {
+			continue
+		}
+		for len(columns) <= seqno {
+			columns = append(columns, "")
+		}
+		columns[seqno] = colName
+	}
+	_ = infoRows.Close()
+	return columns
 }
 
 // BuildPerformanceOptimization analyzes existing indexes, foreign keys, and table columns

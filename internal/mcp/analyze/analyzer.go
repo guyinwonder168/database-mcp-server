@@ -147,53 +147,58 @@ func buildTableSchemas(tableColumns map[string][]SchemaColumnInfo) map[string]Ta
 			ColumnCount:  len(cols),
 			Columns:      cols,
 			DataPatterns: make(map[string]DataPattern),
-		}
-		// Extract key columns
-		for _, col := range cols {
-			if col.IsPrimaryKey {
-				info.KeyColumns.PrimaryKey = col.ColumnName
-			}
-			if col.IsForeignKey {
-				info.KeyColumns.ForeignKeys = append(info.KeyColumns.ForeignKeys, col.ColumnName)
-			}
-			if col.Unique && !col.IsPrimaryKey {
-				info.KeyColumns.UniqueColumns = append(info.KeyColumns.UniqueColumns, col.ColumnName)
-			}
-			if col.Indexed && !col.IsPrimaryKey {
-				info.KeyColumns.IndexedColumns = append(info.KeyColumns.IndexedColumns, col.ColumnName)
-			}
+			KeyColumns:   extractKeyColumns(cols),
 		}
 		schemas[tableName] = info
 	}
 	return schemas
 }
 
+// extractKeyColumns classifies columns into primary key, foreign keys, unique, and indexed.
+func extractKeyColumns(cols []SchemaColumnInfo) KeyColumns {
+	var kc KeyColumns
+	for _, col := range cols {
+		if col.IsPrimaryKey {
+			kc.PrimaryKey = col.ColumnName
+		}
+		if col.IsForeignKey {
+			kc.ForeignKeys = append(kc.ForeignKeys, col.ColumnName)
+		}
+		if col.Unique && !col.IsPrimaryKey {
+			kc.UniqueColumns = append(kc.UniqueColumns, col.ColumnName)
+		}
+		if col.Indexed && !col.IsPrimaryKey {
+			kc.IndexedColumns = append(kc.IndexedColumns, col.ColumnName)
+		}
+	}
+	return kc
+}
+
 // applyIndexesToSchemas adds index information to table schemas.
 func applyIndexesToSchemas(schemas map[string]TableInfo, indexes []IndexInfo) {
 	for _, idx := range indexes {
 		info, ok := schemas[idx.TableName]
-		if !ok {
-			continue
-		}
-		if idx.IsPrimary {
-			// Primary key already captured from column metadata
+		if !ok || idx.IsPrimary {
 			continue
 		}
 		// Add indexed columns that aren't already captured
 		for _, col := range idx.Columns {
-			found := false
-			for _, existing := range info.KeyColumns.IndexedColumns {
-				if existing == col {
-					found = true
-					break
-				}
-			}
-			if !found {
+			if !containsString(info.KeyColumns.IndexedColumns, col) {
 				info.KeyColumns.IndexedColumns = append(info.KeyColumns.IndexedColumns, col)
 			}
 		}
 		schemas[idx.TableName] = info
 	}
+}
+
+// containsString reports whether s is in slice.
+func containsString(slice []string, s string) bool {
+	for _, v := range slice {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 // buildRelationshipGraph combines FK and implicit relationships.
@@ -299,27 +304,7 @@ func summarizeBusinessContext(businessCtx *BusinessContext) (string, float64, st
 
 // buildClassificationSignals creates raw signals for LLM-based inference.
 func buildClassificationSignals(tableNames []string, tableColumns map[string][]SchemaColumnInfo, fks []ForeignKeyRelationship) *ClassificationSignals {
-	prefixes := make(map[string]int)
-	var notableCols []string
-	notableSet := make(map[string]bool)
-
-	for _, cols := range tableColumns {
-		for _, col := range cols {
-			name := strings.ToLower(col.ColumnName)
-			// Extract prefix (everything before first underscore)
-			if idx := strings.Index(name, "_"); idx > 0 {
-				prefix := name[:idx]
-				if _, ok := commonColumns[prefix]; !ok {
-					prefixes[prefix]++
-				}
-			}
-			// Collect notable columns
-			if notableColumnKeywords[name] && !notableSet[name] {
-				notableCols = append(notableCols, name)
-				notableSet[name] = true
-			}
-		}
-	}
+	prefixes, notableCols := collectNamingSignals(tableColumns)
 
 	// Build FK summary
 	var fkParts []string
@@ -341,6 +326,30 @@ func buildClassificationSignals(tableNames []string, tableColumns map[string][]S
 		TotalTables:    len(tableNames),
 		TotalColumns:   totalCols,
 	}
+}
+
+// collectNamingSignals extracts naming prefixes and notable columns from table metadata.
+func collectNamingSignals(tableColumns map[string][]SchemaColumnInfo) (map[string]int, []string) {
+	prefixes := make(map[string]int)
+	var notableCols []string
+	notableSet := make(map[string]bool)
+
+	for _, cols := range tableColumns {
+		for _, col := range cols {
+			name := strings.ToLower(col.ColumnName)
+			if idx := strings.Index(name, "_"); idx > 0 {
+				prefix := name[:idx]
+				if _, ok := commonColumns[prefix]; !ok {
+					prefixes[prefix]++
+				}
+			}
+			if notableColumnKeywords[name] && !notableSet[name] {
+				notableCols = append(notableCols, name)
+				notableSet[name] = true
+			}
+		}
+	}
+	return prefixes, notableCols
 }
 
 // buildAnalysisMetadata creates metadata for the analysis result.

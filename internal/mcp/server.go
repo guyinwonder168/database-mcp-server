@@ -3819,25 +3819,7 @@ func (s *MCPServer) handleAnalyzeSchema(
 	}
 	filteredTables := filterAnalyzeSchemaTables(tables, p.IncludeTables, p.ExcludeTables)
 
-	// Resolve schema for the analyze package (raw name, not quoted)
-	schema := p.Schema
-	if schema == "" {
-		// For MySQL/SQLite, schema is not used; for Postgres, resolve default
-		if prof.DBType == "postgres" || prof.DBType == "postgresql" {
-			dbConn, err := conn.Conn(ctx)
-			if err != nil {
-				log.JSONLog("warn", "Failed to get connection for schema resolution", map[string]interface{}{"error": err.Error()})
-			} else {
-				resolved, err := GetDefaultSchema(ctx, dbConn)
-				_ = dbConn.Close()
-				if err != nil {
-					log.JSONLog("warn", "Failed to resolve default schema, using empty", map[string]interface{}{"error": err.Error()})
-				} else {
-					schema = resolved
-				}
-			}
-		}
-	}
+	schema := resolveSchemaForAnalyze(ctx, conn, p.Schema, prof.DBType)
 
 	// Delegate core analysis to the pure analyze.Run() function
 	result, runErr := analyze.Run(ctx, conn, prof.DBType, schema, p, filteredTables)
@@ -3872,6 +3854,29 @@ func (s *MCPServer) handleAnalyzeSchema(
 		return nil, nil, marshalErr
 	}
 	return resultContent, nil, nil
+}
+
+// resolveSchemaForAnalyze determines the schema name for the analyze package.
+// For PostgreSQL it resolves the default schema (e.g. "public") if none was specified.
+func resolveSchemaForAnalyze(ctx context.Context, conn *sql.DB, schema, dbType string) string {
+	if schema != "" {
+		return schema
+	}
+	if dbType != "postgres" && dbType != "postgresql" {
+		return ""
+	}
+	dbConn, err := conn.Conn(ctx)
+	if err != nil {
+		log.JSONLog("warn", "Failed to get connection for schema resolution", map[string]interface{}{"error": err.Error()})
+		return ""
+	}
+	resolved, err := GetDefaultSchema(ctx, dbConn)
+	_ = dbConn.Close()
+	if err != nil {
+		log.JSONLog("warn", "Failed to resolve default schema, using empty", map[string]interface{}{"error": err.Error()})
+		return ""
+	}
+	return resolved
 }
 
 // fetchAllSampleRowsForProfiling fetches sample rows for profiling (kept in server.go
