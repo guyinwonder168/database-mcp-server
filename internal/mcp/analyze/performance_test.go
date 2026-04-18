@@ -112,25 +112,22 @@ func TestFetchIndexes_SQLite(t *testing.T) {
 	}
 	defer db.Close()
 
-	// SQLite: first query PRAGMA index_list, then PRAGMA index_info per index
+	// SQLite: TVF pragma_index_list with bind parameter, then pragma_index_info per index
 	// index_list for users table
 	indexList := sqlmock.NewRows([]string{"seq", "name", "unique"}).
 		AddRow(0, "idx_users_email", 1).
 		AddRow(1, "sqlite_autoindex_users_1", 1) // auto-created for PRIMARY KEY
-
-	mock.ExpectQuery(`PRAGMA index_list\("users"\)`).WillReturnRows(indexList)
+	mock.ExpectQuery(`SELECT.*FROM pragma_index_list WHERE arg = \?`).WithArgs("users").WillReturnRows(indexList)
 
 	// index_info for idx_users_email
 	indexInfo := sqlmock.NewRows([]string{"seqno", "cid", "name"}).
 		AddRow(0, 1, "email")
-
-	mock.ExpectQuery(`PRAGMA index_info\("idx_users_email"\)`).WillReturnRows(indexInfo)
+	mock.ExpectQuery(`SELECT.*FROM pragma_index_info WHERE arg = \?`).WithArgs("idx_users_email").WillReturnRows(indexInfo)
 
 	// index_info for sqlite_autoindex_users_1
 	autoIndexInfo := sqlmock.NewRows([]string{"seqno", "cid", "name"}).
 		AddRow(0, 0, "id")
-
-	mock.ExpectQuery(`PRAGMA index_info\("sqlite_autoindex_users_1"\)`).WillReturnRows(autoIndexInfo)
+	mock.ExpectQuery(`SELECT.*FROM pragma_index_info WHERE arg = \?`).WithArgs("sqlite_autoindex_users_1").WillReturnRows(autoIndexInfo)
 
 	indexes, err := FetchIndexes(context.Background(), db, "sqlite", "", []string{"users"})
 	if err != nil {

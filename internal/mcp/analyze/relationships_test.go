@@ -84,14 +84,14 @@ func TestDiscoverForeignKeys_SQLite(t *testing.T) {
 	}
 	defer db.Close()
 
-	// SQLite: PRAGMA foreign_key_list per table
+	// SQLite: TVF pragma_foreign_key_list with bind parameter
 	ordersFK := sqlmock.NewRows([]string{"id", "seq", "table", "from", "to", "on_update", "on_delete", "match"}).
 		AddRow(0, 0, "users", "user_id", "id", "NO ACTION", "NO ACTION", "NONE")
-	mock.ExpectQuery(`PRAGMA foreign_key_list\('orders'\)`).WillReturnRows(ordersFK)
+	mock.ExpectQuery(`SELECT.*FROM pragma_foreign_key_list WHERE arg = \?`).WithArgs("orders").WillReturnRows(ordersFK)
 
 	// users table has no FKs
 	usersFK := sqlmock.NewRows([]string{"id", "seq", "table", "from", "to", "on_update", "on_delete", "match"})
-	mock.ExpectQuery(`PRAGMA foreign_key_list\('users'\)`).WillReturnRows(usersFK)
+	mock.ExpectQuery(`SELECT.*FROM pragma_foreign_key_list WHERE arg = \?`).WithArgs("users").WillReturnRows(usersFK)
 
 	fks, err := DiscoverForeignKeys(context.Background(), db, "sqlite", "", []string{"orders", "users"})
 	if err != nil {

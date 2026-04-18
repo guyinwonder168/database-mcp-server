@@ -100,8 +100,9 @@ func discoverFKsSQLite(ctx context.Context, db *sql.DB, tableNames []string) ([]
 	var fks []ForeignKeyRelationship
 
 	for _, table := range tableNames {
-		query := fmt.Sprintf("PRAGMA foreign_key_list('%s')", table)
-		rows, err := db.QueryContext(ctx, query)
+		rows, err := db.QueryContext(ctx,
+			`SELECT id, seq, "table", "from", "to", on_update, on_delete, "match" FROM pragma_foreign_key_list WHERE arg = ?`,
+			table)
 		if err != nil {
 			continue
 		}

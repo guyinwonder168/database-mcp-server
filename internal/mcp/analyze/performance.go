@@ -156,13 +156,10 @@ func fetchIndexesSQLite(ctx context.Context, db *sql.DB, tableNames []string) ([
 	var result []IndexInfo
 
 	for _, table := range tableNames {
-		if err := sanitizeIdentifier(table); err != nil {
-			continue
-		}
-
-		// Get list of indexes for this table
-		listQuery := fmt.Sprintf("PRAGMA index_list(%s)", quoteSQLite(table)) // #nosec G201
-		listRows, err := db.QueryContext(ctx, listQuery)
+		// Get list of indexes for this table via TVF (bind parameter — no fmt.Sprintf)
+		listRows, err := db.QueryContext(ctx,
+			`SELECT seq, name, "unique" FROM pragma_index_list WHERE arg = ?`,
+			table)
 		if err != nil {
 			continue
 		}
@@ -175,12 +172,10 @@ func fetchIndexesSQLite(ctx context.Context, db *sql.DB, tableNames []string) ([
 				continue
 			}
 
-			// Get columns for this index
-			if err := sanitizeIdentifier(indexName); err != nil {
-				continue
-			}
-			infoQuery := fmt.Sprintf("PRAGMA index_info(%s)", quoteSQLite(indexName)) // #nosec G201
-			infoRows, err := db.QueryContext(ctx, infoQuery)
+			// Get columns for this index via TVF (bind parameter — no fmt.Sprintf)
+			infoRows, err := db.QueryContext(ctx,
+				`SELECT seqno, cid, name FROM pragma_index_info WHERE arg = ?`,
+				indexName)
 			if err != nil {
 				continue
 			}
