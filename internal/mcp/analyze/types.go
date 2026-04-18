@@ -88,12 +88,12 @@ type AnalysisMetadata struct {
 
 // DatabaseOverview summarizes the database at a high level.
 type DatabaseOverview struct {
-	DatabaseCount         int      `json:"database_count,omitempty"`            // Number of databases
-	TotalTables           int      `json:"total_tables"`                        // Total tables analyzed
-	TotalColumns          int      `json:"total_columns"`                       // Total columns analyzed
-	TotalRelationships    int      `json:"total_relationships,omitempty"`       // Total relationships found
-	BusinessModelInsights []string `json:"business_model_insights,omitempty"`   // Key business model findings
-	Summary               string   `json:"summary,omitempty"`                   // Human-readable summary
+	DatabaseCount         int      `json:"database_count,omitempty"`          // Number of databases
+	TotalTables           int      `json:"total_tables"`                      // Total tables analyzed
+	TotalColumns          int      `json:"total_columns"`                     // Total columns analyzed
+	TotalRelationships    int      `json:"total_relationships,omitempty"`     // Total relationships found
+	BusinessModelInsights []string `json:"business_model_insights,omitempty"` // Key business model findings
+	Summary               string   `json:"summary,omitempty"`                 // Human-readable summary
 }
 
 // TableCatalog categorizes tables by business role.
@@ -288,11 +288,11 @@ type KPI struct {
 
 // IndexInfo describes an index on a table.
 type IndexInfo struct {
-	IndexName  string   `json:"index_name"`
-	TableName  string   `json:"table_name"`
-	Columns    []string `json:"columns"`
-	IsUnique   bool     `json:"is_unique"`
-	IsPrimary  bool     `json:"is_primary"`
+	IndexName string   `json:"index_name"`
+	TableName string   `json:"table_name"`
+	Columns   []string `json:"columns"`
+	IsUnique  bool     `json:"is_unique"`
+	IsPrimary bool     `json:"is_primary"`
 }
 
 // PerformanceOptimization provides index and query hints.
@@ -317,12 +317,12 @@ type QueryPatterns struct {
 // ClassificationSignals provides raw signals for LLM-based domain/entity inference.
 // Replaces hardcoded domain dictionary (BUG-007) and entity taxonomy (BUG-008).
 type ClassificationSignals struct {
-	TableNames     []string       `json:"table_names"`      // All table names
-	NamingPrefixes map[string]int `json:"naming_prefixes"`  // Prefix frequency (e.g., "call_": 3, "broadcast_": 5)
-	NotableColumns []string       `json:"notable_columns"`  // Domain-significant column names
-	FKSummary      string         `json:"fk_summary"`       // Summary of FK relationships
-	TotalTables    int            `json:"total_tables"`     // Total number of tables
-	TotalColumns   int            `json:"total_columns"`    // Total number of columns
+	TableNames     []string       `json:"table_names"`     // All table names
+	NamingPrefixes map[string]int `json:"naming_prefixes"` // Prefix frequency (e.g., "call_": 3, "broadcast_": 5)
+	NotableColumns []string       `json:"notable_columns"` // Domain-significant column names
+	FKSummary      string         `json:"fk_summary"`      // Summary of FK relationships
+	TotalTables    int            `json:"total_tables"`    // Total number of tables
+	TotalColumns   int            `json:"total_columns"`   // Total number of columns
 }
 
 // EnhancedSchemaAnalysis represents the output of advanced column profiling.
@@ -345,10 +345,10 @@ type ColumnProfile struct {
 
 // ColumnStatistics represents statistical profiling for a column.
 type ColumnStatistics struct {
-	NonNullCount int     `json:"non_null_count,omitempty"`
-	NullCount    int     `json:"null_count,omitempty"`
-	DistinctCount int    `json:"distinct_count,omitempty"`
-	MinValue     interface{} `json:"min_value,omitempty"`
-	MaxValue     interface{} `json:"max_value,omitempty"`
-	AvgValue     float64 `json:"avg_value,omitempty"`
+	NonNullCount  int         `json:"non_null_count,omitempty"`
+	NullCount     int         `json:"null_count,omitempty"`
+	DistinctCount int         `json:"distinct_count,omitempty"`
+	MinValue      interface{} `json:"min_value,omitempty"`
+	MaxValue      interface{} `json:"max_value,omitempty"`
+	AvgValue      float64     `json:"avg_value,omitempty"`
 }

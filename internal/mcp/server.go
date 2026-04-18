@@ -46,9 +46,6 @@ type MCPServer struct {
 const MCPVersion = "v1.4.0"
 const MCPAuthor = "guyinwonder"
 
-// Cap for number of data quality issues retained per column to prevent unbounded payload growth
-const maxQualityIssuesPerColumn = 10
-
 const sqliteListTablesQuery = "SELECT name FROM sqlite_master WHERE type='table'"
 const (
 	joinSQLTemplate                     = "SELECT * FROM %s JOIN %s ON %s.%s = %s.%s"
@@ -229,55 +226,6 @@ func sanitizeSchemaNodeForGemini(node any) {
 
 // --- Semantic Relationship Mapping Helpers ---
 //
-// mapSemanticRelationships combines formal foreign keys, join suggestions, and naming pattern analysis.
-func (s *MCPServer) mapSemanticRelationships(
-	tables map[string]TableInfo,
-	joinSuggestions []JoinSuggestion,
-) RelationshipGraph {
-	var fkRels []ForeignKeyRelationship
-	var semanticRels []SemanticRelationship
-	var suggestedJoins []string
-
-	// Add formal FK relationships
-	for tableName, t := range tables {
-		for _, col := range t.Columns {
-			if col.IsForeignKey && col.ForeignKeyRef != nil {
-				fkRels = append(fkRels, ForeignKeyRelationship{
-					FromTable:        tableName,
-					FromColumn:       col.ColumnName,
-					ToTable:          col.ForeignKeyRef.RefTable,
-					ToColumn:         col.ForeignKeyRef.RefColumn,
-					RelationshipType: "many_to_one",
-					SuggestedJoin:    fmt.Sprintf(joinSQLTemplate, tableName, col.ForeignKeyRef.RefTable, tableName, col.ColumnName, col.ForeignKeyRef.RefTable, col.ForeignKeyRef.RefColumn),
-				})
-				suggestedJoins = append(suggestedJoins, fmt.Sprintf(joinSQLTemplate, tableName, col.ForeignKeyRef.RefTable, tableName, col.ColumnName, col.ForeignKeyRef.RefTable, col.ForeignKeyRef.RefColumn))
-			}
-		}
-	}
-
-	// Add join suggestions as semantic relationships
-	for _, js := range joinSuggestions {
-		semanticRels = append(semanticRels, SemanticRelationship{
-			Tables:           []string{js.FromTable, js.ToTable},
-			RelationshipType: "join_suggestion",
-			ConnectionBasis:  toolDiscoverJoins,
-			ConfidenceScore:  0.8,
-			SuggestedJoin:    js.SuggestedJoinSQL,
-		})
-		suggestedJoins = append(suggestedJoins, js.SuggestedJoinSQL)
-	}
-
-	// Add implicit relationships from naming patterns
-	implicit := s.detectImplicitRelationships(tables)
-	semanticRels = append(semanticRels, implicit...)
-
-	return RelationshipGraph{
-		ForeignKeys:           fkRels,
-		SemanticRelationships: semanticRels,
-		SuggestedJoins:        suggestedJoins,
-	}
-}
-
 // detectImplicitRelationships finds relationships via naming patterns.
 func (s *MCPServer) detectImplicitRelationships(tables map[string]TableInfo) []SemanticRelationship {
 	var relationships []SemanticRelationship
@@ -3881,7 +3829,7 @@ func (s *MCPServer) handleAnalyzeSchema(
 				log.JSONLog("warn", "Failed to get connection for schema resolution", map[string]interface{}{"error": err.Error()})
 			} else {
 				resolved, err := GetDefaultSchema(ctx, dbConn)
-				dbConn.Close() //nolint:errcheck
+				_ = dbConn.Close()
 				if err != nil {
 					log.JSONLog("warn", "Failed to resolve default schema, using empty", map[string]interface{}{"error": err.Error()})
 				} else {
@@ -3904,7 +3852,7 @@ func (s *MCPServer) handleAnalyzeSchema(
 	}
 
 	// Build server-side result (merges analyze output with server-specific fields)
-	serverResult := s.buildAnalyzeSchemaResultFromAnalyze(result, p, prof.DBType, filteredTables)
+	serverResult := s.buildAnalyzeSchemaResultFromAnalyze(result, prof.DBType, filteredTables)
 
 	// Query suggestions — calls MCP tools, can't be pure
 	aiQuerySuggestions := s.buildAnalyzeSchemaQuerySuggestions(ctx, p, filteredTables, dbName)
@@ -3938,7 +3886,7 @@ func fetchAllSampleRowsForProfiling(ctx context.Context, conn *sql.DB, tableName
 
 // buildAnalyzeSchemaResultFromAnalyze converts the analyze.Run() result into the
 // server's AnalyzeSchemaResult, adding server-specific fields.
-func (s *MCPServer) buildAnalyzeSchemaResultFromAnalyze(analyzeResult *analyze.AnalyzeSchemaResult, params AnalyzeSchemaParams, dbType string, filteredTables []string) AnalyzeSchemaResult {
+func (s *MCPServer) buildAnalyzeSchemaResultFromAnalyze(analyzeResult *analyze.AnalyzeSchemaResult, dbType string, filteredTables []string) AnalyzeSchemaResult {
 	result := AnalyzeSchemaResult{
 		AnalysisMetadata:        analyzeResult.AnalysisMetadata,
 		DatabaseOverview:        analyzeResult.DatabaseOverview,

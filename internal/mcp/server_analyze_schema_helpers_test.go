@@ -1338,10 +1338,6 @@ func TestResolveSchemaWithConnection(t *testing.T) {
 	})
 }
 
-func floatEqual(left, right float64) bool {
-	return math.Abs(left-right) < 1e-9
-}
-
 func TestFetchSchemasFromDB(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {

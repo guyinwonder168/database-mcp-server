@@ -58,16 +58,16 @@ func TestDetectImplicitRelationships_CommonColumnsExcluded(t *testing.T) {
 	tables := map[string][]SchemaColumnInfo{
 		"users": {
 			{ColumnName: "id", IsPrimaryKey: true},
-			{ColumnName: "created"},   // common — should NOT create relationship
-			{ColumnName: "name"},      // common — should NOT create relationship
-			{ColumnName: "status"},    // common — should NOT create relationship
+			{ColumnName: "created"},    // common — should NOT create relationship
+			{ColumnName: "name"},       // common — should NOT create relationship
+			{ColumnName: "status"},     // common — should NOT create relationship
 			{ColumnName: "updated_at"}, // common — should NOT create relationship
 		},
 		"orders": {
 			{ColumnName: "id", IsPrimaryKey: true},
-			{ColumnName: "created"},   // common — should NOT create relationship
-			{ColumnName: "name"},      // common — should NOT create relationship
-			{ColumnName: "status"},    // common — should NOT create relationship
+			{ColumnName: "created"},    // common — should NOT create relationship
+			{ColumnName: "name"},       // common — should NOT create relationship
+			{ColumnName: "status"},     // common — should NOT create relationship
 			{ColumnName: "updated_at"}, // common — should NOT create relationship
 		},
 	}

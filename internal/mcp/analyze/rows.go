@@ -36,13 +36,16 @@ func FetchSampleRows(ctx context.Context, db *sql.DB, tableName, dbType string, 
 
 // SampleQueryForDB returns the SQL query to fetch sample rows and whether the dbType is supported.
 func SampleQueryForDB(dbType, tableName string, sampleSize int) (string, bool) {
+	if err := sanitizeIdentifier(tableName); err != nil {
+		return "", false
+	}
 	switch dbType {
 	case "mysql", "mariadb":
-		return fmt.Sprintf("SELECT * FROM `%s` LIMIT %d", tableName, sampleSize), true
+		return fmt.Sprintf("SELECT * FROM %s LIMIT %d", quoteMySQL(tableName), sampleSize), true
 	case "postgres", "postgresql":
-		return fmt.Sprintf("SELECT * FROM \"%s\" LIMIT %d", tableName, sampleSize), true
+		return fmt.Sprintf("SELECT * FROM %s LIMIT %d", quotePostgres(tableName), sampleSize), true
 	case "sqlite":
-		return fmt.Sprintf("SELECT * FROM '%s' LIMIT %d", tableName, sampleSize), true
+		return fmt.Sprintf("SELECT * FROM %s LIMIT %d", quoteSQLite(tableName), sampleSize), true
 	default:
 		return "", false
 	}
@@ -110,7 +113,7 @@ func fetchRowCountsMySQL(ctx context.Context, db *sql.DB, schema string) (map[st
 	if err != nil {
 		return nil, fmt.Errorf("mysql row counts: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	result := make(map[string]int64)
 	for rows.Next() {
@@ -133,7 +136,7 @@ func fetchRowCountsPostgres(ctx context.Context, db *sql.DB, schema string) (map
 	if err != nil {
 		return nil, fmt.Errorf("postgres row counts: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	result := make(map[string]int64)
 	for rows.Next() {
@@ -150,7 +153,10 @@ func fetchRowCountsPostgres(ctx context.Context, db *sql.DB, schema string) (map
 func fetchRowCountsSQLite(ctx context.Context, db *sql.DB, tableNames []string) (map[string]int64, error) {
 	result := make(map[string]int64)
 	for _, table := range tableNames {
-		query := fmt.Sprintf(`SELECT COUNT(*) AS cnt FROM "%s"`, table)
+		if err := sanitizeIdentifier(table); err != nil {
+			continue
+		}
+		query := fmt.Sprintf(`SELECT COUNT(*) AS cnt FROM %s`, quoteSQLite(table))
 		var cnt int64
 		err := db.QueryRowContext(ctx, query).Scan(&cnt)
 		if err != nil {

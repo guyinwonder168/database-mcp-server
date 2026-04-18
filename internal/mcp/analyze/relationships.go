@@ -45,7 +45,7 @@ func discoverFKsMySQL(ctx context.Context, db *sql.DB, schema string) ([]Foreign
 	if err != nil {
 		return nil, fmt.Errorf("mysql FK discovery: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var fks []ForeignKeyRelationship
 	for rows.Next() {
@@ -78,7 +78,7 @@ func discoverFKsPostgres(ctx context.Context, db *sql.DB, schema string) ([]Fore
 	if err != nil {
 		return nil, fmt.Errorf("postgres FK discovery: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var fks []ForeignKeyRelationship
 	for rows.Next() {
@@ -165,7 +165,7 @@ func DetectImplicitRelationships(tableColumns map[string][]SchemaColumnInfo) []S
 			// Pattern 1: exact "targetTable_id" — highest confidence
 			if matchedTable, ok := matchExactID(col.ColumnName, tableSet); ok {
 				rels = append(rels, SemanticRelationship{
-					Tables:          []string{fromTable, matchedTable},
+					Tables:           []string{fromTable, matchedTable},
 					RelationshipType: "many_to_one",
 					ConnectionBasis:  "naming_convention:exact_id",
 					ConfidenceScore:  0.8,
@@ -178,7 +178,7 @@ func DetectImplicitRelationships(tableColumns map[string][]SchemaColumnInfo) []S
 			// Pattern 2: "*_id" suffix matching a table name — moderate confidence
 			if matchedTable, ok := matchSuffixID(col.ColumnName, tableSet); ok {
 				rels = append(rels, SemanticRelationship{
-					Tables:          []string{fromTable, matchedTable},
+					Tables:           []string{fromTable, matchedTable},
 					RelationshipType: "many_to_one",
 					ConnectionBasis:  "naming_convention:suffix_id",
 					ConfidenceScore:  0.7,
@@ -228,8 +228,8 @@ func matchExactID(colName string, tableSet map[string]bool) (string, bool) {
 // Handles: +s, +es, -y→-ies, -on→-a.
 func singularToPluralMatch(singular string, tableSet map[string]bool) (string, bool) {
 	candidates := []string{
-		singular + "s",                  // user → users
-		singular + "es",                 // box → boxes
+		singular + "s",  // user → users
+		singular + "es", // box → boxes
 	}
 	// -y → -ies (category → categories)
 	if len(singular) > 1 && singular[len(singular)-1] == 'y' {
@@ -247,6 +247,7 @@ func singularToPluralMatch(singular string, tableSet map[string]bool) (string, b
 	}
 	return "", false
 }
+
 // matchSuffixID checks if columnName ends with "_id" and the part before _id
 // contains a table name (e.g., "order_items_product_id" matches "products").
 func matchSuffixID(colName string, tableSet map[string]bool) (string, bool) {

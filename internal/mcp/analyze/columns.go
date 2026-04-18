@@ -42,7 +42,7 @@ func fetchColumnsBulkMySQL(ctx context.Context, db *sql.DB, schema string, resul
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var tableName, colName, dataType, isNullable, colKey, extra string
@@ -90,7 +90,7 @@ func fetchColumnsBulkPostgres(ctx context.Context, db *sql.DB, schema string, re
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var tableName, colName, dataType, isNullable, constraintType string
@@ -127,16 +127,20 @@ func FetchColumnsPerTable(ctx context.Context, db *sql.DB, dbType string, tableN
 	result := make(map[string][]SchemaColumnInfo)
 
 	for _, table := range tableNames {
+		if err := sanitizeIdentifier(table); err != nil {
+			continue // skip invalid table names
+		}
+
 		var query string
 		switch dbType {
 		case "sqlite":
-			query = fmt.Sprintf("PRAGMA table_info('%s')", table)
+			query = fmt.Sprintf("PRAGMA table_info(%s)", quoteSQLite(table))
 		case "mysql", "mariadb":
-			query = fmt.Sprintf("SHOW COLUMNS FROM `%s`", table)
+			query = fmt.Sprintf("SHOW COLUMNS FROM %s", quoteMySQL(table))
 		case "postgres", "postgresql":
 			query = fmt.Sprintf(`SELECT column_name, data_type, is_nullable, column_default
-				FROM information_schema.columns WHERE table_name = '%s' AND table_schema = 'public'
-				ORDER BY ordinal_position`, table)
+				FROM information_schema.columns WHERE table_name = %s AND table_schema = 'public'
+				ORDER BY ordinal_position`, quotePostgres(table))
 		default:
 			continue
 		}
@@ -156,7 +160,7 @@ func FetchColumnsPerTable(ctx context.Context, db *sql.DB, dbType string, tableN
 		case "postgres", "postgresql":
 			cols = scanPostgresFallbackColumns(rows)
 		}
-		rows.Close()
+		_ = rows.Close()
 
 		result[table] = cols
 	}

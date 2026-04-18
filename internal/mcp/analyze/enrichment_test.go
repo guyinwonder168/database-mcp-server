@@ -1192,10 +1192,10 @@ func TestFlattenQualityMetrics(t *testing.T) {
 
 func TestAddDatabaseAggregateMetric(t *testing.T) {
 	metrics := map[string]QualityMetrics{
-		"users.__table__":   {OverallScore: 0.8},
-		"orders.__table__":  {OverallScore: 0.6},
-		"users.name":        {OverallScore: 0.9},
-		"orders.total":      {OverallScore: 0.5},
+		"users.__table__":  {OverallScore: 0.8},
+		"orders.__table__": {OverallScore: 0.6},
+		"users.name":       {OverallScore: 0.9},
+		"orders.total":     {OverallScore: 0.5},
 	}
 	AddDatabaseAggregateMetric(metrics)
 	dbMetric, ok := metrics["__database__"]
@@ -1261,8 +1261,8 @@ func TestCategorizeTables_JunctionTables(t *testing.T) {
 
 func TestCategorizeTables_AuditTables(t *testing.T) {
 	schemas := map[string]TableInfo{
-		"audit_log":     {},
-		"system_logs":   {},
+		"audit_log":      {},
+		"system_logs":    {},
 		"activity_audit": {},
 	}
 	tableNames := []string{"audit_log", "system_logs", "activity_audit"}
@@ -1395,7 +1395,7 @@ func TestBuildQualityMetrics_EmptyTables(t *testing.T) {
 
 func TestBuildQualityMetrics_MultipleTables(t *testing.T) {
 	schemas := map[string]TableInfo{
-		"users": {Columns: []SchemaColumnInfo{{ColumnName: "id", DataType: "int"}}},
+		"users":  {Columns: []SchemaColumnInfo{{ColumnName: "id", DataType: "int"}}},
 		"orders": {Columns: []SchemaColumnInfo{{ColumnName: "id", DataType: "int"}}},
 	}
 	sampleData := map[string][]map[string]interface{}{

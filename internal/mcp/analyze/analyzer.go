@@ -84,27 +84,27 @@ func Run(ctx context.Context, db *sql.DB, dbType, schema string, params AnalyzeS
 			classificationSignals := buildClassificationSignals(tableNames, tableColumns, fks)
 
 			result := &AnalyzeSchemaResult{
-				AnalysisMetadata: buildAnalysisMetadata(startTime, params, dbType, tableNames, tableSchemas),
-				DatabaseOverview: buildDatabaseOverview(tableNames, tableSchemas, relGraph, domain, confidence, businessDesc),
-				TableCatalog:     tableCatalog,
-				TableSchemas:     tableSchemas,
-				RelationshipGraph: relGraph,
-				BusinessContext:  *businessCtx,
-				DataQualityMetrics: qualityMetrics,
+				AnalysisMetadata:        buildAnalysisMetadata(startTime, params, dbType, tableNames, tableSchemas),
+				DatabaseOverview:        buildDatabaseOverview(tableNames, tableSchemas, relGraph, domain, confidence, businessDesc),
+				TableCatalog:            tableCatalog,
+				TableSchemas:            tableSchemas,
+				RelationshipGraph:       relGraph,
+				BusinessContext:         *businessCtx,
+				DataQualityMetrics:      qualityMetrics,
 				PerformanceOptimization: perfOpt,
-				ClassificationSignals: classificationSignals,
+				ClassificationSignals:   classificationSignals,
 			}
 			return result, nil
 		}
 
 		// Detailed level — no business context
 		result := &AnalyzeSchemaResult{
-			AnalysisMetadata: buildAnalysisMetadata(startTime, params, dbType, tableNames, tableSchemas),
-			DatabaseOverview: buildDatabaseOverview(tableNames, tableSchemas, relGraph, "", 0, ""),
-			TableCatalog:     tableCatalog,
-			TableSchemas:     tableSchemas,
-			RelationshipGraph: relGraph,
-			DataQualityMetrics: qualityMetrics,
+			AnalysisMetadata:        buildAnalysisMetadata(startTime, params, dbType, tableNames, tableSchemas),
+			DatabaseOverview:        buildDatabaseOverview(tableNames, tableSchemas, relGraph, "", 0, ""),
+			TableCatalog:            tableCatalog,
+			TableSchemas:            tableSchemas,
+			RelationshipGraph:       relGraph,
+			DataQualityMetrics:      qualityMetrics,
 			PerformanceOptimization: perfOpt,
 		}
 		return result, nil
@@ -112,10 +112,10 @@ func Run(ctx context.Context, db *sql.DB, dbType, schema string, params AnalyzeS
 
 	// Basic level — minimal output
 	result := &AnalyzeSchemaResult{
-		AnalysisMetadata: buildAnalysisMetadata(startTime, params, dbType, tableNames, tableSchemas),
-		DatabaseOverview: buildDatabaseOverview(tableNames, tableSchemas, relGraph, "", 0, ""),
-		TableCatalog:     tableCatalog,
-		TableSchemas:     tableSchemas,
+		AnalysisMetadata:  buildAnalysisMetadata(startTime, params, dbType, tableNames, tableSchemas),
+		DatabaseOverview:  buildDatabaseOverview(tableNames, tableSchemas, relGraph, "", 0, ""),
+		TableCatalog:      tableCatalog,
+		TableSchemas:      tableSchemas,
 		RelationshipGraph: relGraph,
 	}
 	return result, nil
@@ -346,11 +346,7 @@ func buildClassificationSignals(tableNames []string, tableColumns map[string][]S
 }
 
 // buildAnalysisMetadata creates metadata for the analysis result.
-func buildAnalysisMetadata(startTime time.Time, params AnalyzeSchemaParams, dbType string, tableNames []string, tableSchemas map[string]TableInfo) AnalysisMetadata {
-	totalCols := 0
-	for _, info := range tableSchemas {
-		totalCols += info.ColumnCount
-	}
+func buildAnalysisMetadata(startTime time.Time, params AnalyzeSchemaParams, dbType string, _ []string, _ map[string]TableInfo) AnalysisMetadata {
 	return AnalysisMetadata{
 		AnalysisLevel:      params.AnalysisLevel,
 		DatabaseType:       dbType,
@@ -361,7 +357,7 @@ func buildAnalysisMetadata(startTime time.Time, params AnalyzeSchemaParams, dbTy
 }
 
 // buildDatabaseOverview creates a high-level database summary.
-func buildDatabaseOverview(tableNames []string, tableSchemas map[string]TableInfo, relGraph RelationshipGraph, domain string, confidence float64, businessDesc string) DatabaseOverview {
+func buildDatabaseOverview(tableNames []string, tableSchemas map[string]TableInfo, relGraph RelationshipGraph, _ string, confidence float64, businessDesc string) DatabaseOverview {
 	totalCols := 0
 	for _, info := range tableSchemas {
 		totalCols += info.ColumnCount

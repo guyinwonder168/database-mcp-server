@@ -39,7 +39,7 @@ func fetchIndexesMySQL(ctx context.Context, db *sql.DB, schema string) ([]IndexI
 	if err != nil {
 		return nil, fmt.Errorf("mysql index fetch: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	// MySQL returns one row per column in an index; group by table+index
 	type indexKey struct {
@@ -105,7 +105,7 @@ func fetchIndexesPostgres(ctx context.Context, db *sql.DB, schema string) ([]Ind
 	if err != nil {
 		return nil, fmt.Errorf("postgres index fetch: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var result []IndexInfo
 
@@ -156,8 +156,12 @@ func fetchIndexesSQLite(ctx context.Context, db *sql.DB, tableNames []string) ([
 	var result []IndexInfo
 
 	for _, table := range tableNames {
+		if err := sanitizeIdentifier(table); err != nil {
+			continue
+		}
+
 		// Get list of indexes for this table
-		listQuery := fmt.Sprintf("PRAGMA index_list('%s')", table)
+		listQuery := fmt.Sprintf("PRAGMA index_list(%s)", quoteSQLite(table))
 		listRows, err := db.QueryContext(ctx, listQuery)
 		if err != nil {
 			continue
@@ -172,7 +176,10 @@ func fetchIndexesSQLite(ctx context.Context, db *sql.DB, tableNames []string) ([
 			}
 
 			// Get columns for this index
-			infoQuery := fmt.Sprintf("PRAGMA index_info('%s')", indexName)
+			if err := sanitizeIdentifier(indexName); err != nil {
+				continue
+			}
+			infoQuery := fmt.Sprintf("PRAGMA index_info(%s)", quoteSQLite(indexName))
 			infoRows, err := db.QueryContext(ctx, infoQuery)
 			if err != nil {
 				continue
@@ -191,7 +198,7 @@ func fetchIndexesSQLite(ctx context.Context, db *sql.DB, tableNames []string) ([
 				}
 				columns[seqno] = colName
 			}
-			infoRows.Close()
+			_ = infoRows.Close()
 
 			isPrimary := strings.HasPrefix(indexName, "sqlite_autoindex_")
 
@@ -203,7 +210,7 @@ func fetchIndexesSQLite(ctx context.Context, db *sql.DB, tableNames []string) ([
 				IsPrimary: isPrimary,
 			})
 		}
-		listRows.Close()
+		_ = listRows.Close()
 	}
 
 	return result, nil

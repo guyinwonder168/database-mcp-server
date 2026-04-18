@@ -42,7 +42,7 @@ func BuildClassificationSignals(tableColumns map[string][]SchemaColumnInfo, fks 
 	if len(tableColumns) == 0 {
 		return ClassificationSignals{
 			NamingPrefixes: map[string]int{},
-			FKSummary:     "none",
+			FKSummary:      "none",
 		}
 	}
 
@@ -770,18 +770,18 @@ func ComputeColumnQualityMetrics(col SchemaColumnInfo, values []interface{}) Qua
 }
 
 type qualityAccumulator struct {
-	columnName          string
-	patternType         string
-	validationRegex     string
-	isTemporal          bool
-	nonNull             int
-	valid               int
-	uniqueSet           map[string]struct{}
-	temporalOrderBroken bool
-	lastTime            string
-	temporalConsistent  int
+	columnName            string
+	patternType           string
+	validationRegex       string
+	isTemporal            bool
+	nonNull               int
+	valid                 int
+	uniqueSet             map[string]struct{}
+	temporalOrderBroken   bool
+	lastTime              string
+	temporalConsistent    int
 	businessRuleCompliant int
-	issues              []string
+	issues                []string
 }
 
 func newQualityAccumulator(col SchemaColumnInfo) *qualityAccumulator {

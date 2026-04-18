@@ -205,9 +205,10 @@ func TestSampleQueryForDB(t *testing.T) {
 		{"MariaDB", "mariadb", "orders", 10, "SELECT * FROM `orders` LIMIT 10", true},
 		{"Postgres", "postgres", "users", 5, "SELECT * FROM \"users\" LIMIT 5", true},
 		{"PostgreSQL", "postgresql", "users", 5, "SELECT * FROM \"users\" LIMIT 5", true},
-		{"SQLite", "sqlite", "users", 5, "SELECT * FROM 'users' LIMIT 5", true},
+		{"SQLite", "sqlite", "users", 5, `SELECT * FROM "users" LIMIT 5`, true},
 		{"Unsupported", "oracle", "users", 5, "", false},
 		{"Empty dbType", "", "users", 5, "", false},
+		{"InvalidIdentifier_SQLInjection", "sqlite", "users; DROP TABLE", 5, "", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
