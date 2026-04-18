@@ -41,11 +41,11 @@ func SampleQueryForDB(dbType, tableName string, sampleSize int) (string, bool) {
 	}
 	switch dbType {
 	case "mysql", "mariadb":
-		return fmt.Sprintf("SELECT * FROM %s LIMIT %d", quoteMySQL(tableName), sampleSize), true //nolint:gosec // G201: sanitized by sanitizeIdentifier
+		return fmt.Sprintf("SELECT * FROM %s LIMIT %d", quoteMySQL(tableName), sampleSize), true // #nosec G201
 	case "postgres", "postgresql":
-		return fmt.Sprintf("SELECT * FROM %s LIMIT %d", quotePostgres(tableName), sampleSize), true //nolint:gosec // G201: sanitized by sanitizeIdentifier
+		return fmt.Sprintf("SELECT * FROM %s LIMIT %d", quotePostgres(tableName), sampleSize), true // #nosec G201
 	case "sqlite":
-		return fmt.Sprintf("SELECT * FROM %s LIMIT %d", quoteSQLite(tableName), sampleSize), true //nolint:gosec // G201: sanitized by sanitizeIdentifier
+		return fmt.Sprintf("SELECT * FROM %s LIMIT %d", quoteSQLite(tableName), sampleSize), true // #nosec G201
 	default:
 		return "", false
 	}
@@ -156,7 +156,7 @@ func fetchRowCountsSQLite(ctx context.Context, db *sql.DB, tableNames []string) 
 		if err := sanitizeIdentifier(table); err != nil {
 			continue
 		}
-		query := fmt.Sprintf(`SELECT COUNT(*) AS cnt FROM %s`, quoteSQLite(table)) //nolint:gosec // G201: table name sanitized by sanitizeIdentifier above
+		query := fmt.Sprintf(`SELECT COUNT(*) AS cnt FROM %s`, quoteSQLite(table)) // #nosec G201 -- table name validated by sanitizeIdentifier
 		var cnt int64
 		err := db.QueryRowContext(ctx, query).Scan(&cnt)
 		if err != nil {

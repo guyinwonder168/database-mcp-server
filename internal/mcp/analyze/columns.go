@@ -134,13 +134,13 @@ func FetchColumnsPerTable(ctx context.Context, db *sql.DB, dbType string, tableN
 		var query string
 		switch dbType {
 		case "sqlite":
-			query = fmt.Sprintf("PRAGMA table_info(%s)", quoteSQLite(table)) //nolint:gosec // G201: sanitized by sanitizeIdentifier
+			query = fmt.Sprintf("PRAGMA table_info(%s)", quoteSQLite(table))
 		case "mysql", "mariadb":
-			query = fmt.Sprintf("SHOW COLUMNS FROM %s", quoteMySQL(table)) //nolint:gosec // G201: sanitized by sanitizeIdentifier
+			query = fmt.Sprintf("SHOW COLUMNS FROM %s", quoteMySQL(table))
 		case "postgres", "postgresql":
 			query = fmt.Sprintf(`SELECT column_name, data_type, is_nullable, column_default
 				FROM information_schema.columns WHERE table_name = %s AND table_schema = 'public'
-				ORDER BY ordinal_position`, quotePostgres(table)) //nolint:gosec // G201: sanitized by sanitizeIdentifier
+				ORDER BY ordinal_position`, quotePostgres(table))
 		default:
 			continue
 		}

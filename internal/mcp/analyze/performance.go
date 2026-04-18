@@ -161,7 +161,7 @@ func fetchIndexesSQLite(ctx context.Context, db *sql.DB, tableNames []string) ([
 		}
 
 		// Get list of indexes for this table
-		listQuery := fmt.Sprintf("PRAGMA index_list(%s)", quoteSQLite(table)) //nolint:gosec // G201: sanitized by sanitizeIdentifier
+		listQuery := fmt.Sprintf("PRAGMA index_list(%s)", quoteSQLite(table)) // #nosec G201
 		listRows, err := db.QueryContext(ctx, listQuery)
 		if err != nil {
 			continue
@@ -179,7 +179,7 @@ func fetchIndexesSQLite(ctx context.Context, db *sql.DB, tableNames []string) ([
 			if err := sanitizeIdentifier(indexName); err != nil {
 				continue
 			}
-			infoQuery := fmt.Sprintf("PRAGMA index_info(%s)", quoteSQLite(indexName)) //nolint:gosec // G201: sanitized by sanitizeIdentifier
+			infoQuery := fmt.Sprintf("PRAGMA index_info(%s)", quoteSQLite(indexName)) // #nosec G201
 			infoRows, err := db.QueryContext(ctx, infoQuery)
 			if err != nil {
 				continue
