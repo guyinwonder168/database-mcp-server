@@ -119,7 +119,7 @@ func discoverFKsSQLite(ctx context.Context, db *sql.DB, tableNames []string) ([]
 				ToColumn:   toCol,
 			})
 		}
-		rows.Close()
+		_ = rows.Close()
 	}
 
 	return fks, nil

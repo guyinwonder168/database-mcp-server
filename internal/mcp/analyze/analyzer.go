@@ -357,7 +357,7 @@ func buildAnalysisMetadata(startTime time.Time, params AnalyzeSchemaParams, dbTy
 }
 
 // buildDatabaseOverview creates a high-level database summary.
-func buildDatabaseOverview(tableNames []string, tableSchemas map[string]TableInfo, relGraph RelationshipGraph, _ string, confidence float64, businessDesc string) DatabaseOverview {
+func buildDatabaseOverview(tableNames []string, tableSchemas map[string]TableInfo, relGraph RelationshipGraph, _ string, _ float64, businessDesc string) DatabaseOverview {
 	totalCols := 0
 	for _, info := range tableSchemas {
 		totalCols += info.ColumnCount

@@ -3886,7 +3886,7 @@ func fetchAllSampleRowsForProfiling(ctx context.Context, conn *sql.DB, tableName
 
 // buildAnalyzeSchemaResultFromAnalyze converts the analyze.Run() result into the
 // server's AnalyzeSchemaResult, adding server-specific fields.
-func (s *MCPServer) buildAnalyzeSchemaResultFromAnalyze(analyzeResult *analyze.AnalyzeSchemaResult, dbType string, filteredTables []string) AnalyzeSchemaResult {
+func (s *MCPServer) buildAnalyzeSchemaResultFromAnalyze(analyzeResult *analyze.AnalyzeSchemaResult, _ string, filteredTables []string) AnalyzeSchemaResult {
 	result := AnalyzeSchemaResult{
 		AnalysisMetadata:        analyzeResult.AnalysisMetadata,
 		DatabaseOverview:        analyzeResult.DatabaseOverview,
