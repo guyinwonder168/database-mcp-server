@@ -32,7 +32,9 @@
 
 - AES-GCM password encryption
 - Per-profile read-only mode
-- Parameterized query support for execution paths
+- SQL injection prevention via `sanitizeIdentifier()` + `quoteForDB()` helpers
+- Parameterized queries throughout (including SQLite TVF for PRAGMAs)
+- No `fmt.Sprintf` in SQL construction paths
 
 ## Build and Test Commands
 
@@ -54,11 +56,20 @@ DB_MCP_IT_PG_HOST=... DB_MCP_IT_PG_DB=... go test ./internal/mcp -run TestLive -
 - GitHub Releases for binaries
 - GHCR package: `ghcr.io/guyinwonder168/database-mcp-server`
 
+## Version Sync
+
+- Source of truth: `MCPVersion` constant in `internal/mcp/server.go`
+- Sync script: `scripts/sync-version-from-server.sh` updates README.md and `docs/mcp-openapi.yaml`
+- Must be run after any version bump
+
 ## Current Capability Surface
 
 - 20 MCP tools implemented
 - Full coverage of profile management, schema discovery, SQL execution, intelligence tools, schema tracking, and federation
 - Dedicated `internal/mcp/analyze/` package for schema analysis logic
+- Dedicated `internal/mcp/lineage/` for data lineage
+- Dedicated `internal/mcp/nlp/` for natural language processing
+- Dedicated `internal/mcp/context/` for conversation management
 
 ## Source of Truth
 

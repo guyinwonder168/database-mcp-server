@@ -6,6 +6,23 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+## [v1.5.0] - 2026-04-19
+
+### Changed
+- **Extracted `internal/mcp/analyze/` package**: ~40 functions refactored out of `server.go` into a dedicated, testable package with pure functions (no MCPServer dependencies).
+- **Security hardening**: Eliminated all `fmt.Sprintf` SQL patterns (SonarCloud S2077). SQLite PRAGMAs converted to parameterized table-valued functions. Added `sanitizeIdentifier()`, `quoteMySQL()`, `quotePostgres()`, `quoteSQLite()`, and `quoteForDB()` helpers for safe SQL identifier handling.
+- **Cognitive complexity reduction** (SonarCloud S3776): Extracted 8 private helper functions across `analyzer.go`, `performance.go`, `relationships.go`, and `server.go` to bring all functions below complexity threshold.
+- **CI workflow hardening** (S6439): Moved `${{ }}` expressions to `env:` blocks in release workflow to prevent script injection.
+
+### Fixed
+- **Bug #75**: Column scanning — fixed column metadata extraction for all database types.
+- **Bug #76**: FK discovery — fixed foreign key relationship detection.
+- **Bug #77**: Implicit relationships — fixed column-to-table matching for implicit FK inference.
+- **Bug #78**: Classification signals — fixed signal extraction for LLM-based domain inference.
+- **Bug #79**: Index analysis — fixed index metadata parsing for PostgreSQL and SQLite.
+- **Bug #80**: Semantic type regex overlap — resolved with ordered matching.
+- All SonarCloud quality gate issues resolved (S2077, S3776, S6439, gosec G201/G202).
+
 ## [v1.4.0] - 2026-03-30
 
 ### Added
