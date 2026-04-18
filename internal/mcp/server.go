@@ -13,6 +13,7 @@ import (
 	"database-mcp-provider/internal/config"
 	"database-mcp-provider/internal/db"
 	"database-mcp-provider/internal/log"
+	"database-mcp-provider/internal/mcp/analyze"
 	ctxmgr "database-mcp-provider/internal/mcp/context"
 	"database-mcp-provider/internal/mcp/lineage"
 	"database-mcp-provider/internal/mcp/nlp"
@@ -23,7 +24,6 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -45,9 +45,6 @@ type MCPServer struct {
 
 const MCPVersion = "v1.4.0"
 const MCPAuthor = "guyinwonder"
-
-// Cap for number of data quality issues retained per column to prevent unbounded payload growth
-const maxQualityIssuesPerColumn = 10
 
 const sqliteListTablesQuery = "SELECT name FROM sqlite_master WHERE type='table'"
 const (
@@ -229,55 +226,6 @@ func sanitizeSchemaNodeForGemini(node any) {
 
 // --- Semantic Relationship Mapping Helpers ---
 //
-// mapSemanticRelationships combines formal foreign keys, join suggestions, and naming pattern analysis.
-func (s *MCPServer) mapSemanticRelationships(
-	tables map[string]TableInfo,
-	joinSuggestions []JoinSuggestion,
-) RelationshipGraph {
-	var fkRels []ForeignKeyRelationship
-	var semanticRels []SemanticRelationship
-	var suggestedJoins []string
-
-	// Add formal FK relationships
-	for tableName, t := range tables {
-		for _, col := range t.Columns {
-			if col.IsForeignKey && col.ForeignKeyRef != nil {
-				fkRels = append(fkRels, ForeignKeyRelationship{
-					FromTable:        tableName,
-					FromColumn:       col.ColumnName,
-					ToTable:          col.ForeignKeyRef.RefTable,
-					ToColumn:         col.ForeignKeyRef.RefColumn,
-					RelationshipType: "many_to_one",
-					SuggestedJoin:    fmt.Sprintf(joinSQLTemplate, tableName, col.ForeignKeyRef.RefTable, tableName, col.ColumnName, col.ForeignKeyRef.RefTable, col.ForeignKeyRef.RefColumn),
-				})
-				suggestedJoins = append(suggestedJoins, fmt.Sprintf(joinSQLTemplate, tableName, col.ForeignKeyRef.RefTable, tableName, col.ColumnName, col.ForeignKeyRef.RefTable, col.ForeignKeyRef.RefColumn))
-			}
-		}
-	}
-
-	// Add join suggestions as semantic relationships
-	for _, js := range joinSuggestions {
-		semanticRels = append(semanticRels, SemanticRelationship{
-			Tables:           []string{js.FromTable, js.ToTable},
-			RelationshipType: "join_suggestion",
-			ConnectionBasis:  toolDiscoverJoins,
-			ConfidenceScore:  0.8,
-			SuggestedJoin:    js.SuggestedJoinSQL,
-		})
-		suggestedJoins = append(suggestedJoins, js.SuggestedJoinSQL)
-	}
-
-	// Add implicit relationships from naming patterns
-	implicit := s.detectImplicitRelationships(tables)
-	semanticRels = append(semanticRels, implicit...)
-
-	return RelationshipGraph{
-		ForeignKeys:           fkRels,
-		SemanticRelationships: semanticRels,
-		SuggestedJoins:        suggestedJoins,
-	}
-}
-
 // detectImplicitRelationships finds relationships via naming patterns.
 func (s *MCPServer) detectImplicitRelationships(tables map[string]TableInfo) []SemanticRelationship {
 	var relationships []SemanticRelationship
@@ -3843,12 +3791,12 @@ func scanSampleDataRows(rows *sql.Rows, tableName string) ([][]interface{}, erro
 }
 
 // handleAnalyzeSchema implements the MCP handler for comprehensive schema analysis.
+// Delegates core analysis to the analyze.Run() pure function.
 func (s *MCPServer) handleAnalyzeSchema(
 	ctx context.Context,
 	_ *mcp.CallToolRequest,
 	input AnalyzeSchemaParams,
 ) (*mcp.CallToolResult, any, error) {
-	startTime := time.Now()
 	p := input
 	if errResult, err := validateAnalyzeSchemaParams(p); errResult != nil || err != nil {
 		return errResult, nil, err
@@ -3871,61 +3819,119 @@ func (s *MCPServer) handleAnalyzeSchema(
 	}
 	filteredTables := filterAnalyzeSchemaTables(tables, p.IncludeTables, p.ExcludeTables)
 
-	collected := s.collectAnalyzeSchemaData(ctx, conn, filteredTables, prof.DBType, p.SampleSize)
-	relGraph := s.mapSemanticRelationships(collected.relationshipCandidates, nil)
-	relGraphVisual := s.buildRelationshipGraph(relGraph)
+	schema := resolveSchemaForAnalyze(ctx, conn, p.Schema, prof.DBType)
 
-	tableSchemas, businessCtx, domain, confidence, businessDesc := s.enrichAnalyzeSchemaForComprehensive(
-		p,
-		collected.tableSchemas,
-		collected.sampleDataMap,
-		collected.relationshipCandidates,
-	)
+	// Delegate core analysis to the pure analyze.Run() function
+	result, runErr := analyze.Run(ctx, conn, prof.DBType, schema, p, filteredTables)
+	if runErr != nil {
+		log.JSONLog("error", "analyze.Run failed", map[string]interface{}{"error": runErr.Error()})
+		structErr := NewStructuredError(
+			ErrorCodeInternalError,
+			"Schema analysis failed",
+			runErr.Error(),
+		)
+		return errorResult(structErr), nil, runErr
+	}
 
+	// Build server-side result (merges analyze output with server-specific fields)
+	serverResult := s.buildAnalyzeSchemaResultFromAnalyze(result, prof.DBType, filteredTables)
+
+	// Query suggestions — calls MCP tools, can't be pure
 	aiQuerySuggestions := s.buildAnalyzeSchemaQuerySuggestions(ctx, p, filteredTables, dbName)
-	dataQualityMetrics := s.buildAnalyzeSchemaQualityMetrics(p, tableSchemas, collected.sampleDataMap)
-	tableCatalog := s.categorizeTables(filteredTables, tableSchemas)
+	serverResult.AIQuerySuggestions = aiQuerySuggestions
 
-	log.JSONLog("info", "Assembling AnalyzeSchemaResult", map[string]interface{}{
-		"tables":         len(filteredTables),
-		"columns":        collected.totalColumns,
-		"relationships":  len(relGraph.ForeignKeys) + len(relGraph.SemanticRelationships),
-		"analysis_level": p.AnalysisLevel,
-	})
-
-	result := buildAnalyzeSchemaResult(analyzeSchemaResultInput{
-		startTime:               startTime,
-		params:                  p,
-		dbType:                  prof.DBType,
-		filteredTables:          filteredTables,
-		totalColumns:            collected.totalColumns,
-		tableCatalog:            tableCatalog,
-		tableSchemas:            tableSchemas,
-		relationshipGraph:       relGraph,
-		relationshipGraphVisual: relGraphVisual,
-		aiQuerySuggestions:      aiQuerySuggestions,
-		dataQualityMetrics:      dataQualityMetrics,
-		domain:                  domain,
-		confidence:              confidence,
-	})
-
+	// Profiling — server-side concern
 	if p.Profiling {
-		enhanced := enhanceSchemaAnalysis(ctx, tableSchemas, collected.sampleDataMap, defaultProfilingWorkers)
+		sampleDataMap := fetchAllSampleRowsForProfiling(ctx, conn, filteredTables, prof.DBType, p.SampleSize)
+		enhanced := enhanceSchemaAnalysis(ctx, serverResult.TableSchemas, sampleDataMap, defaultProfilingWorkers)
 		if enhanced != nil {
-			mergeWithExistingSchema(&result, enhanced)
+			mergeWithExistingSchema(&serverResult, enhanced)
 		}
 	}
 
-	if businessCtx != nil {
-		result.BusinessContext = *businessCtx
-		result.DatabaseOverview.BusinessModelInsights = append(result.DatabaseOverview.BusinessModelInsights, businessDesc)
-	}
-
-	resultContent, marshalErr := marshalAnalyzeSchemaResult(result)
+	resultContent, marshalErr := marshalAnalyzeSchemaResult(serverResult)
 	if marshalErr != nil {
 		return nil, nil, marshalErr
 	}
 	return resultContent, nil, nil
+}
+
+// resolveSchemaForAnalyze determines the schema name for the analyze package.
+// For PostgreSQL it resolves the default schema (e.g. "public") if none was specified.
+func resolveSchemaForAnalyze(ctx context.Context, conn *sql.DB, schema, dbType string) string {
+	if schema != "" {
+		return schema
+	}
+	if dbType != "postgres" && dbType != "postgresql" {
+		return ""
+	}
+	dbConn, err := conn.Conn(ctx)
+	if err != nil {
+		log.JSONLog("warn", "Failed to get connection for schema resolution", map[string]interface{}{"error": err.Error()})
+		return ""
+	}
+	resolved, err := GetDefaultSchema(ctx, dbConn)
+	_ = dbConn.Close()
+	if err != nil {
+		log.JSONLog("warn", "Failed to resolve default schema, using empty", map[string]interface{}{"error": err.Error()})
+		return ""
+	}
+	return resolved
+}
+
+// fetchAllSampleRowsForProfiling fetches sample rows for profiling (kept in server.go
+// because profiling is a server-side concern).
+func fetchAllSampleRowsForProfiling(ctx context.Context, conn *sql.DB, tableNames []string, dbType string, sampleSize int) map[string][]map[string]interface{} {
+	sampleDataMap := make(map[string][]map[string]interface{})
+	for _, table := range tableNames {
+		sampleDataMap[table] = fetchAnalyzeSchemaSampleRows(ctx, conn, table, dbType, normalizeAnalyzeSchemaSampleSize(sampleSize))
+	}
+	return sampleDataMap
+}
+
+// buildAnalyzeSchemaResultFromAnalyze converts the analyze.Run() result into the
+// server's AnalyzeSchemaResult, adding server-specific fields.
+func (s *MCPServer) buildAnalyzeSchemaResultFromAnalyze(analyzeResult *analyze.AnalyzeSchemaResult, _ string, filteredTables []string) AnalyzeSchemaResult {
+	result := AnalyzeSchemaResult{
+		AnalysisMetadata:        analyzeResult.AnalysisMetadata,
+		DatabaseOverview:        analyzeResult.DatabaseOverview,
+		TableCatalog:            analyzeResult.TableCatalog,
+		TableSchemas:            analyzeResult.TableSchemas,
+		RelationshipGraph:       analyzeResult.RelationshipGraph,
+		RelationshipGraphVisual: s.buildRelationshipGraph(analyzeResult.RelationshipGraph),
+		BusinessContext:         analyzeResult.BusinessContext,
+		DataQualityMetrics:      analyzeResult.DataQualityMetrics,
+		PerformanceOptimization: analyzeResult.PerformanceOptimization,
+		ClassificationSignals:   analyzeResult.ClassificationSignals,
+		QuickInsights:           []string{fmt.Sprintf("Schema analysis completed for %d tables.", len(filteredTables))},
+	}
+	return result
+}
+
+func (s *MCPServer) buildAnalyzeSchemaQuerySuggestions(
+	ctx context.Context,
+	p AnalyzeSchemaParams,
+	filteredTables []string,
+	dbName string,
+) AIQuerySuggestions {
+	var suggestions AIQuerySuggestions
+	if p.AnalysisLevel != AnalysisLevelComprehensive || !p.IncludeQueries {
+		return suggestions
+	}
+	for _, tableName := range filteredTables {
+		question := fmt.Sprintf("Show all rows in %s", tableName)
+		suggestion, err := s.generateQuerySuggestionViaSmartBuilder(ctx, nil, p.ProfileName, question, dbName, []string{tableName})
+		if err != nil || suggestion == nil {
+			continue
+		}
+		suggestions.DataExploration = append(suggestions.DataExploration, QuerySuggestion{
+			Category:   "exploration",
+			Question:   question,
+			SQL:        suggestion.SQL,
+			Complexity: "easy",
+		})
+	}
+	return suggestions
 }
 
 func validateAnalyzeSchemaParams(p AnalyzeSchemaParams) (*mcp.CallToolResult, error) {
@@ -4031,225 +4037,9 @@ func filterAnalyzeSchemaTables(tables, includeTables, excludeTables []string) []
 	return filteredTables
 }
 
-type analyzeSchemaCollection struct {
-	tableSchemas           map[string]TableInfo
-	relationshipCandidates map[string]TableInfo
-	sampleDataMap          map[string][]map[string]interface{}
-	totalColumns           int
-}
-
-func (s *MCPServer) collectAnalyzeSchemaData(
-	ctx context.Context,
-	conn *sql.DB,
-	filteredTables []string,
-	dbType string,
-	sampleSize int,
-) analyzeSchemaCollection {
-	normalizedSampleSize := normalizeAnalyzeSchemaSampleSize(sampleSize)
-	collected := analyzeSchemaCollection{
-		tableSchemas:           make(map[string]TableInfo, len(filteredTables)),
-		relationshipCandidates: make(map[string]TableInfo, len(filteredTables)),
-		sampleDataMap:          make(map[string][]map[string]interface{}, len(filteredTables)),
-	}
-
-	for _, tableName := range filteredTables {
-		columns, keyCols := s.fetchAnalyzeSchemaColumns(ctx, conn, tableName, dbType)
-		collected.totalColumns += len(columns)
-		collected.relationshipCandidates[tableName] = TableInfo{
-			ColumnCount: len(columns),
-			KeyColumns:  keyCols,
-			Columns:     columns,
-		}
-		collected.sampleDataMap[tableName] = s.fetchAnalyzeSchemaSampleRows(ctx, conn, tableName, dbType, normalizedSampleSize)
-		collected.tableSchemas[tableName] = TableInfo{
-			ColumnCount:  len(columns),
-			KeyColumns:   keyCols,
-			Columns:      columns,
-			DataPatterns: map[string]DataPattern{},
-		}
-	}
-	return collected
-}
-
-func normalizeAnalyzeSchemaSampleSize(sampleSize int) int {
-	if sampleSize <= 0 {
-		return 10
-	}
-	return sampleSize
-}
-
-func (s *MCPServer) fetchAnalyzeSchemaColumns(
-	ctx context.Context,
-	conn *sql.DB,
-	tableName,
-	dbType string,
-) ([]SchemaColumnInfo, KeyColumns) {
-	query, ok := analyzeSchemaColumnQuery(dbType, tableName)
-	if !ok {
-		return []SchemaColumnInfo{}, KeyColumns{}
-	}
-	rows, err := conn.QueryContext(ctx, query)
-	if err != nil {
-		log.JSONLog("warn", "Failed to query column metadata", map[string]interface{}{
-			"table":   tableName,
-			"error":   err.Error(),
-			"db_type": dbType,
-		})
-		return []SchemaColumnInfo{}, KeyColumns{}
-	}
-	defer rows.Close() //nolint:errcheck // Standard pattern: error in deferred close is not critical
-
-	columns, keyCols := scanAnalyzeSchemaColumns(rows, dbType, tableName)
-	if err := rows.Err(); err != nil {
-		log.JSONLog("warn", "Column metadata iteration failed", map[string]interface{}{
-			"table":   tableName,
-			"error":   err.Error(),
-			"db_type": dbType,
-		})
-	}
-	return columns, keyCols
-}
-
-func analyzeSchemaColumnQuery(dbType, tableName string) (string, bool) {
-	switch dbType {
-	case "mysql", "mariadb":
-		return fmt.Sprintf("SHOW COLUMNS FROM `%s`", tableName), true
-	case "postgres":
-		return fmt.Sprintf(`SELECT
-			c.column_name,
-			c.data_type,
-			c.is_nullable,
-			c.column_default,
-			COALESCE(tc.constraint_type,'') as constraint_type
-		FROM information_schema.columns c
-		LEFT JOIN information_schema.key_column_usage kcu
-		  ON kcu.table_name = c.table_name AND kcu.table_schema = c.table_schema AND kcu.column_name = c.column_name
-		LEFT JOIN information_schema.table_constraints tc
-		  ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
-		WHERE c.table_name = '%s' AND c.table_schema='public'
-		ORDER BY c.ordinal_position`, tableName), true
-	case "sqlite":
-		return fmt.Sprintf("PRAGMA table_info('%s')", tableName), true
-	default:
-		return "", false
-	}
-}
-
-func scanAnalyzeSchemaColumns(rows *sql.Rows, dbType, tableName string) ([]SchemaColumnInfo, KeyColumns) {
-	columns := make([]SchemaColumnInfo, 0)
-	keyCols := KeyColumns{}
-	for rows.Next() {
-		columnInfo, err := scanAnalyzeSchemaColumn(rows, dbType)
-		if err != nil {
-			logAnalyzeSchemaColumnScanError(dbType, tableName, err)
-			continue
-		}
-		columns = append(columns, columnInfo)
-		updateAnalyzeSchemaKeyColumns(&keyCols, columnInfo)
-	}
-	return columns, keyCols
-}
-
-func scanAnalyzeSchemaColumn(rows *sql.Rows, dbType string) (SchemaColumnInfo, error) {
-	switch dbType {
-	case "mysql", "mariadb":
-		return scanAnalyzeSchemaMySQLColumn(rows)
-	case "postgres":
-		return scanAnalyzeSchemaPostgresColumn(rows)
-	case "sqlite":
-		return scanAnalyzeSchemaSQLiteColumn(rows)
-	default:
-		return SchemaColumnInfo{}, errors.New(errorUnsupportedDBType)
-	}
-}
-
-func scanAnalyzeSchemaMySQLColumn(rows *sql.Rows) (SchemaColumnInfo, error) {
-	var field, typ, null, key, def, extra string
-	if err := rows.Scan(&field, &typ, &null, &key, &def, &extra); err != nil {
-		return SchemaColumnInfo{}, err
-	}
-	return SchemaColumnInfo{
-		ColumnName:   field,
-		DataType:     typ,
-		IsNullable:   null == "YES",
-		IsPrimaryKey: key == "PRI",
-		Unique:       key == "UNI",
-		Indexed:      key == "MUL",
-		DefaultValue: def,
-		Description:  extra,
-	}, nil
-}
-
-func scanAnalyzeSchemaPostgresColumn(rows *sql.Rows) (SchemaColumnInfo, error) {
-	var columnName, dataType, isNullable string
-	var defaultVal sql.NullString
-	var constraintType string
-	if err := rows.Scan(&columnName, &dataType, &isNullable, &defaultVal, &constraintType); err != nil {
-		return SchemaColumnInfo{}, err
-	}
-	colInfo := SchemaColumnInfo{
-		ColumnName: columnName,
-		DataType:   dataType,
-		IsNullable: isNullable == "YES",
-	}
-	if defaultVal.Valid {
-		colInfo.DefaultValue = defaultVal.String
-	}
-	switch constraintType {
-	case "PRIMARY KEY":
-		colInfo.IsPrimaryKey = true
-	case "UNIQUE":
-		colInfo.Unique = true
-	case "FOREIGN KEY":
-		colInfo.IsForeignKey = true
-	}
-	return colInfo, nil
-}
-
-func scanAnalyzeSchemaSQLiteColumn(rows *sql.Rows) (SchemaColumnInfo, error) {
-	var cid int
-	var name, typ string
-	var notnull, pk int
-	var dflt interface{}
-	if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
-		return SchemaColumnInfo{}, err
-	}
-	return SchemaColumnInfo{
-		ColumnName:   name,
-		DataType:     typ,
-		IsNullable:   notnull == 0,
-		IsPrimaryKey: pk == 1,
-		DefaultValue: dflt,
-	}, nil
-}
-
-func logAnalyzeSchemaColumnScanError(dbType, tableName string, err error) {
-	message := "Scan column metadata failed"
-	switch dbType {
-	case "postgres":
-		message = "Scan PostgreSQL column metadata failed"
-	case "sqlite":
-		message = "Scan SQLite column metadata failed"
-	}
-	log.JSONLog("warn", message, map[string]interface{}{"table": tableName, "error": err.Error(), "db_type": dbType})
-}
-
-func updateAnalyzeSchemaKeyColumns(keyCols *KeyColumns, column SchemaColumnInfo) {
-	if column.IsPrimaryKey {
-		keyCols.PrimaryKey = column.ColumnName
-	}
-	if column.Indexed {
-		keyCols.IndexedColumns = append(keyCols.IndexedColumns, column.ColumnName)
-	}
-	if column.Unique {
-		keyCols.UniqueColumns = append(keyCols.UniqueColumns, column.ColumnName)
-	}
-	if column.IsForeignKey {
-		keyCols.ForeignKeys = append(keyCols.ForeignKeys, column.ColumnName)
-	}
-}
-
-func (s *MCPServer) fetchAnalyzeSchemaSampleRows(
+// fetchAnalyzeSchemaSampleRows fetches sample rows from a table for profiling.
+// Kept in server.go because profiling is a server-side concern.
+func fetchAnalyzeSchemaSampleRows(
 	ctx context.Context,
 	conn *sql.DB,
 	tableName,
@@ -4332,224 +4122,11 @@ func normalizeAnalyzeSchemaSampleRow(columns []string, row []interface{}) map[st
 	return rowMap
 }
 
-func (s *MCPServer) enrichAnalyzeSchemaForComprehensive(
-	p AnalyzeSchemaParams,
-	tableSchemas map[string]TableInfo,
-	sampleDataMap map[string][]map[string]interface{},
-	relationshipCandidates map[string]TableInfo,
-) (map[string]TableInfo, *BusinessContext, string, float64, string) {
-	if p.AnalysisLevel != AnalysisLevelComprehensive {
-		return tableSchemas, nil, "", 0, ""
+func normalizeAnalyzeSchemaSampleSize(sampleSize int) int {
+	if sampleSize <= 0 {
+		return 10
 	}
-	businessCtx := s.inferBusinessContext(relationshipCandidates)
-	domain, confidence, businessDesc := s.summarizeAnalyzeSchemaBusinessContext(businessCtx)
-	tableSchemas = s.applyAnalyzeSchemaPatterns(tableSchemas, sampleDataMap)
-	s.correlateAnalyzeSchemaValueMatches(tableSchemas, sampleDataMap)
-	return tableSchemas, businessCtx, domain, confidence, businessDesc
-}
-
-func (s *MCPServer) summarizeAnalyzeSchemaBusinessContext(
-	businessCtx *BusinessContext,
-) (string, float64, string) {
-	if businessCtx == nil {
-		return "", 0, ""
-	}
-	domain := ""
-	confidence := 0.0
-	for candidateDomain, score := range businessCtx.DomainIndicators {
-		if score > confidence || domain == "" {
-			domain = candidateDomain
-			confidence = score
-		}
-	}
-	if domain == "" {
-		return "", 0, ""
-	}
-	description := s.generateBusinessDescription(domain, businessCtx.EntityRelationships.CentralEntities, confidence)
-	return domain, confidence, description
-}
-
-func (s *MCPServer) applyAnalyzeSchemaPatterns(
-	tableSchemas map[string]TableInfo,
-	sampleDataMap map[string][]map[string]interface{},
-) map[string]TableInfo {
-	for tableName, schema := range tableSchemas {
-		updated := TableInfo{
-			ColumnCount:  schema.ColumnCount,
-			KeyColumns:   schema.KeyColumns,
-			Columns:      schema.Columns,
-			DataPatterns: map[string]DataPattern{},
-		}
-		patterns := s.analyzeDataPatterns(tableName, sampleDataMap[tableName], schema.Columns)
-		for idx := range schema.Columns {
-			if idx >= len(patterns) {
-				continue
-			}
-			columnName := schema.Columns[idx].ColumnName
-			pattern := patterns[idx]
-			updated.DataPatterns[columnName] = pattern
-			updated.Columns[idx].PatternType = pattern.PatternType
-			updated.Columns[idx].ValidationRegex = pattern.ValidationRegex
-			updated.Columns[idx].Uniqueness = pattern.Uniqueness
-			updated.Columns[idx].NullPercentage = pattern.NullPercentage
-			updated.Columns[idx].Distribution = pattern.Distribution
-		}
-		tableSchemas[tableName] = updated
-	}
-	return tableSchemas
-}
-
-func (s *MCPServer) correlateAnalyzeSchemaValueMatches(
-	tableSchemas map[string]TableInfo,
-	sampleDataMap map[string][]map[string]interface{},
-) {
-	for sourceTable, sourceSchema := range tableSchemas {
-		for targetTable := range tableSchemas {
-			if sourceTable == targetTable {
-				continue
-			}
-			_ = s.correlateDataValues(sourceTable, sourceSchema, targetTable, sampleDataMap)
-		}
-	}
-}
-
-func (s *MCPServer) buildAnalyzeSchemaQuerySuggestions(
-	ctx context.Context,
-	p AnalyzeSchemaParams,
-	filteredTables []string,
-	dbName string,
-) AIQuerySuggestions {
-	var suggestions AIQuerySuggestions
-	if p.AnalysisLevel != AnalysisLevelComprehensive || !p.IncludeQueries {
-		return suggestions
-	}
-	for _, tableName := range filteredTables {
-		question := fmt.Sprintf("Show all rows in %s", tableName)
-		suggestion, err := s.generateQuerySuggestionViaSmartBuilder(ctx, nil, p.ProfileName, question, dbName, []string{tableName})
-		if err != nil || suggestion == nil {
-			continue
-		}
-		suggestions.DataExploration = append(suggestions.DataExploration, QuerySuggestion{
-			Category:   "exploration",
-			Question:   question,
-			SQL:        suggestion.SQL,
-			Complexity: "easy",
-		})
-	}
-	return suggestions
-}
-
-func (s *MCPServer) buildAnalyzeSchemaQualityMetrics(
-	p AnalyzeSchemaParams,
-	tableSchemas map[string]TableInfo,
-	sampleDataMap map[string][]map[string]interface{},
-) map[string]QualityMetrics {
-	metrics := make(map[string]QualityMetrics)
-	if p.AnalysisLevel != AnalysisLevelDetailed && p.AnalysisLevel != AnalysisLevelComprehensive {
-		return metrics
-	}
-	for tableName, schema := range tableSchemas {
-		columnMetrics := s.generateDataQualityMetrics(sampleDataMap[tableName], schema.Columns)
-		addAnalyzeSchemaTableAggregateMetric(columnMetrics)
-		flattenAnalyzeSchemaQualityMetrics(metrics, tableName, columnMetrics)
-	}
-	addAnalyzeSchemaDatabaseAggregateMetric(metrics)
-	return metrics
-}
-
-func addAnalyzeSchemaTableAggregateMetric(columnMetrics map[string]QualityMetrics) {
-	if len(columnMetrics) == 0 {
-		return
-	}
-	var sum, count float64
-	for _, qualityMetric := range columnMetrics {
-		sum += qualityMetric.OverallScore
-		count++
-	}
-	if count == 0 {
-		return
-	}
-	columnMetrics["__table__"] = QualityMetrics{
-		OverallScore: sum / count,
-		Issues:       []string{},
-	}
-}
-
-func flattenAnalyzeSchemaQualityMetrics(
-	metrics map[string]QualityMetrics,
-	tableName string,
-	columnMetrics map[string]QualityMetrics,
-) {
-	for columnName, qualityMetric := range columnMetrics {
-		key := tableName
-		if columnName != "__table__" {
-			key += "." + columnName
-		}
-		metrics[key] = qualityMetric
-	}
-}
-
-func addAnalyzeSchemaDatabaseAggregateMetric(metrics map[string]QualityMetrics) {
-	var dbSum, dbCount float64
-	for key, qualityMetric := range metrics {
-		if !strings.HasSuffix(key, "__table__") {
-			dbSum += qualityMetric.OverallScore
-			dbCount++
-		}
-	}
-	if dbCount == 0 {
-		return
-	}
-	metrics["__database__"] = QualityMetrics{
-		OverallScore: dbSum / dbCount,
-		Issues:       []string{},
-	}
-}
-
-type analyzeSchemaResultInput struct {
-	startTime               time.Time
-	params                  AnalyzeSchemaParams
-	dbType                  string
-	filteredTables          []string
-	totalColumns            int
-	tableCatalog            TableCatalog
-	tableSchemas            map[string]TableInfo
-	relationshipGraph       RelationshipGraph
-	relationshipGraphVisual map[string]interface{}
-	aiQuerySuggestions      AIQuerySuggestions
-	dataQualityMetrics      map[string]QualityMetrics
-	domain                  string
-	confidence              float64
-}
-
-func buildAnalyzeSchemaResult(input analyzeSchemaResultInput) AnalyzeSchemaResult {
-	return AnalyzeSchemaResult{
-		AnalysisMetadata: AnalysisMetadata{
-			AnalysisLevel:      input.params.AnalysisLevel,
-			DatabaseType:       input.dbType,
-			AnalysisTimestamp:  input.startTime,
-			ToolsUsed:          []string{"list-tables", "describe-table", "sample-data", toolDiscoverJoins},
-			AnalysisDurationMs: int(time.Since(input.startTime).Milliseconds()),
-		},
-		DatabaseOverview: DatabaseOverview{
-			DatabaseCount:           1,
-			TotalTables:             len(input.filteredTables),
-			TotalColumns:            input.totalColumns,
-			TotalRelationships:      len(input.relationshipGraph.ForeignKeys) + len(input.relationshipGraph.SemanticRelationships),
-			EstimatedBusinessDomain: input.domain,
-			ConfidenceScore:         input.confidence,
-			BusinessModelInsights:   []string{},
-			Summary:                 fmt.Sprintf("Analyzed %d tables and %d columns.", len(input.filteredTables), input.totalColumns),
-		},
-		TableCatalog:            input.tableCatalog,
-		TableSchemas:            input.tableSchemas,
-		RelationshipGraph:       input.relationshipGraph,
-		RelationshipGraphVisual: input.relationshipGraphVisual,
-		BusinessContext:         BusinessContext{},
-		AIQuerySuggestions:      input.aiQuerySuggestions,
-		DataQualityMetrics:      input.dataQualityMetrics,
-		QuickInsights:           []string{fmt.Sprintf("Schema analysis completed for %d tables.", len(input.filteredTables))},
-	}
+	return sampleSize
 }
 
 func marshalAnalyzeSchemaResult(result AnalyzeSchemaResult) (*mcp.CallToolResult, error) {
@@ -4567,731 +4144,8 @@ func marshalAnalyzeSchemaResult(result AnalyzeSchemaResult) (*mcp.CallToolResult
 	}, nil
 }
 
-// Business Context Inference Helpers
-
-func (s *MCPServer) inferBusinessContext(tableSchemas map[string]TableInfo) *BusinessContext {
-	tableNames, tables := flattenTableSchemas(tableSchemas)
-	domain, confidence := s.detectDomain(tableNames)
-	naming := s.analyzeNamingConventions(tables)
-	entities := s.identifyEntityTypes(tableNames)
-	configuredDomains := loadConfiguredDomains(s.ConfigPath)
-
-	pattern := namingValueString(naming, "main_case", "unknown")
-	consistencyScore := namingValueFloat(naming, "consistency", 0.0)
-	fkPattern := namingValueString(naming, "fk_pattern", "unknown")
-	auditCols := namingValueStringSlice(naming, "timestampCols")
-
-	return &BusinessContext{
-		DomainIndicators: mergeDomainIndicators(domain, confidence, configuredDomains),
-		NamingConventions: NamingConventions{
-			Pattern:           pattern,
-			ConsistencyScore:  consistencyScore,
-			ForeignKeyPattern: fkPattern,
-			AuditColumns:      auditCols,
-		},
-		EntityRelationships: EntityRelationships{
-			CentralEntities:      entities,
-			RelationshipDensity:  0.0, // Placeholder
-			MaxRelationshipDepth: 0,   // Placeholder
-		},
-		DataPatterns: map[string]DataPattern{}, // Placeholder
-	}
-}
-
-func flattenTableSchemas(tableSchemas map[string]TableInfo) ([]string, []TableInfo) {
-	tableNames := make([]string, 0, len(tableSchemas))
-	tables := make([]TableInfo, 0, len(tableSchemas))
-	for name, table := range tableSchemas {
-		tableNames = append(tableNames, name)
-		tables = append(tables, table)
-	}
-	return tableNames, tables
-}
-
-func namingValueString(values map[string]interface{}, key, fallback string) string {
-	if value, ok := values[key]; ok {
-		if asString, ok := value.(string); ok {
-			return asString
-		}
-	}
-	return fallback
-}
-
-func namingValueFloat(values map[string]interface{}, key string, fallback float64) float64 {
-	value, ok := values[key]
-	if !ok {
-		return fallback
-	}
-	switch typed := value.(type) {
-	case float64:
-		return typed
-	case float32:
-		return float64(typed)
-	case int:
-		return float64(typed)
-	case int64:
-		return float64(typed)
-	default:
-		return fallback
-	}
-}
-
-func namingValueStringSlice(values map[string]interface{}, key string) []string {
-	value, ok := values[key]
-	if !ok {
-		return []string{}
-	}
-	switch typed := value.(type) {
-	case []string:
-		return typed
-	case []interface{}:
-		out := make([]string, 0, len(typed))
-		for _, item := range typed {
-			out = append(out, fmt.Sprintf("%v", item))
-		}
-		return out
-	default:
-		return []string{}
-	}
-}
-
-func (s *MCPServer) detectDomain(tableNames []string) (string, float64) {
-	domainPatterns := map[string][]string{
-		"e-commerce":         {"product", "order", "cart", "customer", "payment", "inventory"},
-		"healthcare":         {"patient", "doctor", "appointment", "medical", "prescription", "diagnosis"},
-		"finance":            {"account", "transaction", "ledger", "invoice", "payment", "balance"},
-		"crm":                {"lead", "contact", "opportunity", "customer", "activity"},
-		"project-management": {"project", "task", "milestone", "issue", "sprint"},
-		"education":          {"student", "course", "grade", "teacher", "enrollment"},
-		"logistics":          {"shipment", "warehouse", "delivery", "route", "tracking"},
-	}
-	domainScores := make(map[string]float64)
-	for domain, patterns := range domainPatterns {
-		score := 0.0
-		for _, name := range tableNames {
-			for _, pat := range patterns {
-				if strings.Contains(strings.ToLower(name), pat) {
-					score += 1.0
-				}
-			}
-		}
-		domainScores[domain] = score / float64(len(patterns))
-	}
-	var bestDomain string
-	var bestScore float64
-	for domain, score := range domainScores {
-		if score > bestScore {
-			bestDomain = domain
-			bestScore = score
-		}
-	}
-	if bestScore == 0 {
-		return "unknown", 0.0
-	}
-	return bestDomain, bestScore
-}
-
-func loadConfiguredDomains(configPath string) []string {
-	cfg, err := config.LoadConfig(configPath)
-	if err != nil {
-		return nil
-	}
-	return cfg.NLP.BusinessDomains
-}
-
-func mergeDomainIndicators(domain string, confidence float64, configured []string) map[string]float64 {
-	indicators := map[string]float64{}
-	if domain != "" {
-		indicators[domain] = confidence
-	}
-	for _, cfgDomain := range configured {
-		key := strings.ToLower(strings.TrimSpace(cfgDomain))
-		if key == "" {
-			continue
-		}
-		if _, ok := indicators[key]; !ok {
-			indicators[key] = 1.0
-		}
-	}
-	if len(indicators) == 0 {
-		indicators["unknown"] = 0.0
-	}
-	return indicators
-}
-
-func (s *MCPServer) analyzeNamingConventions(tables []TableInfo) map[string]interface{} {
-	accumulator := newNamingAccumulator()
-	for _, table := range tables {
-		for _, column := range table.Columns {
-			accumulator.consume(column.ColumnName)
-		}
-	}
-	mainCase, consistency := dominantCase(accumulator.cases)
-	fkPattern := classifyForeignKeyPattern(accumulator.fkSuffix, accumulator.fkPrefix, accumulator.fkTotal)
-	return map[string]interface{}{
-		"cases":         accumulator.cases,
-		"prefixes":      accumulator.prefixes,
-		"suffixes":      accumulator.suffixes,
-		"timestampCols": accumulator.timestampCols,
-		"main_case":     mainCase,
-		"consistency":   consistency,
-		"fk_pattern":    fkPattern,
-	}
-}
-
-type namingAccumulator struct {
-	cases         map[string]int
-	prefixes      map[string]int
-	suffixes      map[string]int
-	timestampCols []string
-	fkSuffix      int
-	fkPrefix      int
-	fkTotal       int
-}
-
-func newNamingAccumulator() *namingAccumulator {
-	return &namingAccumulator{
-		cases:    map[string]int{"snake_case": 0, "camelCase": 0, "PascalCase": 0},
-		prefixes: map[string]int{},
-		suffixes: map[string]int{},
-	}
-}
-
-func (a *namingAccumulator) consume(name string) {
-	recordCaseType(a.cases, name)
-	recordPrefixAndSuffix(a.prefixes, a.suffixes, name)
-	if isTimestampColumn(name) {
-		a.timestampCols = append(a.timestampCols, name)
-	}
-	a.fkSuffix, a.fkPrefix, a.fkTotal = updateForeignKeyPatternCounts(name, a.fkSuffix, a.fkPrefix, a.fkTotal)
-}
-
-func recordCaseType(caseCounts map[string]int, name string) {
-	if strings.Contains(name, "_") {
-		caseCounts["snake_case"]++
-		return
-	}
-	if len(name) > 1 && unicode.IsUpper(rune(name[0])) {
-		caseCounts["PascalCase"]++
-		return
-	}
-	if len(name) > 1 && unicode.IsLower(rune(name[0])) && strings.IndexFunc(name, unicode.IsUpper) > 0 {
-		caseCounts["camelCase"]++
-	}
-}
-
-func recordPrefixAndSuffix(prefixes, suffixes map[string]int, name string) {
-	parts := strings.Split(name, "_")
-	if len(parts) <= 1 {
-		return
-	}
-	prefixes[parts[0]]++
-	suffixes[parts[len(parts)-1]]++
-}
-
-func isTimestampColumn(name string) bool {
-	return strings.HasSuffix(name, "created_at") ||
-		strings.HasSuffix(name, "updated_at") ||
-		strings.HasSuffix(name, "timestamp") ||
-		strings.HasSuffix(name, "created") ||
-		strings.HasSuffix(name, "modified")
-}
-
-func updateForeignKeyPatternCounts(name string, fkSuffix, fkPrefix, fkTotal int) (int, int, int) {
-	if strings.HasSuffix(name, "_id") && len(name) > 3 {
-		return fkSuffix + 1, fkPrefix, fkTotal + 1
-	}
-	if strings.HasPrefix(name, "id_") && len(name) > 3 {
-		return fkSuffix, fkPrefix + 1, fkTotal + 1
-	}
-	return fkSuffix, fkPrefix, fkTotal
-}
-
-func dominantCase(caseCounts map[string]int) (string, float64) {
-	totalCaseCount := caseCounts["snake_case"] + caseCounts["camelCase"] + caseCounts["PascalCase"]
-	if totalCaseCount == 0 {
-		return "unknown", 0.0
-	}
-	mainCase := "unknown"
-	maxCount := 0
-	for key, count := range caseCounts {
-		if count > maxCount {
-			mainCase = key
-			maxCount = count
-		}
-	}
-	return mainCase, float64(maxCount) / float64(totalCaseCount)
-}
-
-func classifyForeignKeyPattern(fkSuffix, fkPrefix, fkTotal int) string {
-	if fkTotal == 0 {
-		return "none"
-	}
-	switch {
-	case fkSuffix > 0 && fkPrefix > 0:
-		return "mixed"
-	case fkSuffix > 0:
-		return "suffix"
-	case fkPrefix > 0:
-		return "prefix"
-	default:
-		return "none"
-	}
-}
-
-func (s *MCPServer) identifyEntityTypes(tableNames []string) []string {
-	types := []string{}
-	for _, name := range tableNames {
-		lower := strings.ToLower(name)
-		if strings.Contains(lower, "log") || strings.Contains(lower, "audit") {
-			types = append(types, "log")
-		} else if strings.Contains(lower, "lookup") || strings.HasSuffix(lower, "_type") || strings.HasSuffix(lower, "_status") {
-			types = append(types, "lookup")
-		} else if strings.Contains(lower, "transaction") || strings.Contains(lower, "order") || strings.Contains(lower, "invoice") {
-			types = append(types, "transactional")
-		} else if strings.Contains(lower, "user") || strings.Contains(lower, "product") || strings.Contains(lower, "customer") {
-			types = append(types, "master_data")
-		} else {
-			types = append(types, "other")
-		}
-	}
-	return types
-}
-
-func (s *MCPServer) generateBusinessDescription(domain string, entities []string, confidence float64) string {
-	if domain == "unknown" || confidence < 0.2 {
-		return "The database schema does not match any well-known business domain. It may be custom or generic."
-	}
-	entitySummary := map[string]int{}
-	for _, e := range entities {
-		entitySummary[e]++
-	}
-	entityDesc := []string{}
-	for k, v := range entitySummary {
-		entityDesc = append(entityDesc, fmt.Sprintf("%d %s tables", v, k))
-	}
-	return fmt.Sprintf("This database appears to represent a %s system, with %s. Domain detection confidence: %.2f.", domain, strings.Join(entityDesc, ", "), confidence)
-}
-
-// --- Data Pattern Recognition Helpers ---
-
-// analyzeDataPatterns analyzes sample data for each column to detect patterns.
-func (s *MCPServer) analyzeDataPatterns(tableName string, sampleData []map[string]interface{}, columns []SchemaColumnInfo) []DataPattern {
-	patterns := make([]DataPattern, len(columns))
-	for i, col := range columns {
-		var values []interface{}
-		for _, row := range sampleData {
-			if v, ok := row[col.ColumnName]; ok {
-				values = append(values, v)
-			}
-		}
-		pattern := s.detectColumnPattern(tableName, col.ColumnName, values)
-		if pattern != nil {
-			patterns[i] = *pattern
-		} else {
-			patterns[i] = DataPattern{}
-		}
-	}
-	return patterns
-}
-
-// detectColumnPattern analyzes individual column data to detect value distribution, patterns, ranges, and examples.
-func (s *MCPServer) detectColumnPattern(tableName string, columnName string, values []interface{}) *DataPattern {
-	dist := s.analyzeValueDistribution(values)
-	acc := newColumnPatternAccumulator(s.detectDataType(values))
-	for _, value := range values {
-		acc.consume(value)
-	}
-	pattern := acc.buildPattern(values, dist)
-	// Enhanced logging for tableName and columnName
-	log.JSONLog("debug", "Pattern analysis", map[string]interface{}{"table": tableName, "column": columnName, "patternType": pattern.PatternType})
-	return pattern
-}
-
-type columnPatternAccumulator struct {
-	patternType     string
-	validationRegex string
-	nullCount       int
-	uniqueSet       map[string]struct{}
-	min             float64
-	max             float64
-	minSet          bool
-	maxSet          bool
-	decimalPlaces   int
-}
-
-func newColumnPatternAccumulator(semanticType string) *columnPatternAccumulator {
-	return &columnPatternAccumulator{
-		patternType: semanticType,
-		uniqueSet:   map[string]struct{}{},
-	}
-}
-
-func (a *columnPatternAccumulator) consume(value interface{}) {
-	if value == nil {
-		a.nullCount++
-		return
-	}
-	strVal := fmt.Sprintf("%v", value)
-	a.uniqueSet[strVal] = struct{}{}
-	a.consumeNumeric(value, strVal)
-	a.consumeSemanticPattern(value)
-}
-
-func (a *columnPatternAccumulator) consumeNumeric(value interface{}, strValue string) {
-	switch typed := value.(type) {
-	case int, int32, int64, float32, float64:
-		floatValue, err := toFloat64(typed)
-		if err != nil {
-			return
-		}
-		if !a.minSet || floatValue < a.min {
-			a.min = floatValue
-			a.minSet = true
-		}
-		if !a.maxSet || floatValue > a.max {
-			a.max = floatValue
-			a.maxSet = true
-		}
-		decimalPlaces := countDecimalPlaces(strValue)
-		if decimalPlaces > a.decimalPlaces {
-			a.decimalPlaces = decimalPlaces
-		}
-	}
-}
-
-func (a *columnPatternAccumulator) consumeSemanticPattern(value interface{}) {
-	textValue, ok := value.(string)
-	if !ok {
-		return
-	}
-	for patternType, regex := range semanticTypeRegexes() {
-		if !matchRegex(regex, textValue) {
-			continue
-		}
-		a.patternType = patternType
-		a.validationRegex = regex
-		return
-	}
-}
-
-func semanticTypeRegexes() map[string]string {
-	return map[string]string{
-		"email":    `^[\w\.\-]+@[\w\.\-]+\.\w+$`,
-		"phone":    `^\+?\d[\d\-\s]{7,}$`,
-		"url":      `^https?://[^\s]+$`,
-		"id":       `^[a-fA-F0-9\-]{8,}$`,
-		"uuid":     `^[a-fA-F0-9\-]{36}$`,
-		"date":     `^\d{4}-\d{2}-\d{2}`,
-		"currency": `^\$?\d+(\.\d{2})?$`,
-	}
-}
-
-func (a *columnPatternAccumulator) buildPattern(values []interface{}, dist map[string]interface{}) *DataPattern {
-	rangeValue := a.valueRange()
-	enumValues := enumValuesFromSet(a.uniqueSet)
-	nullPercentage := ratio(float64(a.nullCount), float64(len(values)))
-	uniqueness := ratio(float64(len(a.uniqueSet)), float64(len(values)))
-	distribution := distributionType(dist)
-	return &DataPattern{
-		PatternType:     a.patternType,
-		ValidationRegex: a.validationRegex,
-		Uniqueness:      uniqueness,
-		NullPercentage:  nullPercentage,
-		DecimalPlaces:   a.decimalPlaces,
-		Range:           rangeValue,
-		Distribution:    distribution,
-		Values:          enumValues,
-	}
-}
-
-func (a *columnPatternAccumulator) valueRange() *ValueRange {
-	if !a.minSet || !a.maxSet {
-		return nil
-	}
-	return &ValueRange{Min: a.min, Max: a.max}
-}
-
-func enumValuesFromSet(uniqueSet map[string]struct{}) []string {
-	if len(uniqueSet) == 0 || len(uniqueSet) > 10 {
-		return nil
-	}
-	values := make([]string, 0, len(uniqueSet))
-	for value := range uniqueSet {
-		values = append(values, value)
-	}
-	return values
-}
-
-func distributionType(dist map[string]interface{}) string {
-	if value, ok := dist["distribution"].(string); ok {
-		return value
-	}
-	return "unknown"
-}
-
-func ratio(numerator, denominator float64) float64 {
-	if denominator == 0 {
-		return 0
-	}
-	return numerator / denominator
-}
-
-// analyzeValueDistribution calculates statistics: unique values, null count, most common values.
-func (s *MCPServer) analyzeValueDistribution(values []interface{}) map[string]interface{} {
-	stats := map[string]interface{}{}
-	counts := map[string]int{}
-	nullCount := 0
-	for _, v := range values {
-		if v == nil {
-			nullCount++
-			continue
-		}
-		strVal := fmt.Sprintf("%v", v)
-		counts[strVal]++
-	}
-	stats["unique_count"] = len(counts)
-	stats["null_count"] = nullCount
-	// Most common values
-	type kv struct {
-		Key   string
-		Value int
-	}
-	var freq []kv
-	for k, v := range counts {
-		freq = append(freq, kv{k, v})
-	}
-	// Sort by frequency
-	sort.Slice(freq, func(i, j int) bool { return freq[i].Value > freq[j].Value })
-	var common []string
-	for i := 0; i < len(freq) && i < 3; i++ {
-		common = append(common, freq[i].Key)
-	}
-	stats["most_common"] = common
-	// Distribution type
-	if len(counts) == 1 {
-		stats["distribution"] = "constant"
-	} else if len(counts) < len(values)/2 {
-		stats["distribution"] = "categorical"
-	} else {
-		stats["distribution"] = "variable"
-	}
-	return stats
-}
-
-// detectDataType infers semantic data type beyond SQL type.
-func (s *MCPServer) detectDataType(values []interface{}) string {
-	regexes := map[string]string{
-		"email":    `^[\w\.\-]+@[\w\.\-]+\.\w+$`,
-		"phone":    `^\+?\d[\d\-\s]{7,}$`,
-		"url":      `^https?://[^\s]+$`,
-		"id":       `^[a-fA-F0-9\-]{8,}$`,
-		"uuid":     `^[a-fA-F0-9\-]{36}$`,
-		"date":     `^\d{4}-\d{2}-\d{2}`,
-		"currency": `^\$?\d+(\.\d{2})?$`,
-	}
-	typeCounts := map[string]int{}
-	for _, v := range values {
-		if v == nil {
-			continue
-		}
-		strVal := fmt.Sprintf("%v", v)
-		for typ, rx := range regexes {
-			if matchRegex(rx, strVal) {
-				typeCounts[typ]++
-			}
-		}
-	}
-	// Pick the most frequent type
-	maxType := ""
-	maxCount := 0
-	for typ, cnt := range typeCounts {
-		if cnt > maxCount {
-			maxType = typ
-			maxCount = cnt
-		}
-	}
-	if maxType != "" && float64(maxCount)/float64(len(values)) > 0.5 {
-		return maxType
-	}
-	return "unknown"
-}
-
-// generateDataQualityMetrics calculates completeness, consistency, validity.
-func (s *MCPServer) generateDataQualityMetrics(
-	sampleData []map[string]interface{},
-	columns []SchemaColumnInfo,
-) map[string]QualityMetrics {
-	metrics := make(map[string]QualityMetrics)
-	for _, col := range columns {
-		values := collectColumnSampleValues(sampleData, col.ColumnName)
-		metrics[col.ColumnName] = computeColumnQualityMetrics(col, values)
-	}
-	return metrics
-}
-
-func collectColumnSampleValues(sampleData []map[string]interface{}, columnName string) []interface{} {
-	values := make([]interface{}, 0, len(sampleData))
-	for _, row := range sampleData {
-		if value, ok := row[columnName]; ok {
-			values = append(values, value)
-		}
-	}
-	return values
-}
-
-func computeColumnQualityMetrics(col SchemaColumnInfo, values []interface{}) QualityMetrics {
-	total := len(values)
-	if total == 0 {
-		return QualityMetrics{
-			Issues:       []string{"No sample data available"},
-			OverallScore: 0,
-		}
-	}
-
-	acc := newQualityAccumulator(col)
-	for index, value := range values {
-		acc.consume(index, value)
-	}
-	return acc.build(total)
-}
-
-type qualityAccumulator struct {
-	columnName            string
-	patternType           string
-	validationRegex       string
-	isTemporal            bool
-	nonNull               int
-	valid                 int
-	uniqueSet             map[string]struct{}
-	temporalOrderBroken   bool
-	lastTime              time.Time
-	temporalConsistent    int
-	businessRuleCompliant int
-	issues                []string
-}
-
-func newQualityAccumulator(col SchemaColumnInfo) *qualityAccumulator {
-	return &qualityAccumulator{
-		columnName:      col.ColumnName,
-		patternType:     col.PatternType,
-		validationRegex: col.ValidationRegex,
-		isTemporal:      col.DataType == "date" || col.DataType == "datetime" || col.DataType == "timestamp",
-		uniqueSet:       map[string]struct{}{},
-	}
-}
-
-func (a *qualityAccumulator) consume(index int, value interface{}) {
-	if value == nil {
-		a.issues = append(a.issues, fmt.Sprintf("Null value in %s", a.columnName))
-		return
-	}
-
-	a.nonNull++
-	valueText := fmt.Sprintf("%v", value)
-	a.uniqueSet[valueText] = struct{}{}
-	a.trackValidity(valueText, value)
-	a.trackTemporalConsistency(index, valueText)
-	a.businessRuleCompliant++
-}
-
-func (a *qualityAccumulator) trackValidity(valueText string, value interface{}) {
-	if a.patternType == "" || a.validationRegex == "" {
-		a.valid++
-		return
-	}
-	if matchRegex(a.validationRegex, valueText) {
-		a.valid++
-		return
-	}
-	a.issues = append(a.issues, fmt.Sprintf("Invalid value for %s: %v", a.columnName, value))
-}
-
-func (a *qualityAccumulator) trackTemporalConsistency(index int, valueText string) {
-	if !a.isTemporal {
-		return
-	}
-	parsed, err := time.Parse("2006-01-02", valueText)
-	if err != nil {
-		return
-	}
-	if index > 0 && !a.lastTime.IsZero() && parsed.Before(a.lastTime) {
-		a.temporalOrderBroken = true
-	}
-	a.lastTime = parsed
-	a.temporalConsistent++
-}
-
-func (a *qualityAccumulator) build(total int) QualityMetrics {
-	completeness := ratio(float64(a.nonNull), float64(total))
-	uniqueness := ratio(float64(len(a.uniqueSet)), float64(total))
-	validity := ratio(float64(a.valid), float64(total))
-	temporalConsistency := 1.0
-	if a.isTemporal && a.temporalOrderBroken {
-		temporalConsistency = 0.0
-		a.issues = append(a.issues, "Temporal inconsistency detected")
-	}
-	businessRuleCompliance := ratio(float64(a.businessRuleCompliant), float64(total))
-	consistency := 1.0
-	overall := (completeness + uniqueness + validity + consistency + temporalConsistency + businessRuleCompliance) / 6.0
-
-	return QualityMetrics{
-		Completeness:           completeness,
-		Uniqueness:             uniqueness,
-		Validity:               validity,
-		Consistency:            consistency,
-		TemporalConsistency:    temporalConsistency,
-		BusinessRuleCompliance: businessRuleCompliance,
-		OverallScore:           overall,
-		Issues:                 truncateQualityIssues(a.issues),
-	}
-}
-
-func truncateQualityIssues(issues []string) []string {
-	if len(issues) <= maxQualityIssuesPerColumn {
-		return issues
-	}
-	truncated := issues[:maxQualityIssuesPerColumn]
-	truncated = append(truncated, fmt.Sprintf("... %d more issues truncated", len(issues)-maxQualityIssuesPerColumn))
-	return truncated
-}
-
-// categorizeTables classifies tables for TableCatalog (core, lookup, junction, audit)
-func (s *MCPServer) categorizeTables(tableNames []string, schemas map[string]TableInfo) TableCatalog {
-	var coreEntities, lookupTables, junctionTables, auditTables []TableEntity
-	for _, tbl := range tableNames {
-		info := schemas[tbl]
-		entity := TableEntity{
-			TableName:   tbl,
-			ColumnCount: info.ColumnCount,
-			PrimaryKey:  info.KeyColumns.PrimaryKey,
-		}
-		lower := strings.ToLower(tbl)
-		switch {
-		case strings.Contains(lower, "log") || strings.Contains(lower, "audit"):
-			entity.BusinessRole = "audit"
-			auditTables = append(auditTables, entity)
-		case strings.Contains(lower, "lookup") || strings.HasSuffix(lower, "_type") || strings.HasSuffix(lower, "_status"):
-			entity.BusinessRole = "lookup"
-			lookupTables = append(lookupTables, entity)
-		case strings.Contains(lower, "junction") || strings.Contains(lower, "join"):
-			entity.BusinessRole = "junction"
-			junctionTables = append(junctionTables, entity)
-		default:
-			entity.BusinessRole = "core"
-			coreEntities = append(coreEntities, entity)
-		}
-	}
-	return TableCatalog{
-		CoreEntities:   coreEntities,
-		LookupTables:   lookupTables,
-		JunctionTables: junctionTables,
-		AuditTables:    auditTables,
-	}
-}
-
-// --- Utility functions ---
-
+// toFloat64 converts numeric types to float64.
+// Used by insights_handler.go and insights_stats.go.
 func toFloat64(v interface{}) (float64, error) {
 	switch val := v.(type) {
 	case int:
@@ -5309,20 +4163,4 @@ func toFloat64(v interface{}) (float64, error) {
 	default:
 		return 0, fmt.Errorf("not a number")
 	}
-}
-
-func countDecimalPlaces(s string) int {
-	parts := strings.Split(s, ".")
-	if len(parts) == 2 {
-		return len(parts[1])
-	}
-	return 0
-}
-
-func matchRegex(pattern, value string) bool {
-	re, err := regexp.Compile(pattern)
-	if err != nil {
-		return false
-	}
-	return re.MatchString(value)
 }

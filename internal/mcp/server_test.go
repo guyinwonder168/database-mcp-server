@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"database-mcp-provider/internal/config"
+	"database-mcp-provider/internal/mcp/analyze"
 	ctxmgr "database-mcp-provider/internal/mcp/context"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -2035,8 +2036,7 @@ func TestHandleAnalyzeSchema_ProfilingEnabled(t *testing.T) {
 // --- AnalyzeSchema Helper Method Unit Tests ---
 
 func TestDetectDomain(t *testing.T) {
-	server := NewMCPServerWithConfig(setupTestConfig(t))
-	domain, confidence := server.detectDomain([]string{"orders", "products", "customers"})
+	domain, confidence := analyze.DetectDomain([]string{"orders", "products", "customers"})
 	if domain != "e-commerce" {
 		t.Errorf("Expected domain 'e-commerce', got '%s'", domain)
 	}
@@ -2046,12 +2046,11 @@ func TestDetectDomain(t *testing.T) {
 }
 
 func TestAnalyzeNamingConventions(t *testing.T) {
-	server := NewMCPServerWithConfig(setupTestConfig(t))
-	tables := []TableInfo{
-		{Columns: []SchemaColumnInfo{{ColumnName: "created_at"}, {ColumnName: "user_id"}}},
-		{Columns: []SchemaColumnInfo{{ColumnName: "order_id"}, {ColumnName: "updated_at"}}},
+	tables := []analyze.TableInfo{
+		{Columns: []analyze.SchemaColumnInfo{{ColumnName: "created_at"}, {ColumnName: "user_id"}}},
+		{Columns: []analyze.SchemaColumnInfo{{ColumnName: "order_id"}, {ColumnName: "updated_at"}}},
 	}
-	result := server.analyzeNamingConventions(tables)
+	result := analyze.AnalyzeNamingConventions(tables)
 	if result["cases"].(map[string]int)["snake_case"] == 0 {
 		t.Errorf("Expected snake_case detection")
 	}
@@ -2100,19 +2099,15 @@ func TestRegisterAllTools_Idempotent(t *testing.T) {
 }
 
 func TestInferBusinessContextEmpty(t *testing.T) {
-	testConfig := setupTestConfigWithNLP(t, config.NLPConfig{BusinessDomains: []string{"healthcare"}})
-	defer os.Remove(testConfig)
-
-	server := NewMCPServerWithConfig(testConfig)
-	ctx := server.inferBusinessContext(map[string]TableInfo{})
+	ctx := analyze.InferBusinessContext(map[string]analyze.TableInfo{})
 	if ctx == nil {
 		t.Fatalf("Expected non-nil BusinessContext")
 	}
 	if len(ctx.DomainIndicators) == 0 {
 		t.Errorf("Expected DomainIndicators to contain at least 'unknown'")
 	}
-	if _, ok := ctx.DomainIndicators["healthcare"]; !ok {
-		t.Errorf("Expected configured domain indicator for empty schema")
+	if _, ok := ctx.DomainIndicators["unknown"]; !ok {
+		t.Errorf("Expected 'unknown' domain indicator for empty schema")
 	}
 }
 

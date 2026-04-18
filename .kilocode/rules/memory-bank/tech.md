@@ -3,22 +3,23 @@
 ## Core Stack
 
 ### Language and Toolchain
-- Go module baseline: `go 1.25`
-- Toolchain: `go1.25.7`
+- Go module baseline: `go 1.26`
+- Toolchain: `go1.26.2`
 
 ### MCP SDK
-- `github.com/modelcontextprotocol/go-sdk v1.2.0`
+- `github.com/modelcontextprotocol/go-sdk v1.5.0`
 
 ### Database Drivers
 - MySQL/MariaDB: `github.com/go-sql-driver/mysql v1.9.3`
-- PostgreSQL: `github.com/lib/pq v1.11.1`
-- SQLite: `github.com/mattn/go-sqlite3 v1.14.33`
+- PostgreSQL: `github.com/lib/pq v1.12.3`
+- SQLite: `github.com/mattn/go-sqlite3 v1.14.42`
 
 ### Other Key Dependencies
 - YAML config: `gopkg.in/yaml.v3`
-- JSON schema helper: `github.com/google/jsonschema-go`
+- JSON schema helper: `github.com/google/jsonschema-go v0.4.2`
 - SQL parser support: `github.com/blastrain/vitess-sqlparser`
 - Log rotation: `github.com/lestrrat-go/file-rotatelogs`
+- SQL mocking (tests): `github.com/DATA-DOG/go-sqlmock`
 
 ## Runtime Model
 
@@ -55,10 +56,12 @@ DB_MCP_IT_PG_HOST=... DB_MCP_IT_PG_DB=... go test ./internal/mcp -run TestLive -
 
 ## Current Capability Surface
 
-- 18 MCP tools implemented
+- 20 MCP tools implemented
 - Full coverage of profile management, schema discovery, SQL execution, intelligence tools, schema tracking, and federation
+- Dedicated `internal/mcp/analyze/` package for schema analysis logic
 
 ## Source of Truth
 
 - Runtime contracts: `internal/mcp/server.go`
+- Analyze-schema logic: `internal/mcp/analyze/`
 - API schema: `docs/mcp-openapi.yaml`
