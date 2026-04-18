@@ -37,3 +37,19 @@ func quotePostgres(name string) string {
 func quoteSQLite(name string) string {
 	return `"` + name + `"`
 }
+
+// quoteForDB returns the properly quoted identifier for the given db type.
+// Returns ("", false) for unsupported db types.
+// Caller must validate the identifier first via sanitizeIdentifier.
+func quoteForDB(dbType, name string) (string, bool) {
+	switch dbType {
+	case "mysql", "mariadb":
+		return quoteMySQL(name), true
+	case "postgres", "postgresql":
+		return quotePostgres(name), true
+	case "sqlite":
+		return quoteSQLite(name), true
+	default:
+		return "", false
+	}
+}

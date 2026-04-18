@@ -132,20 +132,23 @@ func FetchColumnsPerTable(ctx context.Context, db *sql.DB, dbType string, tableN
 		}
 
 		var query string
+		var queryArgs []interface{}
 		switch dbType {
 		case "sqlite":
-			query = fmt.Sprintf("PRAGMA table_info(%s)", quoteSQLite(table))
+			query = `SELECT cid, name, type, "notnull", dflt_value, pk FROM pragma_table_info WHERE arg = ?`
+			queryArgs = []interface{}{table}
 		case "mysql", "mariadb":
-			query = fmt.Sprintf("SHOW COLUMNS FROM %s", quoteMySQL(table))
+			query = "SHOW COLUMNS FROM " + quoteMySQL(table)
 		case "postgres", "postgresql":
-			query = fmt.Sprintf(`SELECT column_name, data_type, is_nullable, column_default
-				FROM information_schema.columns WHERE table_name = %s AND table_schema = 'public'
-				ORDER BY ordinal_position`, quotePostgres(table))
+			query = `SELECT column_name, data_type, is_nullable, column_default
+				FROM information_schema.columns WHERE table_name = $1 AND table_schema = 'public'
+				ORDER BY ordinal_position`
+			queryArgs = []interface{}{table}
 		default:
 			continue
 		}
 
-		rows, err := db.QueryContext(ctx, query)
+		rows, err := db.QueryContext(ctx, query, queryArgs...)
 		if err != nil {
 			// Silently skip — individual table failures shouldn't abort entire analysis
 			continue

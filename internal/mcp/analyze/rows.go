@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
 )
 
 // rows.go handles row count queries and sample row fetching for all backends.
@@ -39,16 +40,11 @@ func SampleQueryForDB(dbType, tableName string, sampleSize int) (string, bool) {
 	if err := sanitizeIdentifier(tableName); err != nil {
 		return "", false
 	}
-	switch dbType {
-	case "mysql", "mariadb":
-		return fmt.Sprintf("SELECT * FROM %s LIMIT %d", quoteMySQL(tableName), sampleSize), true // #nosec G201
-	case "postgres", "postgresql":
-		return fmt.Sprintf("SELECT * FROM %s LIMIT %d", quotePostgres(tableName), sampleSize), true // #nosec G201
-	case "sqlite":
-		return fmt.Sprintf("SELECT * FROM %s LIMIT %d", quoteSQLite(tableName), sampleSize), true // #nosec G201
-	default:
+	quoted, ok := quoteForDB(dbType, tableName)
+	if !ok {
 		return "", false
 	}
+	return "SELECT * FROM " + quoted + " LIMIT " + strconv.Itoa(sampleSize), true
 }
 
 // ScanSampleRows scans sql.Rows into a slice of row maps.
@@ -156,7 +152,7 @@ func fetchRowCountsSQLite(ctx context.Context, db *sql.DB, tableNames []string) 
 		if err := sanitizeIdentifier(table); err != nil {
 			continue
 		}
-		query := fmt.Sprintf(`SELECT COUNT(*) AS cnt FROM %s`, quoteSQLite(table)) // #nosec G201 -- table name validated by sanitizeIdentifier
+		query := "SELECT COUNT(*) AS cnt FROM " + quoteSQLite(table)
 		var cnt int64
 		err := db.QueryRowContext(ctx, query).Scan(&cnt)
 		if err != nil {

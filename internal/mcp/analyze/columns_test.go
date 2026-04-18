@@ -230,12 +230,12 @@ func TestFetchColumnsPerTable_SQLite(t *testing.T) {
 		AddRow(0, "id", "INTEGER", 1, nil, 1).
 		AddRow(1, "name", "TEXT", 0, nil, 0).
 		AddRow(2, "email", "TEXT", 1, nil, 0)
-	mock.ExpectQuery(`PRAGMA table_info\("users"\)`).WillReturnRows(userRows)
+	mock.ExpectQuery(`SELECT.*FROM pragma_table_info WHERE arg = \?`).WithArgs("users").WillReturnRows(userRows)
 
 	orderRows := sqlmock.NewRows([]string{"cid", "name", "type", "notnull", "dflt_value", "pk"}).
 		AddRow(0, "id", "INTEGER", 1, nil, 1).
 		AddRow(1, "user_id", "INTEGER", 1, nil, 0)
-	mock.ExpectQuery(`PRAGMA table_info\("orders"\)`).WillReturnRows(orderRows)
+	mock.ExpectQuery(`SELECT.*FROM pragma_table_info WHERE arg = \?`).WithArgs("orders").WillReturnRows(orderRows)
 
 	columns, err := FetchColumnsPerTable(context.Background(), db, "sqlite", []string{"users", "orders"})
 	if err != nil {
@@ -272,7 +272,7 @@ func TestFetchColumnsPerTable_SQLiteEmptyTable(t *testing.T) {
 	}
 	defer db.Close()
 
-	mock.ExpectQuery(`PRAGMA table_info\("empty_tbl"\)`).
+	mock.ExpectQuery(`SELECT.*FROM pragma_table_info WHERE arg = \?`).WithArgs("empty_tbl").
 		WillReturnRows(sqlmock.NewRows([]string{"cid", "name", "type", "notnull", "dflt_value", "pk"}))
 
 	columns, err := FetchColumnsPerTable(context.Background(), db, "sqlite", []string{"empty_tbl"})
@@ -322,7 +322,7 @@ func TestFetchColumnsPerTable_SQLiteWithDefault(t *testing.T) {
 	rows := sqlmock.NewRows([]string{"cid", "name", "type", "notnull", "dflt_value", "pk"}).
 		AddRow(0, "id", "INTEGER", 1, nil, 1).
 		AddRow(1, "status", "TEXT", 1, "active", 0)
-	mock.ExpectQuery(`PRAGMA table_info\("tasks"\)`).WillReturnRows(rows)
+	mock.ExpectQuery(`SELECT.*FROM pragma_table_info WHERE arg = \?`).WithArgs("tasks").WillReturnRows(rows)
 
 	columns, err := FetchColumnsPerTable(context.Background(), db, "sqlite", []string{"tasks"})
 	if err != nil {
