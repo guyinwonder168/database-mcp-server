@@ -48,8 +48,9 @@ jobs:
 
       - name: Create tag if missing
         id: tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
           if git rev-parse "refs/tags/$VERSION" >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -74,16 +75,18 @@ jobs:
 
       - name: Create archives
         if: steps.tag.outputs.exists != 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
           tar -czf database-mcp-server_${VERSION}_linux_amd64.tar.gz mcp-server-linux-amd64
           tar -czf database-mcp-server_${VERSION}_darwin_amd64.tar.gz mcp-server-darwin-amd64
           zip -q database-mcp-server_${VERSION}_windows_amd64.zip mcp-server-windows-amd64.exe
 
       - name: Extract changelog notes
         if: steps.tag.outputs.exists != 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
           awk -v version="$VERSION" '
             BEGIN { in_block=0 }
             $0 ~ "^## \\["version"\\]" {
