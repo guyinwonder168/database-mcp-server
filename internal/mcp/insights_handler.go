@@ -240,15 +240,23 @@ func (s *MCPServer) sampleTableData(ctx context.Context, conn *sql.DB, dbType st
 		limit = 1000
 	}
 
-	// Build column list with proper quoting
-	quotedCols := make([]string, len(columns))
-	for i, col := range columns {
-		quotedCols[i] = quoteIdentifier(col.Name, dbType)
+	// Validate and quote identifiers to prevent SQL injection
+	quotedTable, err := safeQuoteIdentifier(tableName, dbType)
+	if err != nil {
+		return nil, fmt.Errorf("invalid table name: %w", err)
 	}
 
-	// #nosec G201 -- identifiers are quoted via quoteIdentifier() (dialect-specific backticks/double-quotes);
-	// column names come from DB metadata; limit is an int parameter, not a string
-	query := fmt.Sprintf(sampleQueryTemplate, strings.Join(quotedCols, ", "), quoteIdentifier(tableName, dbType), limit)
+	quotedCols := make([]string, len(columns))
+	for i, col := range columns {
+		quotedCols[i], err = safeQuoteIdentifier(col.Name, dbType)
+		if err != nil {
+			return nil, fmt.Errorf("invalid column name %q: %w", col.Name, err)
+		}
+	}
+
+	// #nosec G201 -- identifiers validated by safeQuoteIdentifier and quoted with dialect-specific delimiters;
+	// limit is an int parameter, not a string
+	query := fmt.Sprintf(sampleQueryTemplate, strings.Join(quotedCols, ", "), quotedTable, limit)
 
 	rows, err := conn.QueryContext(ctx, query)
 	if err != nil {
