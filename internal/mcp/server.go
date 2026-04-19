@@ -3819,7 +3819,7 @@ func (s *MCPServer) handleAnalyzeSchema(
 	}
 	filteredTables := filterAnalyzeSchemaTables(tables, p.IncludeTables, p.ExcludeTables)
 
-	schema := resolveSchemaForAnalyze(ctx, conn, p.Schema, prof.DBType)
+	schema := resolveSchemaForAnalyze(ctx, conn, p.Schema, prof.DBType, dbName)
 
 	// Delegate core analysis to the pure analyze.Run() function
 	result, runErr := analyze.Run(ctx, conn, prof.DBType, schema, p, filteredTables)
@@ -3835,6 +3835,11 @@ func (s *MCPServer) handleAnalyzeSchema(
 
 	// Build server-side result (merges analyze output with server-specific fields)
 	serverResult := s.buildAnalyzeSchemaResultFromAnalyze(result, prof.DBType, filteredTables)
+
+	// Detect privilege issues: tables found but no column data returned
+	if w := buildPrivilegeWarning(prof.DBType, len(filteredTables), len(result.TableSchemas), dbName, schema); w != "" {
+		serverResult.Warnings = append(serverResult.Warnings, w)
+	}
 
 	// Query suggestions — calls MCP tools, can't be pure
 	aiQuerySuggestions := s.buildAnalyzeSchemaQuerySuggestions(ctx, p, filteredTables, dbName)
@@ -3858,25 +3863,60 @@ func (s *MCPServer) handleAnalyzeSchema(
 
 // resolveSchemaForAnalyze determines the schema name for the analyze package.
 // For PostgreSQL it resolves the default schema (e.g. "public") if none was specified.
-func resolveSchemaForAnalyze(ctx context.Context, conn *sql.DB, schema, dbType string) string {
+// For MySQL/MariaDB it returns the database name when no explicit schema is provided.
+// SQLite has no schema concept, so it returns empty string.
+func resolveSchemaForAnalyze(ctx context.Context, conn *sql.DB, schema, dbType, databaseName string) string {
 	if schema != "" {
 		return schema
 	}
-	if dbType != "postgres" && dbType != "postgresql" {
+	switch dbType {
+	case "mysql", "mariadb":
+		return databaseName
+	case "postgres", "postgresql":
+		dbConn, err := conn.Conn(ctx)
+		if err != nil {
+			log.JSONLog("warn", "Failed to get connection for schema resolution", map[string]interface{}{"error": err.Error()})
+			return "public"
+		}
+		resolved, err := GetDefaultSchema(ctx, dbConn)
+		_ = dbConn.Close()
+		if err != nil {
+			log.JSONLog("warn", "Failed to resolve default schema, using public", map[string]interface{}{"error": err.Error()})
+			return "public"
+		}
+		return resolved
+	default:
+		// SQLite and others: no schema concept
 		return ""
 	}
-	dbConn, err := conn.Conn(ctx)
-	if err != nil {
-		log.JSONLog("warn", "Failed to get connection for schema resolution", map[string]interface{}{"error": err.Error()})
+}
+
+// buildPrivilegeWarning generates a warning when tables were found but no column data
+// was returned, which typically indicates insufficient database privileges.
+func buildPrivilegeWarning(dbType string, tableCount, resultColumnCount int, dbName, schema string) string {
+	if tableCount == 0 || resultColumnCount > 0 {
 		return ""
 	}
-	resolved, err := GetDefaultSchema(ctx, dbConn)
-	_ = dbConn.Close()
-	if err != nil {
-		log.JSONLog("warn", "Failed to resolve default schema, using empty", map[string]interface{}{"error": err.Error()})
-		return ""
+	switch dbType {
+	case "mysql", "mariadb":
+		return fmt.Sprintf(
+			"Found %d tables but no column data. The database user may lack SELECT privilege on %s. "+
+				"Grant with: GRANT SELECT ON %s.* TO 'user'@'host'",
+			tableCount, dbName, dbName,
+		)
+	case "postgres", "postgresql":
+		schemaHint := schema
+		if schemaHint == "" {
+			schemaHint = "public"
+		}
+		return fmt.Sprintf(
+			"Found %d tables but no column data. The database user may lack USAGE privilege on schema %s. "+
+				"Grant with: GRANT USAGE ON SCHEMA %s TO \"user\"",
+			tableCount, schemaHint, schemaHint,
+		)
+	default:
+		return fmt.Sprintf("Found %d tables but no column data — this may indicate insufficient database privileges", tableCount)
 	}
-	return resolved
 }
 
 // fetchAllSampleRowsForProfiling fetches sample rows for profiling (kept in server.go
@@ -3904,6 +3944,7 @@ func (s *MCPServer) buildAnalyzeSchemaResultFromAnalyze(analyzeResult *analyze.A
 		PerformanceOptimization: analyzeResult.PerformanceOptimization,
 		ClassificationSignals:   analyzeResult.ClassificationSignals,
 		QuickInsights:           []string{fmt.Sprintf("Schema analysis completed for %d tables.", len(filteredTables))},
+		Warnings:                analyzeResult.Warnings,
 	}
 	return result
 }

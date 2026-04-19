@@ -75,6 +75,7 @@ type AnalyzeSchemaResult struct {
 	QuickInsights           []string                  `json:"quick_insights,omitempty"`            // Human-readable summary points
 	ColumnProfiling         *EnhancedSchemaAnalysis   `json:"column_profiling,omitempty"`          // Optional advanced table/column profiling
 	ClassificationSignals   *ClassificationSignals    `json:"classification_signals,omitempty"`    // Raw signals for LLM domain inference (replaces hardcoded domain/entity)
+	Warnings                []string                  `json:"warnings,omitempty"`                   // Non-fatal warnings (e.g., privilege issues)
 }
 
 // AnalysisMetadata provides metadata about the analysis run.
