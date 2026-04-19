@@ -53,7 +53,7 @@ Database MCP Server provides a unified MCP tool interface that lets AI agents an
   - `validate-query`
   - `optimize-query`
 - Analysis and governance:
-  - `analyze-schema` (with LLM-based domain inference via classification signals and privilege warnings)
+  - `analyze-schema` (signal-provider architecture: raw naming prefix frequencies, FK-based table categorization, index coverage signals — LLM interprets domain)
   - `analyze-data-lineage`
   - `discover-insights`
   - `track-schema-changes`

@@ -262,15 +262,19 @@ func BuildPerformanceOptimization(
 
 	// Recommend indexes on foreign key columns that lack indexes
 	seen := make(map[string]bool) // "table.column" -> seen
+	totalFKCols := 0
+	indexedFKCols := 0
 	for _, fk := range fks {
 		key := fk.FromTable + "." + fk.FromColumn
 		if seen[key] {
 			continue
 		}
 		seen[key] = true
+		totalFKCols++
 
 		// Check if this column is already indexed
 		if cols, ok := indexedCols[fk.FromTable]; ok && cols[fk.FromColumn] {
+			indexedFKCols++
 			continue // already indexed
 		}
 
@@ -279,6 +283,36 @@ func BuildPerformanceOptimization(
 			Columns: []string{fk.FromColumn},
 			Reason:  fmt.Sprintf("Foreign key column referencing %s.%s — index improves JOIN performance", fk.ToTable, fk.ToColumn),
 		})
+	}
+
+	// Compute index coverage stats
+	if totalFKCols > 0 {
+		result.IndexCoverage = &IndexCoverage{
+			TotalFKColumns:     totalFKCols,
+			IndexedFKColumns:   indexedFKCols,
+			UnindexedFKColumns: totalFKCols - indexedFKCols,
+		}
+	}
+
+	// Detect tables without primary keys
+	var tablesWithoutPK []string
+	for table, cols := range tableColumns {
+		hasPK := false
+		for _, col := range cols {
+			if col.IsPrimaryKey {
+				hasPK = true
+				break
+			}
+		}
+		if !hasPK {
+			tablesWithoutPK = append(tablesWithoutPK, table)
+		}
+	}
+	if len(tablesWithoutPK) > 0 && result.IndexCoverage == nil {
+		result.IndexCoverage = &IndexCoverage{}
+	}
+	if result.IndexCoverage != nil {
+		result.IndexCoverage.TablesWithoutPK = tablesWithoutPK
 	}
 
 	return result

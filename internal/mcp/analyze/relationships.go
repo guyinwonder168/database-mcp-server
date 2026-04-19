@@ -136,6 +136,17 @@ var commonColumns = map[string]bool{
 	"created_by": true, "updated_by": true,
 }
 
+// commonFKSuffixes lists column name prefixes that are too generic to be meaningful
+// implicit FK matches. Columns like "status_id", "type_id", "role_id" appear in many
+// tables and don't indicate a strong domain-specific relationship.
+var commonFKSuffixes = map[string]bool{
+	"status": true, "type": true, "role": true, "category": true,
+	"priority": true, "state": true, "level": true, "group": true,
+	"action": true, "source": true, "mode": true, "channel": true,
+	"format": true, "language": true, "country": true, "currency": true,
+	"parent": true, "stage": true,
+}
+
 // isCommonColumn returns true if the column name is too generic to imply a FK relationship.
 func isCommonColumn(col string) bool {
 	return commonColumns[col]
@@ -247,6 +258,7 @@ func singularToPluralMatch(singular string, tableSet map[string]bool) (string, b
 
 // matchSuffixID checks if columnName ends with "_id" and the part before _id
 // contains a table name (e.g., "order_items_product_id" matches "products").
+// Skips generic FK suffixes (status_id, type_id, etc.) to reduce false positives.
 func matchSuffixID(colName string, tableSet map[string]bool) (string, bool) {
 	if len(colName) <= 3 || colName[len(colName)-3:] != "_id" {
 		return "", false
@@ -258,10 +270,20 @@ func matchSuffixID(colName string, tableSet map[string]bool) (string, bool) {
 		return "", false
 	}
 
+	// Skip generic FK suffixes (status_id, type_id, role_id, etc.)
+	if commonFKSuffixes[prefix] {
+		return "", false
+	}
+
 	// Check each underscore-delimited segment as a potential table name
 	for i := 0; i < len(prefix); i++ {
 		if prefix[i] == '_' {
-			if matched, ok := matchTableSegment(prefix[i+1:], tableSet); ok {
+			segment := prefix[i+1:]
+			// Skip generic segments within compound names too
+			if commonFKSuffixes[segment] {
+				continue
+			}
+			if matched, ok := matchTableSegment(segment, tableSet); ok {
 				return matched, true
 			}
 		}

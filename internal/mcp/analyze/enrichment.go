@@ -121,11 +121,13 @@ func flattenTableSchemas(tableSchemas map[string]TableInfo) ([]string, []TableIn
 	return tableNames, tables
 }
 
-// InferBusinessContext analyzes table schemas to infer business domain, naming conventions,
-// and entity types. Pure function — no server dependencies.
+// InferBusinessContext analyzes table schemas to produce raw domain signals,
+// naming conventions, and entity type hints. Pure function — no server dependencies.
+// DomainIndicators contains naming prefix frequencies (not authoritative classifications).
+// The calling LLM should interpret these signals using its own world knowledge.
 func InferBusinessContext(tableSchemas map[string]TableInfo) *BusinessContext {
 	tableNames, tables := flattenTableSchemas(tableSchemas)
-	domain, confidence := DetectDomain(tableNames)
+	domainSignals := ComputeDomainSignals(tableNames)
 	naming := AnalyzeNamingConventions(tables)
 	entities := IdentifyEntityTypes(tableNames)
 
@@ -135,7 +137,7 @@ func InferBusinessContext(tableSchemas map[string]TableInfo) *BusinessContext {
 	auditCols := NamingValueStringSlice(naming, "timestampCols")
 
 	return &BusinessContext{
-		DomainIndicators: mergeDomainIndicators(domain, confidence, nil),
+		DomainIndicators: domainSignals,
 		NamingConventions: NamingConventions{
 			Pattern:           pattern,
 			ConsistencyScore:  consistencyScore,
@@ -151,45 +153,28 @@ func InferBusinessContext(tableSchemas map[string]TableInfo) *BusinessContext {
 	}
 }
 
-// DetectDomain matches table names against known domain patterns and returns
-// the best-matching domain with a confidence score (0.0–1.0).
-func DetectDomain(tableNames []string) (string, float64) {
-	domainPatterns := map[string][]string{
-		"e-commerce":         {"product", "order", "cart", "customer", "payment", "inventory"},
-		"healthcare":         {"patient", "doctor", "appointment", "medical", "prescription", "diagnosis"},
-		"finance":            {"account", "transaction", "ledger", "invoice", "payment", "balance"},
-		"crm":                {"lead", "contact", "opportunity", "customer", "activity"},
-		"project-management": {"project", "task", "milestone", "issue", "sprint"},
-		"education":          {"student", "course", "grade", "teacher", "enrollment"},
-		"logistics":          {"shipment", "warehouse", "delivery", "route", "tracking"},
-	}
-
-	domainScores := make(map[string]float64)
-	for domain, patterns := range domainPatterns {
-		score := 0.0
-		for _, name := range tableNames {
-			for _, pat := range patterns {
-				if strings.Contains(strings.ToLower(name), pat) {
-					score += 1.0
-				}
-			}
-		}
-		domainScores[domain] = score / float64(len(patterns))
-	}
-
-	var bestDomain string
-	var bestScore float64
-	for domain, score := range domainScores {
-		if score > bestScore {
-			bestDomain = domain
-			bestScore = score
+// ComputeDomainSignals extracts naming prefix frequencies from table names.
+// Returns a map of prefix→count where prefix is the first underscore-delimited
+// segment of each table name (e.g., "order_items" → "order": 1).
+// This provides raw signals for the calling LLM to interpret the domain,
+// rather than hardcoding domain classifications.
+func ComputeDomainSignals(tableNames []string) map[string]float64 {
+	signals := make(map[string]float64)
+	for _, name := range tableNames {
+		lower := strings.ToLower(name)
+		// Extract the first segment as the primary naming prefix
+		if idx := strings.Index(lower, "_"); idx > 0 {
+			prefix := lower[:idx]
+			signals[prefix]++
+		} else {
+			// Single-word table name — use the whole name
+			signals[lower]++
 		}
 	}
-
-	if bestScore == 0 {
-		return "unknown", 0.0
+	if len(signals) == 0 {
+		signals["unknown"] = 0
 	}
-	return bestDomain, bestScore
+	return signals
 }
 
 // AnalyzeNamingConventions examines column names to determine naming patterns,
@@ -337,11 +322,9 @@ func IdentifyEntityTypes(tableNames []string) []string {
 }
 
 // GenerateBusinessDescription produces a human-readable summary of the detected
-// business domain and entity composition.
-func GenerateBusinessDescription(domain string, entities []string, confidence float64) string {
-	if domain == "unknown" || confidence < 0.2 {
-		return "The database schema does not match any well-known business domain. It may be custom or generic."
-	}
+// naming signals and entity composition. The description describes raw signals
+// rather than claiming a definitive domain.
+func GenerateBusinessDescription(topPrefix string, topCount float64, entities []string, allSignals map[string]float64) string {
 	entitySummary := map[string]int{}
 	for _, e := range entities {
 		entitySummary[e]++
@@ -350,8 +333,31 @@ func GenerateBusinessDescription(domain string, entities []string, confidence fl
 	for k, v := range entitySummary {
 		entityDesc = append(entityDesc, fmt.Sprintf("%d %s tables", v, k))
 	}
-	return fmt.Sprintf("This database appears to represent a %s system, with %s. Domain detection confidence: %.2f.",
-		domain, strings.Join(entityDesc, ", "), confidence)
+
+	// Build top signals description (up to 5 most common)
+	type sig struct {
+		prefix string
+		count  float64
+	}
+	var top []sig
+	for p, c := range allSignals {
+		top = append(top, sig{p, c})
+	}
+	sort.Slice(top, func(i, j int) bool { return top[i].count > top[j].count })
+	if len(top) > 5 {
+		top = top[:5]
+	}
+	sigParts := make([]string, 0, len(top))
+	for _, s := range top {
+		sigParts = append(sigParts, fmt.Sprintf("%s: %.0f", s.prefix, s.count))
+	}
+
+	if len(sigParts) > 0 {
+		return fmt.Sprintf("Top naming signals: %s. Entity breakdown: %s. Interpret domain using these signals.",
+			strings.Join(sigParts, ", "), strings.Join(entityDesc, ", "))
+	}
+	return fmt.Sprintf("Entity breakdown: %s. No strong naming signals detected.",
+		strings.Join(entityDesc, ", "))
 }
 
 // --- Helper functions for naming value extraction ---
@@ -401,26 +407,6 @@ func NamingValueStringSlice(values map[string]interface{}, key string) []string 
 	default:
 		return []string{}
 	}
-}
-
-func mergeDomainIndicators(domain string, confidence float64, configured []string) map[string]float64 {
-	indicators := map[string]float64{}
-	if domain != "" {
-		indicators[domain] = confidence
-	}
-	for _, cfgDomain := range configured {
-		key := strings.ToLower(strings.TrimSpace(cfgDomain))
-		if key == "" {
-			continue
-		}
-		if _, ok := indicators[key]; !ok {
-			indicators[key] = 1.0
-		}
-	}
-	if len(indicators) == 0 {
-		indicators["unknown"] = 0.0
-	}
-	return indicators
 }
 
 // --- Data Pattern Recognition (moved from server.go, converted to pure functions) ---
@@ -931,7 +917,17 @@ func BuildQualityMetrics(analysisLevel string, tableSchemas map[string]TableInfo
 }
 
 // CategorizeTables classifies tables by business role (core, lookup, junction, audit).
-func CategorizeTables(tableNames []string, schemas map[string]TableInfo) TableCatalog {
+// Uses FK structural analysis when available: tables with 2+ outgoing FKs and few
+// non-FK columns are likely junction tables; tables referenced by many FKs are core/lookup.
+func CategorizeTables(tableNames []string, schemas map[string]TableInfo, fks []ForeignKeyRelationship) TableCatalog {
+	// Build FK signal maps
+	outgoingFKs := make(map[string]int) // table → count of outgoing FKs
+	incomingFKs := make(map[string]int) // table → count of incoming FKs
+	for _, fk := range fks {
+		outgoingFKs[fk.FromTable]++
+		incomingFKs[fk.ToTable]++
+	}
+
 	var coreEntities, lookupTables, junctionTables, auditTables []TableEntity
 	for _, tbl := range tableNames {
 		info := schemas[tbl]
@@ -939,22 +935,47 @@ func CategorizeTables(tableNames []string, schemas map[string]TableInfo) TableCa
 			TableName:   tbl,
 			ColumnCount: info.ColumnCount,
 			PrimaryKey:  info.KeyColumns.PrimaryKey,
+			OutgoingFKs: outgoingFKs[tbl],
+			IncomingFKs: incomingFKs[tbl],
 		}
+
+		// Classify using FK signals first, then name-based fallback
 		lower := strings.ToLower(tbl)
-		switch {
-		case strings.Contains(lower, "log") || strings.Contains(lower, "audit"):
+
+		// Audit tables: name-based detection (strong signal)
+		if strings.Contains(lower, "log") || strings.Contains(lower, "audit") {
 			entity.BusinessRole = "audit"
 			auditTables = append(auditTables, entity)
-		case strings.Contains(lower, "lookup") || strings.HasSuffix(lower, "_type") || strings.HasSuffix(lower, "_status"):
-			entity.BusinessRole = "lookup"
-			lookupTables = append(lookupTables, entity)
-		case strings.Contains(lower, "junction") || strings.Contains(lower, "join"):
+			continue
+		}
+
+		// Junction tables: structural detection (2+ outgoing FKs + few non-FK columns)
+		if outgoingFKs[tbl] >= 2 && info.ColumnCount > 0 {
+			nonFKCols := info.ColumnCount - outgoingFKs[tbl]
+			if nonFKCols <= 2 { // Mostly FK columns = junction/mapping table
+				entity.BusinessRole = "junction"
+				junctionTables = append(junctionTables, entity)
+				continue
+			}
+		}
+
+		// Name-based junction detection (fallback)
+		if strings.Contains(lower, "junction") || strings.Contains(lower, "join") {
 			entity.BusinessRole = "junction"
 			junctionTables = append(junctionTables, entity)
-		default:
-			entity.BusinessRole = "core"
-			coreEntities = append(coreEntities, entity)
+			continue
 		}
+
+		// Lookup tables: name-based detection
+		if strings.Contains(lower, "lookup") || strings.HasSuffix(lower, "_type") || strings.HasSuffix(lower, "_status") {
+			entity.BusinessRole = "lookup"
+			lookupTables = append(lookupTables, entity)
+			continue
+		}
+
+		// Default: core entity
+		entity.BusinessRole = "core"
+		coreEntities = append(coreEntities, entity)
 	}
 	return TableCatalog{
 		CoreEntities:   coreEntities,

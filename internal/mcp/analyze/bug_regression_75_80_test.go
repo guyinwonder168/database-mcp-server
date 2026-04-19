@@ -249,7 +249,7 @@ func TestCategorizeTables_WithColumnsNot100Core_Bug79(t *testing.T) {
 		},
 	}
 
-	catalog := CategorizeTables(tableNames, tableSchemas)
+	catalog := CategorizeTables(tableNames, tableSchemas, nil)
 
 	// With proper column data, we should NOT get 100% core categorization
 	// call_status is a lookup table (2 columns, one is unique)
@@ -295,7 +295,7 @@ func TestCategorizeTables_WithZeroColumns_AllCore_Bug79(t *testing.T) {
 		"call_status": {ColumnCount: 0, Columns: nil},
 	}
 
-	catalog := CategorizeTables(tableNames, tableSchemas)
+	catalog := CategorizeTables(tableNames, tableSchemas, nil)
 
 	// Bug behavior: everything is core because there's no signal
 	t.Logf("BUG #79 CONFIRMED: With 0 columns, all tables are core: %v", entityNames(catalog.CoreEntities))
