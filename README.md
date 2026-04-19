@@ -8,7 +8,7 @@
 [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=guyinwonder168_database-mcp-server&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=guyinwonder168_database-mcp-server)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=guyinwonder168_database-mcp-server&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=guyinwonder168_database-mcp-server)
 
-A production-ready Model Context Protocol (MCP) provider for SQL databases, built using various vibe coding tools. Supports MySQL, MariaDB, PostgreSQL, and SQLite. Features robust connection pooling, secure AES-GCM credential storage, structured JSON logging, comprehensive schema introspection, and a full suite of 20 MCP tools. Built and tested with Go 1.26.0.
+A production-ready Model Context Protocol (MCP) provider for SQL databases, built using various vibe coding tools. Supports MySQL, MariaDB, PostgreSQL, and SQLite. Features robust connection pooling, secure AES-GCM credential storage, structured JSON logging, comprehensive schema introspection, and a full suite of 21 MCP tools. Built and tested with Go 1.26.0.
 
 ## 🚀 Quick Start
 
@@ -98,7 +98,7 @@ Package registry: `https://github.com/guyinwonder168/database-mcp-server/pkgs/co
 
 - Default schema mode is `compact` for tool-first and strict declaration-budget clients.
 - Optional `standard` mode keeps verbose tool descriptions for human-readable metadata.
-- All 20 MCP tools are always registered.
+- All 21 MCP tools are always registered.
 - **Gemini Compatibility**: Schemas are automatically sanitized to comply with Google Gemini's OpenAPI 3.0 subset requirements (single `type` values, no `additionalProperties: false`, proper `items` schemas).
 - Use `get-tool-help` for per-tool examples and troubleshooting without inflating startup metadata.
 
@@ -193,7 +193,7 @@ go test ./internal/mcp -run "TestLoadLineage" -v  # Lineage edge tests
 - **Version:** v1.5.1
 - **Built with:** Various vibe coding tools
 - **Status:** Production Ready ✅
-- All 20 MCP tools are fully implemented and OpenAPI-aligned.
+- All 21 MCP tools are fully implemented and OpenAPI-aligned.
 - Enhanced schema introspection and sample data features.
 - Optional advanced profiling in `analyze-schema` for column-level statistics, pattern detection, and quality scoring.
 - AES-GCM encryption, connection pooling, and structured error handling are enforced.

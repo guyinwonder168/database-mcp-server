@@ -39,7 +39,7 @@ Database MCP Server provides a unified MCP tool interface with consistent behavi
 
 ## Supported Tool Surface
 
-The product currently exposes 20 tools, spanning:
+The product currently exposes 21 tools, spanning:
 - **Profile/connectivity**: `configure-profile`, `list-profiles`
 - **Schema discovery**: `list-databases`, `list-tables`, `describe-table`, `get-search-path`, `discover-joins`, `sample-data`
 - **SQL execution**: `execute-sql`

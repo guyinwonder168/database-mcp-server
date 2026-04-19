@@ -53,6 +53,7 @@ const (
 	toolDiscoverJoins                   = "discover-joins"
 	toolGetToolHelp                     = "get-tool-help"
 	toolListProfiles                    = "list-profiles"
+	toolListSchemas                     = "list-schemas"
 	mimeTypeApplicationJSON             = "application/json"
 	messageMissingRequiredParameters    = "Missing required parameters"
 	actionProvideAllRequiredParameters  = "Provide all required parameters"
@@ -536,6 +537,20 @@ func (s *MCPServer) registerAllTools() {
 			InputSchema: inputSchemaFor[ListDatabasesParams](),
 		}
 		addTool(s, tool, s.handleListDatabases)
+	}
+
+	// list-schemas
+	{
+		tool := &mcp.Tool{
+			Name: toolListSchemas,
+			Description: descriptionFormatter(`List all accessible database schemas with default schema information.
+  Input: profile_name (required), database_name (required).
+  Returns: list of schema names and the default schema for the database.
+  Example:
+  {"profile_name":"some-profile-name","database_name":"some-database-name"}`),
+			InputSchema: inputSchemaFor[ListSchemasParams](),
+		}
+		addTool(s, tool, s.handleListSchemas)
 	}
 
 	// get-search-path

@@ -64,7 +64,7 @@ DB_MCP_IT_PG_HOST=... DB_MCP_IT_PG_DB=... go test ./internal/mcp -run TestLive -
 
 ## Current Capability Surface
 
-- 20 MCP tools implemented
+- 21 MCP tools implemented
 - Full coverage of profile management, schema discovery, SQL execution, intelligence tools, schema tracking, and federation
 - Dedicated `internal/mcp/analyze/` package for schema analysis logic
 - Dedicated `internal/mcp/lineage/` for data lineage
