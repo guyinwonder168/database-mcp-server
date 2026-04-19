@@ -921,12 +921,7 @@ func BuildQualityMetrics(analysisLevel string, tableSchemas map[string]TableInfo
 // non-FK columns are likely junction tables; tables referenced by many FKs are core/lookup.
 func CategorizeTables(tableNames []string, schemas map[string]TableInfo, fks []ForeignKeyRelationship) TableCatalog {
 	// Build FK signal maps
-	outgoingFKs := make(map[string]int) // table → count of outgoing FKs
-	incomingFKs := make(map[string]int) // table → count of incoming FKs
-	for _, fk := range fks {
-		outgoingFKs[fk.FromTable]++
-		incomingFKs[fk.ToTable]++
-	}
+	outgoingFKs, incomingFKs := buildFKSignalMaps(fks)
 
 	var coreEntities, lookupTables, junctionTables, auditTables []TableEntity
 	for _, tbl := range tableNames {
@@ -938,44 +933,18 @@ func CategorizeTables(tableNames []string, schemas map[string]TableInfo, fks []F
 			OutgoingFKs: outgoingFKs[tbl],
 			IncomingFKs: incomingFKs[tbl],
 		}
+		entity.BusinessRole = classifyTable(tbl, info.ColumnCount, outgoingFKs[tbl])
 
-		// Classify using FK signals first, then name-based fallback
-		lower := strings.ToLower(tbl)
-
-		// Audit tables: name-based detection (strong signal)
-		if strings.Contains(lower, "log") || strings.Contains(lower, "audit") {
-			entity.BusinessRole = "audit"
+		switch entity.BusinessRole {
+		case "audit":
 			auditTables = append(auditTables, entity)
-			continue
-		}
-
-		// Junction tables: structural detection (2+ outgoing FKs + few non-FK columns)
-		if outgoingFKs[tbl] >= 2 && info.ColumnCount > 0 {
-			nonFKCols := info.ColumnCount - outgoingFKs[tbl]
-			if nonFKCols <= 2 { // Mostly FK columns = junction/mapping table
-				entity.BusinessRole = "junction"
-				junctionTables = append(junctionTables, entity)
-				continue
-			}
-		}
-
-		// Name-based junction detection (fallback)
-		if strings.Contains(lower, "junction") || strings.Contains(lower, "join") {
-			entity.BusinessRole = "junction"
+		case "junction":
 			junctionTables = append(junctionTables, entity)
-			continue
-		}
-
-		// Lookup tables: name-based detection
-		if strings.Contains(lower, "lookup") || strings.HasSuffix(lower, "_type") || strings.HasSuffix(lower, "_status") {
-			entity.BusinessRole = "lookup"
+		case "lookup":
 			lookupTables = append(lookupTables, entity)
-			continue
+		default:
+			coreEntities = append(coreEntities, entity)
 		}
-
-		// Default: core entity
-		entity.BusinessRole = "core"
-		coreEntities = append(coreEntities, entity)
 	}
 	return TableCatalog{
 		CoreEntities:   coreEntities,
@@ -983,4 +952,49 @@ func CategorizeTables(tableNames []string, schemas map[string]TableInfo, fks []F
 		JunctionTables: junctionTables,
 		AuditTables:    auditTables,
 	}
+}
+
+// buildFKSignalMaps returns outgoing and incoming FK counts per table.
+func buildFKSignalMaps(fks []ForeignKeyRelationship) (outgoing, incoming map[string]int) {
+	outgoing = make(map[string]int)
+	incoming = make(map[string]int)
+	for _, fk := range fks {
+		outgoing[fk.FromTable]++
+		incoming[fk.ToTable]++
+	}
+	return
+}
+
+// classifyTable returns the business role for a table: "audit", "junction", "lookup", or "core".
+func classifyTable(tableName string, columnCount, outgoingFKCount int) string {
+	lower := strings.ToLower(tableName)
+
+	if isAuditTable(lower) {
+		return "audit"
+	}
+	if isJunctionTable(lower, columnCount, outgoingFKCount) {
+		return "junction"
+	}
+	if isLookupTable(lower) {
+		return "lookup"
+	}
+	return "core"
+}
+
+// isAuditTable detects audit/history tables by naming convention.
+func isAuditTable(lowerName string) bool {
+	return strings.Contains(lowerName, "log") || strings.Contains(lowerName, "audit")
+}
+
+// isJunctionTable detects junction/mapping tables by FK structure or naming.
+func isJunctionTable(lowerName string, columnCount, outgoingFKCount int) bool {
+	if outgoingFKCount >= 2 && columnCount > 0 && columnCount-outgoingFKCount <= 2 {
+		return true
+	}
+	return strings.Contains(lowerName, "junction") || strings.Contains(lowerName, "join")
+}
+
+// isLookupTable detects lookup/reference tables by naming convention.
+func isLookupTable(lowerName string) bool {
+	return strings.Contains(lowerName, "lookup") || strings.HasSuffix(lowerName, "_type") || strings.HasSuffix(lowerName, "_status")
 }
