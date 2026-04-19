@@ -324,7 +324,7 @@ func IdentifyEntityTypes(tableNames []string) []string {
 // GenerateBusinessDescription produces a human-readable summary of the detected
 // naming signals and entity composition. The description describes raw signals
 // rather than claiming a definitive domain.
-func GenerateBusinessDescription(topPrefix string, topCount float64, entities []string, allSignals map[string]float64) string {
+func GenerateBusinessDescription(_ string, _ float64, entities []string, allSignals map[string]float64) string {
 	entitySummary := map[string]int{}
 	for _, e := range entities {
 		entitySummary[e]++
