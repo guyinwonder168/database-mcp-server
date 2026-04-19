@@ -648,6 +648,7 @@ func createDistributionBuckets(values []float64) []DistributionBucket {
 		if bucketIndex < 0 {
 			bucketIndex = 0
 		}
+		// #nosec G602 -- bucketIndex is bounded to [0,9] by the checks above; buckets slice has length 10
 		buckets[bucketIndex].Count++
 	}
 

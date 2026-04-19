@@ -343,3 +343,79 @@ func hasValidationCode(errors []ValidationError, code string) bool {
 
 	return false
 }
+
+func TestSanitizeSQLIdentifier(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		// Valid identifiers
+		{name: "simple", input: "users", wantErr: false},
+		{name: "with_underscore", input: "user_roles", wantErr: false},
+		{name: "starts_with_underscore", input: "_private", wantErr: false},
+		{name: "with_digits", input: "table1", wantErr: false},
+		{name: "with_dot_schema", input: "schema.table", wantErr: false},
+		{name: "all_caps", input: "USERS", wantErr: false},
+
+		// Invalid identifiers
+		{name: "empty", input: "", wantErr: true},
+		{name: "starts_with_digit", input: "1table", wantErr: true},
+		{name: "with_space", input: "user table", wantErr: true},
+		{name: "with_semicolon", input: "users;", wantErr: true},
+		{name: "with_quote", input: "users'", wantErr: true},
+		{name: "with_double_quote", input: `users"`, wantErr: true},
+		{name: "with_backtick", input: "users`", wantErr: true},
+		{name: "with_dash", input: "user-roles", wantErr: true},
+		{name: "sql_injection_drop", input: "users; DROP TABLE users", wantErr: true},
+		{name: "sql_injection_quote", input: "users' OR '1'='1", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := sanitizeSQLIdentifier(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("sanitizeSQLIdentifier(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestSafeQuoteIdentifier(t *testing.T) {
+	tests := []struct {
+		name    string
+		ident   string
+		dialect string
+		want    string
+		wantErr bool
+	}{
+		// Valid identifiers with different dialects
+		{name: "mysql_simple", ident: "users", dialect: "mysql", want: "`users`", wantErr: false},
+		{name: "mariadb_simple", ident: "users", dialect: "mariadb", want: `"users"`, wantErr: false},
+		{name: "postgres_simple", ident: "users", dialect: "postgres", want: `"users"`, wantErr: false},
+		{name: "postgresql_simple", ident: "users", dialect: "postgresql", want: `"users"`, wantErr: false},
+		{name: "sqlite_simple", ident: "users", dialect: "sqlite", want: `"users"`, wantErr: false},
+		{name: "unknown_dialect", ident: "users", dialect: "oracle", want: `"users"`, wantErr: false},
+		{name: "with_schema", ident: "public.users", dialect: "postgres", want: `"public.users"`, wantErr: false},
+
+		// Invalid identifiers should error
+		{name: "injection_semicolon", ident: "users;", dialect: "mysql", want: "", wantErr: true},
+		{name: "injection_quote", ident: "users'", dialect: "postgres", want: "", wantErr: true},
+		{name: "injection_drop", ident: "users; DROP TABLE users", dialect: "mysql", want: "", wantErr: true},
+		{name: "empty", ident: "", dialect: "mysql", want: "", wantErr: true},
+		{name: "starts_digit", ident: "1table", dialect: "mysql", want: "", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := safeQuoteIdentifier(tt.ident, tt.dialect)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("safeQuoteIdentifier(%q, %q) error = %v, wantErr %v", tt.ident, tt.dialect, err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && got != tt.want {
+				t.Errorf("safeQuoteIdentifier(%q, %q) = %q, want %q", tt.ident, tt.dialect, got, tt.want)
+			}
+		})
+	}
+}

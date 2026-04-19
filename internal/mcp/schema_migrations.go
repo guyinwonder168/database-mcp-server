@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -376,12 +377,35 @@ func changePriority(changeType SchemaChangeType) int {
 	return priority
 }
 
+// validSQLIdentifier matches safe SQL identifiers: letters, digits, underscores,
+// dots (for schema.table), starting with a letter or underscore.
+var validSQLIdentifier = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_.]*$`)
+
+// sanitizeSQLIdentifier validates that a name is a safe SQL identifier.
+// Returns an error if the name contains characters that could enable SQL injection.
+func sanitizeSQLIdentifier(name string) error {
+	if !validSQLIdentifier.MatchString(name) {
+		return fmt.Errorf("invalid SQL identifier %q: must match [a-zA-Z_][a-zA-Z0-9_.]*", name)
+	}
+	return nil
+}
+
 func quoteIdentifier(identifier, dialect string) string {
 	if dialect == "mysql" {
 		return fmt.Sprintf("`%s`", identifier)
 	}
 
 	return fmt.Sprintf(`"%s"`, identifier)
+}
+
+// safeQuoteIdentifier validates an identifier and returns it properly quoted
+// for the given SQL dialect. Returns an error if the identifier contains
+// characters that could enable SQL injection.
+func safeQuoteIdentifier(identifier, dialect string) (string, error) {
+	if err := sanitizeSQLIdentifier(identifier); err != nil {
+		return "", err
+	}
+	return quoteIdentifier(identifier, dialect), nil
 }
 
 func extractSQLType(value interface{}, fallback string) string {

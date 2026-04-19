@@ -76,7 +76,7 @@ func (s *MCPServer) handleDiscoverInsights(ctx context.Context, _ *mcp.CallToolR
 	}
 
 	// Sample data from table
-	rows, err := s.sampleTableData(ctx, conn, p.TableName, columns, 1000)
+	rows, err := s.sampleTableData(ctx, conn, prof.DBType, p.TableName, columns, 1000)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to sample data: %w", err)
 	}
@@ -235,18 +235,28 @@ func (s *MCPServer) getTableColumnsSQLite(ctx context.Context, conn *sql.DB, tab
 }
 
 // sampleTableData samples data from a table
-func (s *MCPServer) sampleTableData(ctx context.Context, conn *sql.DB, tableName string, columns []ColumnInfo, limit int) ([]map[string]interface{}, error) {
+func (s *MCPServer) sampleTableData(ctx context.Context, conn *sql.DB, dbType string, tableName string, columns []ColumnInfo, limit int) ([]map[string]interface{}, error) {
 	if limit <= 0 {
 		limit = 1000
 	}
 
-	// Build column list
-	colNames := make([]string, len(columns))
-	for i, col := range columns {
-		colNames[i] = col.Name
+	// Validate and quote identifiers to prevent SQL injection
+	quotedTable, err := safeQuoteIdentifier(tableName, dbType)
+	if err != nil {
+		return nil, fmt.Errorf("invalid table name: %w", err)
 	}
 
-	query := fmt.Sprintf(sampleQueryTemplate, strings.Join(colNames, ", "), tableName, limit)
+	quotedCols := make([]string, len(columns))
+	for i, col := range columns {
+		quotedCols[i], err = safeQuoteIdentifier(col.Name, dbType)
+		if err != nil {
+			return nil, fmt.Errorf("invalid column name %q: %w", col.Name, err)
+		}
+	}
+
+	// #nosec G201 -- identifiers validated by safeQuoteIdentifier and quoted with dialect-specific delimiters;
+	// limit is an int parameter, not a string
+	query := fmt.Sprintf(sampleQueryTemplate, strings.Join(quotedCols, ", "), quotedTable, limit)
 
 	rows, err := conn.QueryContext(ctx, query)
 	if err != nil {
