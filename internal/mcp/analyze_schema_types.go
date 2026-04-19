@@ -65,4 +65,5 @@ type AnalyzeSchemaResult struct {
 	QuickInsights           []string                  `json:"quick_insights,omitempty"`
 	ColumnProfiling         *EnhancedSchemaAnalysis   `json:"column_profiling,omitempty"`
 	ClassificationSignals   *ClassificationSignals    `json:"classification_signals,omitempty"`
+	Warnings                []string                  `json:"warnings,omitempty"` // Non-fatal warnings (e.g., privilege issues)
 }
