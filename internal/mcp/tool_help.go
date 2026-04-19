@@ -180,6 +180,21 @@ var toolHelpCatalog = map[string]toolHelpEntry{
 		CommonErrors:    []ToolHelpError{errProfileNotFound},
 		ResponseFormat:  "JSON object with databases array of database name strings",
 	},
+	"list-schemas": {
+		Description: "List all accessible database schemas with default schema information. For SQLite, returns [\"main\"] with default \"main\". For PostgreSQL, queries information_schema.schemata. For MySQL/MariaDB, returns databases accessible to the user.",
+		Parameters: []ToolParamInfo{
+			paramProfile,
+			paramDBRequired,
+		},
+		Summary:         "List accessible schemas and identify the default schema.",
+		MinimalExample:  map[string]any{"profile_name": "analytics_db", "database_name": "analytics_db"},
+		AdvancedExample: map[string]any{"profile_name": "analytics_db", "database_name": "analytics_db"},
+		CommonErrors: []ToolHelpError{
+			errProfileNotFound,
+			{Error: "Database not found", Cause: "database_name does not exist on the server", Fix: "Use list-databases to see available databases"},
+		},
+		ResponseFormat: "JSON object with schemas array and default_schema string",
+	},
 	"analyze-schema": {
 		Description: "Analyze database schema metadata at selectable depth. Returns table catalogs, column details, relationships, data quality metrics, and AI query suggestions based on analysis level.",
 		Parameters: []ToolParamInfo{

@@ -240,6 +240,266 @@ paths:
            application/json:
              schema:
                $ref: '#/components/schemas/ErrorResponse'
+  /list-schemas:
+    post:
+      summary: List all accessible database schemas with default schema
+      description: |
+        Returns a list of all schemas accessible to the profile and identifies the default schema.
+        For SQLite, always returns ["main"] with default "main".
+        For PostgreSQL, queries information_schema.schemata.
+        For MySQL/MariaDB, returns databases accessible to the user.
+      operationId: list-schemas
+      tags:
+        - Schema
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListSchemasParams'
+      responses:
+        '200':
+          description: List of schemas with default
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListSchemasResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /get-search-path:
+    post:
+      summary: Get the current search_path and effective schema
+      description: |
+        Queries the database to show the current search_path setting and the active schema.
+        Note: This server uses connection pooling. Schema should be explicitly qualified in queries.
+      operationId: get-search-path
+      tags:
+        - Schema
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GetSearchPathParams'
+      responses:
+        '200':
+          description: Search path and current schema
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetSearchPathResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /optimize-query:
+    post:
+      summary: Run EXPLAIN and return optimization findings for a SQL statement
+      description: |
+        Analyzes a SQL statement's execution plan and returns optimization findings
+        including missing indexes, inefficient joins, and estimated improvement range.
+      operationId: optimize-query
+      tags:
+        - Query
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OptimizeQueryParams'
+      responses:
+        '200':
+          description: Optimization analysis result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OptimizeQueryResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /validate-query:
+    post:
+      summary: Validate SQL syntax and detect risky patterns without executing
+      description: |
+        Validates SQL syntax and detects risky patterns without executing the statement.
+        Returns validation issues (syntax, logic, security) and pass/fail summary.
+      operationId: validate-query
+      tags:
+        - Query
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidateQueryParams'
+      responses:
+        '200':
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidateQueryResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /analyze-data-lineage:
+    post:
+      summary: Trace data dependencies for a table using foreign key relationships
+      description: |
+        Traces upstream and downstream table dependencies using foreign key relationships.
+        Returns dependency graph and edges showing data flow.
+      operationId: analyze-data-lineage
+      tags:
+        - Analysis
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyzeDataLineageParams'
+      responses:
+        '200':
+          description: Lineage analysis result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyzeDataLineageResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /discover-insights:
+    post:
+      summary: Discover KPIs, trends, anomalies, and distribution patterns in tables
+      description: |
+        Automatically discovers KPIs, trends, anomalies, and distribution patterns
+        in database tables. Supports filtering by columns and insight types.
+      operationId: discover-insights
+      tags:
+        - Analysis
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DiscoverInsightsParams'
+      responses:
+        '200':
+          description: Discovered insights
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoverInsightsResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /discover-joins:
+    post:
+      summary: Discover joinable relationships between tables and suggest JOIN SQL
+      description: |
+        Discovers foreign key relationships between tables and suggests JOIN SQL statements.
+        Can target specific tables or discover across all tables in the database.
+      operationId: discover-joins
+      tags:
+        - Analysis
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DiscoverJoinsParams'
+      responses:
+        '200':
+          description: Join suggestions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoverJoinsResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /sample-data:
+    post:
+      summary: Fetch sample rows from a table to infer data types and value ranges
+      description: |
+        Fetches sample rows from a table to help AI/agents infer data types, formats,
+        and value ranges. Returns column names and sample values.
+      operationId: sample-data
+      tags:
+        - Data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SampleDataParams'
+      responses:
+        '200':
+          description: Sample data rows
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SampleDataResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /mcp-info:
+    post:
+      summary: Show MCP provider version and author
+      description: |
+        Returns the MCP provider version, author, and supported capabilities.
+        No parameters required.
+      operationId: mcp-info
+      tags:
+        - Meta
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MCPInfoParams'
+      responses:
+        '200':
+          description: MCP provider info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MCPInfoResult'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /get-tool-help:
+    post:
+      summary: Get usage help, examples, and common errors for a specific tool
+      description: |
+        Returns detailed help for a specific MCP tool including description,
+        parameters, examples, common errors, and usage notes.
+      operationId: get-tool-help
+      tags:
+        - Meta
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GetToolHelpParams'
+      responses:
+        '200':
+          description: Tool help information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetToolHelpResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 components:
   schemas:
     ConfigureProfileParams:
@@ -804,18 +1064,653 @@ components:
          type: number
 
     ErrorResponse:
-     type: object
-     properties:
-       status:
-         type: string
-         example: "error"
-       error_code:
-         type: string
-         example: "NO_TABLE_MATCH"
-       message:
-         type: string
-         example: "No table found matching the intent for query generation. Available tables: users, reports, logs."
+      type: object
+      properties:
+        status:
+          type: string
+          example: "error"
+        error_code:
+          type: string
+          example: "NO_TABLE_MATCH"
+        message:
+          type: string
+          example: "No table found matching the intent for query generation. Available tables: users, reports, logs."
+
+    ListSchemasParams:
+      type: object
+      required:
+        - profile_name
+        - database_name
+      properties:
+        profile_name:
+          type: string
+          description: Name of the database profile to use
+        database_name:
+          type: string
+          description: Database name to list schemas for
+
+    ListSchemasResult:
+      type: object
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+          description: List of accessible schema names
+        default_schema:
+          type: string
+          description: Default schema name for the database
+
+    GetSearchPathParams:
+      type: object
+      required:
+        - profile_name
+        - database_name
+      properties:
+        profile_name:
+          type: string
+          description: Name of the database profile to use
+        database_name:
+          type: string
+          description: Database name to query search path for
+
+    GetSearchPathResult:
+      type: object
+      properties:
+        search_path:
+          type: string
+          description: Current search_path setting
+        current_schema:
+          type: string
+          description: Effective current schema
+        connection_pooling_warning:
+          type: string
+          description: Warning about connection pooling and schema qualification
+
+    OptimizeQueryParams:
+      type: object
+      required:
+        - profile_name
+        - database_name
+        - sql
+      properties:
+        profile_name:
+          type: string
+          description: Name of the database profile to use
+        database_name:
+          type: string
+          description: Database name to run EXPLAIN against
+        sql:
+          type: string
+          description: SQL statement to optimize
+        params:
+          type: array
+          description: Positional parameters for prepared statements. BLOB/BINARY values must be base64-encoded strings.
+          items:
+            oneOf:
+              - type: string
+              - type: number
+              - type: boolean
+              - type: "null"
+
+    OptimizeQueryResult:
+      type: object
+      properties:
+        plan:
+          $ref: '#/components/schemas/ExplainPlan'
+        findings:
+          type: array
+          items:
+            $ref: '#/components/schemas/OptimizationFinding'
+        estimation:
+          $ref: '#/components/schemas/PerformanceEstimation'
+        summary:
+          type: string
+
+    ExplainPlan:
+      type: object
+      properties:
+        db_type:
+          type: string
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanStep'
+        raw_json:
+          type: string
+          description: Raw JSON execution plan when available
+        notes:
+          type: array
+          items:
+            type: string
+
+    PlanStep:
+      type: object
+      properties:
+        operation:
+          type: string
+        target:
+          type: string
+        detail:
+          type: string
+        estimated_cost:
+          type: number
+        estimated_rows:
+          type: number
+
+    OptimizationFinding:
+      type: object
+      properties:
+        rule:
+          type: string
+        severity:
+          type: string
+          enum: ["info", "warn", "critical"]
+        message:
+          type: string
+        suggestion:
+          type: string
+
+    PerformanceEstimation:
+      type: object
+      properties:
+        baseline_cost:
+          type: number
+        baseline_rows:
+          type: number
+        confidence:
+          type: number
+        improvement:
+          $ref: '#/components/schemas/ImprovementRange'
+        suggestions:
+          type: array
+          items:
+            type: string
+
+    ImprovementRange:
+      type: object
+      properties:
+        lower_percent:
+          type: number
+        upper_percent:
+          type: number
+        confidence:
+          type: number
+        explanation:
+          type: string
+
+    ValidateQueryParams:
+      type: object
+      required:
+        - profile_name
+        - sql
+      properties:
+        profile_name:
+          type: string
+          description: Name of the database profile to use
+        sql:
+          type: string
+          description: SQL statement to validate
+        database_name:
+          type: string
+          description: Optional database name
+        params:
+          type: array
+          description: Positional parameters for prepared statements (metadata only). BLOB/BINARY values must be base64-encoded strings.
+          items:
+            oneOf:
+              - type: string
+              - type: number
+              - type: boolean
+              - type: "null"
+
+    ValidateQueryResult:
+      type: object
+      properties:
+        is_valid:
+          type: boolean
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationIssue'
+        summary:
+          type: string
+        sql:
+          type: string
+        profile_name:
+          type: string
+        database_name:
+          type: string
+
+    ValidationIssue:
+      type: object
+      properties:
+        rule:
+          type: string
+        severity:
+          type: string
+          enum: ["info", "warn", "error"]
+        message:
+          type: string
+        suggestion:
+          type: string
+
+    AnalyzeDataLineageParams:
+      type: object
+      required:
+        - profile_name
+        - table_name
+      properties:
+        profile_name:
+          type: string
+          description: Name of the database profile to use
+        database_name:
+          type: string
+          description: Optional database name override
+        table_name:
+          type: string
+          description: Table to trace lineage for
+        scope:
+          type: string
+          enum: ["upstream", "downstream", "both"]
+          description: Scope of lineage tracing
+        tables:
+          type: array
+          items:
+            type: string
+          description: Specific tables to include
+
+    AnalyzeDataLineageResult:
+      type: object
+      properties:
+        upstream:
+          type: array
+          items:
+            type: string
+          description: Tables upstream from the target
+        downstream:
+          type: array
+          items:
+            type: string
+          description: Tables downstream from the target
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/LineageEdge'
+        summary:
+          type: string
+        scope:
+          type: string
+        target:
+          type: string
+        graph:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+
+    LineageEdge:
+      type: object
+      properties:
+        from_table:
+          type: string
+        to_table:
+          type: string
+        from_column:
+          type: string
+        to_column:
+          type: string
+        constraint:
+          type: string
+
+    DiscoverInsightsParams:
+      type: object
+      required:
+        - profile_name
+        - table_name
+      properties:
+        profile_name:
+          type: string
+          description: Name of the database profile to use
+        table_name:
+          type: string
+          description: Table to discover insights for
+        columns:
+          type: array
+          items:
+            type: string
+          description: Specific columns to analyze (all if empty)
+        insight_types:
+          type: array
+          items:
+            type: string
+            enum: ["kpi", "trend", "anomaly", "distribution"]
+          description: Types of insights to discover
+        max_results:
+          type: integer
+          description: Maximum number of results to return
+
+    DiscoverInsightsResult:
+      type: object
+      properties:
+        table_name:
+          type: string
+        insights:
+          type: array
+          items:
+            $ref: '#/components/schemas/Insight'
+        summary:
+          $ref: '#/components/schemas/InsightsSummary'
+
+    Insight:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: ["kpi", "trend", "anomaly", "distribution"]
+        column:
+          type: string
+        description:
+          type: string
+        kpi:
+          $ref: '#/components/schemas/KPIInsight'
+        trend:
+          $ref: '#/components/schemas/TrendInsight'
+        anomaly:
+          $ref: '#/components/schemas/AnomalyInsight'
+        distribution:
+          $ref: '#/components/schemas/DistributionInsight'
+
+    KPIInsight:
+      type: object
+      properties:
+        name:
+          type: string
+        value:
+          type: number
+        unit:
+          type: string
+        benchmark:
+          type: number
+
+    TrendInsight:
+      type: object
+      properties:
+        direction:
+          type: string
+          enum: ["upward", "downward", "stable"]
+        slope:
+          type: number
+        confidence:
+          type: number
+
+    AnomalyInsight:
+      type: object
+      properties:
+        column:
+          type: string
+        expected:
+          type: number
+        actual:
+          type: number
+        severity:
+          type: string
+          enum: ["low", "medium", "high", "critical"]
+
+    DistributionInsight:
+      type: object
+      properties:
+        column:
+          type: string
+        type:
+          type: string
+          enum: ["normal", "uniform", "skewed", "bimodal"]
+        buckets:
+          type: array
+          items:
+            $ref: '#/components/schemas/DistributionBucket'
+        stats:
+          $ref: '#/components/schemas/DistributionStats'
+
+    DistributionBucket:
+      type: object
+      properties:
+        min:
+          type: number
+        max:
+          type: number
+        count:
+          type: integer
+
+    DistributionStats:
+      type: object
+      properties:
+        mean:
+          type: number
+        median:
+          type: number
+        std_dev:
+          type: number
+        skewness:
+          type: number
+        kurtosis:
+          type: number
+
+    InsightsSummary:
+      type: object
+      properties:
+        total_insights:
+          type: integer
+        by_type:
+          type: object
+          additionalProperties:
+            type: integer
+        high_priority:
+          type: integer
+
+    DiscoverJoinsParams:
+      type: object
+      required:
+        - profile_name
+      properties:
+        profile_name:
+          type: string
+          description: Name of the database profile to use
+        tables:
+          type: array
+          items:
+            type: string
+          description: Specific tables to discover joins for (all if empty)
+
+    DiscoverJoinsResult:
+      type: object
+      properties:
+        joins:
+          type: array
+          items:
+            $ref: '#/components/schemas/JoinSuggestion'
+        summary:
+          type: string
+
+    JoinSuggestion:
+      type: object
+      properties:
+        from_table:
+          type: string
+        from_column:
+          type: string
+        to_table:
+          type: string
+        to_column:
+          type: string
+        relationship:
+          type: string
+        suggested_join_sql:
+          type: string
+
+    SampleDataParams:
+      type: object
+      required:
+        - profile_name
+        - database_name
+        - table_name
+      properties:
+        profile_name:
+          type: string
+          description: Name of the database profile to use
+        database_name:
+          type: string
+          description: Database name where the table resides
+        table_name:
+          type: string
+          description: Table to sample data from
+        schema:
+          type: string
+          description: Optional schema name (uses default if empty)
+        sample_size:
+          type: integer
+          description: "Number of sample rows to fetch (default: 3)"
+          default: 3
+
+    SampleDataResult:
+      type: object
+      properties:
+        table_name:
+          type: string
+        sample_size:
+          type: integer
+        columns:
+          type: array
+          items:
+            type: string
+        sample_rows:
+          type: array
+          items:
+            type: array
+            items: {}
+        summary:
+          type: string
+
+    MCPInfoParams:
+      type: object
+      description: Parameters for MCP info (no parameters required)
+      properties: {}
+
+    MCPInfoResult:
+      type: object
+      properties:
+        version:
+          type: string
+          description: MCP provider version
+        author:
+          type: string
+          description: MCP provider author
+        model_info:
+          type: string
+          description: Supported model information
+        tool_count:
+          type: integer
+          description: Number of registered tools
+        capabilities:
+          type: array
+          items:
+            type: string
+          description: List of MCP capabilities
+
+    GetToolHelpParams:
+      type: object
+      required:
+        - tool_name
+      properties:
+        tool_name:
+          type: string
+          description: Name of the tool to get help for
+        topic:
+          type: string
+          description: Optional topic filter (e.g., "parameters", "errors", "all")
+
+    GetToolHelpResult:
+      type: object
+      properties:
+        tool_name:
+          type: string
+        found:
+          type: boolean
+        description:
+          type: string
+        summary:
+          type: string
+        parameters:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolParamInfo'
+        minimal_example:
+          type: object
+          additionalProperties: {}
+        advanced_example:
+          type: object
+          additionalProperties: {}
+        common_errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolHelpError'
+        notes:
+          type: array
+          items:
+            type: string
+        response_format:
+          type: string
+        topics:
+          type: array
+          items:
+            type: string
+
+    ToolParamInfo:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+        required:
+          type: boolean
+        description:
+          type: string
+        enum:
+          type: array
+          items:
+            type: string
+        default:
+          type: string
+
+    ToolHelpError:
+      type: object
+      properties:
+        error:
+          type: string
+        cause:
+          type: string
+        fix:
+          type: string
+
+  responses:
+    BadRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
 # [2025-08-02] CHANGE: describe-table now requires both database_name and table_name as input parameters.
 # The profile's default database is ignored for this operation.
 # [2025-08-04] ADDED: smart-query-builder tool for generating SQL from natural language intent.
 # [2025-08-04] CHANGE: database_name is now a required parameter for execute-sql, list-tables, and sample-data actions.
+# [2026-04-19] ADDED: list-schemas, get-search-path, optimize-query, validate-query, analyze-data-lineage,
+#   discover-insights, discover-joins, sample-data, mcp-info, get-tool-help — all 10 missing tool definitions.
+#   Added components/responses section (BadRequest, InternalServerError) referenced by new paths.

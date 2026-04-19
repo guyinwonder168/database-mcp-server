@@ -50,7 +50,7 @@ MCP Client
 
 ## Tool Surface (Implemented)
 
-The server registers these 20 tools:
+The server registers these 21 tools:
 - `configure-profile`
 - `list-profiles`
 - `execute-sql`
