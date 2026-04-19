@@ -57,7 +57,7 @@ Server.go has a thin handler that delegates to `analyze.Run()`, keeping only MCP
 
 - JSON schemas are automatically sanitized for Google Gemini's OpenAPI 3.0 subset requirements.
 - Schema mode `compact` is the default for tool-first clients.
-- All 20 tools are compatible with Gemini function calling.
+- All 21 tools are compatible with Gemini function calling.
 
 ## Packaging and Release State
 
@@ -67,7 +67,7 @@ Server.go has a thin handler that delegates to `analyze.Run()`, keeping only MCP
 
 ## Documentation State
 
-- Root README aligned with `v1.5.1` and 20 tools
+- Root README aligned with `v1.5.1` and 21 tools
 - docs/ updated to reflect current runtime behavior
 - Wiki expanded with onboarding, tool-scenario mapping, and client setup guides
 

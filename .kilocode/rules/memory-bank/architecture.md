@@ -24,7 +24,7 @@ MCP Client
 ### MCP Layer (`internal/mcp`)
 - `server.go`
   - server initialization
-  - registration of 20 tools
+  - registration of 21 tools
   - core handlers for profile, SQL, schema, and metadata operations
   - thin handler for analyze-schema (delegates to analyze.Run())
   - `resolveSchemaForAnalyze` — schema resolution with database name for MySQL/MariaDB, `current_schema()` for PostgreSQL
