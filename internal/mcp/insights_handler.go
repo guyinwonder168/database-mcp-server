@@ -246,6 +246,7 @@ func (s *MCPServer) sampleTableData(ctx context.Context, conn *sql.DB, tableName
 		colNames[i] = col.Name
 	}
 
+	// #nosec G201 -- column names and table name come from DB metadata (not user input); limit is an int, not a string
 	query := fmt.Sprintf(sampleQueryTemplate, strings.Join(colNames, ", "), tableName, limit)
 
 	rows, err := conn.QueryContext(ctx, query)

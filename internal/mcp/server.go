@@ -27,7 +27,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -1263,6 +1262,7 @@ func (s *MCPServer) resourceProfileHandler(ctx context.Context, req *mcp.ReadRes
 	safe := *prof
 	safe.Password = ""
 
+	// #nosec G117 -- Password field is redacted to "" above; JSON key is "password" (lowercase), no secret is marshaled
 	b, err := json.Marshal(safe)
 	if err != nil {
 		return nil, err
@@ -2514,7 +2514,8 @@ func sanitizeReadOnlySQL(sqlText string) string {
 			builder.WriteByte(' ')
 			continue
 		}
-		builder.WriteByte(byte(unicode.ToLower(rune(ch))))
+		lower := ch | 0x20 // ASCII tolower: safe for letters, noop for non-letters
+		builder.WriteByte(lower)
 	}
 	return builder.String()
 }
