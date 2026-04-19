@@ -2,11 +2,11 @@
 
 ## Current State
 
-- Version: `v1.5.1`
+- Version: `v1.6.0`
 - Stage: Production-ready
 - Toolchain: `go 1.26` with `go1.26.2`
 - MCP SDK: `github.com/modelcontextprotocol/go-sdk v1.5.0`
-- Registered tools: `20`
+- Registered tools: `21`
 
 ## Implemented Capabilities
 
@@ -46,12 +46,13 @@ Server.go has a thin handler that delegates to `analyze.Run()`, keeping only MCP
 - `internal/mcp/nlp/` — Entity extractor and intent classifier for smart-query-builder
 - `internal/mcp/context/` — Conversation context manager
 
-### Key Refactoring (v1.4.0–v1.5.1)
+### Key Refactoring (v1.4.0–v1.6.0)
 - Extracted ~40 functions from server.go into `internal/mcp/analyze/` as pure functions
 - Fixed MySQL/MariaDB schema resolution bug (#75–#80): `resolveSchemaForAnalyze` now passes `databaseName` instead of empty string
 - Added `Warnings []string` to `AnalyzeSchemaResult` for privilege detection
 - Security hardening: all `fmt.Sprintf` SQL eliminated, SQLite PRAGMAs converted to parameterized TVF, `sanitizeIdentifier()` + `quoteForDB()` added
 - Extracted 8 helper functions for cognitive complexity reduction (SonarCloud S3776)
+- **v1.6.0**: Signal-provider architecture — replaced hardcoded domain/entity classification with raw naming prefix frequencies + FK structural analysis. Fixed FK/index data pipeline (applyFKsToColumns, applyFKsToSchemas, applyIndexesToColumns, rebuildKeyColumns). Reduced cognitive complexity in CategorizeTables and BuildPerformanceOptimization.
 
 ## Gemini Compatibility
 
@@ -63,11 +64,11 @@ Server.go has a thin handler that delegates to `analyze.Run()`, keeping only MCP
 
 - Release workflow publishes GitHub Releases from tags
 - Package workflow publishes GHCR container images
-- Latest release line currently aligned at `v1.5.1`
+- Latest release line currently aligned at `v1.6.0`
 
 ## Documentation State
 
-- Root README aligned with `v1.5.1` and 21 tools
+- Root README aligned with `v1.6.0` and 21 tools
 - docs/ updated to reflect current runtime behavior
 - Wiki expanded with onboarding, tool-scenario mapping, and client setup guides
 
