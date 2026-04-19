@@ -358,3 +358,212 @@ func entityNames(entities []TableEntity) []string {
 	}
 	return names
 }
+
+// --- Data Pipeline Bug Regression Tests (Issues #77, #80) ---
+// These test that FK and index data flows from discovery functions back into
+// tableColumns (SchemaColumnInfo) and tableSchemas (KeyColumns).
+
+func TestApplyFKsToColumns_SetsFlags(t *testing.T) {
+	tableColumns := map[string][]SchemaColumnInfo{
+		"orders": {
+			{ColumnName: "id", DataType: "int", IsPrimaryKey: true},
+			{ColumnName: "customer_id", DataType: "int"},
+			{ColumnName: "product_id", DataType: "int"},
+			{ColumnName: "quantity", DataType: "int"},
+		},
+	}
+
+	fks := []ForeignKeyRelationship{
+		{FromTable: "orders", FromColumn: "customer_id", ToTable: "customers", ToColumn: "id"},
+		{FromTable: "orders", FromColumn: "product_id", ToTable: "products", ToColumn: "id"},
+	}
+
+	applyFKsToColumns(tableColumns, fks)
+
+	cols := tableColumns["orders"]
+
+	// id should NOT be a FK
+	if cols[0].IsForeignKey {
+		t.Error("id should not be marked as foreign key")
+	}
+
+	// customer_id should be FK with correct ref
+	if !cols[1].IsForeignKey {
+		t.Fatal("customer_id should be marked as foreign key")
+	}
+	if cols[1].ForeignKeyRef == nil {
+		t.Fatal("customer_id ForeignKeyRef should not be nil")
+	}
+	if cols[1].ForeignKeyRef.RefTable != "customers" {
+		t.Errorf("customer_id ref table: got %q, want %q", cols[1].ForeignKeyRef.RefTable, "customers")
+	}
+	if cols[1].ForeignKeyRef.RefColumn != "id" {
+		t.Errorf("customer_id ref column: got %q, want %q", cols[1].ForeignKeyRef.RefColumn, "id")
+	}
+
+	// product_id should be FK with correct ref
+	if !cols[2].IsForeignKey {
+		t.Fatal("product_id should be marked as foreign key")
+	}
+	if cols[2].ForeignKeyRef.RefTable != "products" {
+		t.Errorf("product_id ref table: got %q, want %q", cols[2].ForeignKeyRef.RefTable, "products")
+	}
+
+	// quantity should NOT be a FK
+	if cols[3].IsForeignKey {
+		t.Error("quantity should not be marked as foreign key")
+	}
+
+	t.Logf("SUCCESS: applyFKsToColumns correctly set IsForeignKey and ForeignKeyRef")
+}
+
+func TestApplyFKsToSchemas_PopulatesKeyColumns(t *testing.T) {
+	schemas := map[string]TableInfo{
+		"orders": {
+			ColumnCount: 4,
+			KeyColumns:  KeyColumns{PrimaryKey: "id", ForeignKeys: nil},
+		},
+	}
+
+	fks := []ForeignKeyRelationship{
+		{FromTable: "orders", FromColumn: "customer_id", ToTable: "customers", ToColumn: "id"},
+		{FromTable: "orders", FromColumn: "product_id", ToTable: "products", ToColumn: "id"},
+	}
+
+	applyFKsToSchemas(schemas, fks)
+
+	fkCols := schemas["orders"].KeyColumns.ForeignKeys
+	if len(fkCols) != 2 {
+		t.Fatalf("expected 2 FK columns, got %d: %v", len(fkCols), fkCols)
+	}
+	if !containsString(fkCols, "customer_id") || !containsString(fkCols, "product_id") {
+		t.Errorf("FK columns should contain customer_id and product_id, got %v", fkCols)
+	}
+	t.Logf("SUCCESS: applyFKsToSchemas correctly populated ForeignKeys: %v", fkCols)
+}
+
+func TestApplyIndexesToColumns_SetsFlags(t *testing.T) {
+	// Simulate: caller_id/callee_id not flagged as indexed by column metadata query
+	// but ARE in fetched indexes (composite index scenario)
+	tableColumns := map[string][]SchemaColumnInfo{
+		"calls": {
+			{ColumnName: "id", DataType: "int", IsPrimaryKey: true, Indexed: false},
+			{ColumnName: "caller_id", DataType: "varchar", Indexed: false},
+			{ColumnName: "callee_id", DataType: "varchar", Indexed: false},
+			{ColumnName: "duration", DataType: "int", Indexed: false},
+		},
+	}
+
+	indexes := []IndexInfo{
+		{IndexName: "idx_caller", TableName: "calls", Columns: []string{"caller_id"}, IsPrimary: false},
+		{IndexName: "idx_callee", TableName: "calls", Columns: []string{"callee_id"}, IsPrimary: false},
+	}
+
+	applyIndexesToColumns(tableColumns, indexes)
+
+	cols := tableColumns["calls"]
+	if !cols[1].Indexed {
+		t.Error("caller_id should be marked as indexed")
+	}
+	if !cols[2].Indexed {
+		t.Error("callee_id should be marked as indexed")
+	}
+	if cols[3].Indexed {
+		t.Error("duration should NOT be marked as indexed")
+	}
+	t.Logf("SUCCESS: applyIndexesToColumns correctly set Indexed flags")
+}
+
+func TestRebuildKeyColumns_IntegratesEnrichedData(t *testing.T) {
+	// Start with initial schemas (no FK or index info in KeyColumns)
+	schemas := map[string]TableInfo{
+		"orders": {
+			ColumnCount: 4,
+			Columns: []SchemaColumnInfo{
+				{ColumnName: "id", IsPrimaryKey: true},
+				{ColumnName: "customer_id"},
+				{ColumnName: "product_id"},
+				{ColumnName: "status"},
+			},
+			KeyColumns: KeyColumns{PrimaryKey: "id"},
+		},
+	}
+
+	// Enriched columns (after applyFKsToColumns + applyIndexesToColumns)
+	tableColumns := map[string][]SchemaColumnInfo{
+		"orders": {
+			{ColumnName: "id", IsPrimaryKey: true},
+			{ColumnName: "customer_id", IsForeignKey: true, ForeignKeyRef: &ForeignKeyRef{RefTable: "customers", RefColumn: "id"}, Indexed: true},
+			{ColumnName: "product_id", IsForeignKey: true, ForeignKeyRef: &ForeignKeyRef{RefTable: "products", RefColumn: "id"}, Indexed: true},
+			{ColumnName: "status"},
+		},
+	}
+
+	rebuildKeyColumns(schemas, tableColumns)
+
+	kc := schemas["orders"].KeyColumns
+	if kc.PrimaryKey != "id" {
+		t.Errorf("primary key: got %q, want %q", kc.PrimaryKey, "id")
+	}
+	if len(kc.ForeignKeys) != 2 {
+		t.Errorf("foreign keys: got %d, want 2: %v", len(kc.ForeignKeys), kc.ForeignKeys)
+	}
+	if len(kc.IndexedColumns) != 2 {
+		t.Errorf("indexed columns: got %d, want 2: %v", len(kc.IndexedColumns), kc.IndexedColumns)
+	}
+
+	// Verify columns themselves are also updated
+	cols := schemas["orders"].Columns
+	if !cols[1].IsForeignKey {
+		t.Error("customer_id should be FK after rebuild")
+	}
+	if cols[1].ForeignKeyRef == nil || cols[1].ForeignKeyRef.RefTable != "customers" {
+		t.Error("customer_id should have correct ForeignKeyRef after rebuild")
+	}
+
+	t.Logf("SUCCESS: rebuildKeyColumns integrated enriched data. PK=%q, FKs=%v, Indexed=%v",
+		kc.PrimaryKey, kc.ForeignKeys, kc.IndexedColumns)
+}
+
+func TestApplyFKsToColumns_EmptyFKs_NoChanges(t *testing.T) {
+	tableColumns := map[string][]SchemaColumnInfo{
+		"users": {
+			{ColumnName: "id", IsPrimaryKey: true},
+			{ColumnName: "name"},
+		},
+	}
+
+	applyFKsToColumns(tableColumns, nil)
+
+	if tableColumns["users"][0].IsForeignKey {
+		t.Error("id should not be FK with empty FK list")
+	}
+	t.Logf("SUCCESS: empty FK list makes no changes")
+}
+
+func TestApplyIndexesToColumns_SkipsPrimaryKeys(t *testing.T) {
+	tableColumns := map[string][]SchemaColumnInfo{
+		"users": {
+			{ColumnName: "id", IsPrimaryKey: true, Indexed: false},
+			{ColumnName: "email", Indexed: false},
+		},
+	}
+
+	indexes := []IndexInfo{
+		{IndexName: "PRIMARY", TableName: "users", Columns: []string{"id"}, IsPrimary: true},
+		{IndexName: "idx_email", TableName: "users", Columns: []string{"email"}, IsPrimary: false},
+	}
+
+	applyIndexesToColumns(tableColumns, indexes)
+
+	cols := tableColumns["users"]
+	// id should NOT get Indexed=true from the primary key index
+	// (it's already flagged as IsPrimaryKey, and extractKeyColumns skips PKs for IndexedColumns)
+	if cols[0].Indexed {
+		t.Error("id should NOT be marked as indexed from primary key index")
+	}
+	if !cols[1].Indexed {
+		t.Error("email should be marked as indexed")
+	}
+	t.Logf("SUCCESS: primary key indexes skipped, non-PK indexes applied")
+}
