@@ -27,8 +27,9 @@ MCP Client
   - registration of 20 tools
   - core handlers for profile, SQL, schema, and metadata operations
   - thin handler for analyze-schema (delegates to analyze.Run())
+  - `resolveSchemaForAnalyze` — schema resolution with database name for MySQL/MariaDB, `current_schema()` for PostgreSQL
 - `analyze_schema_types.go`
-  - shared types for analyze-schema request/response
+  - shared types for analyze-schema request/response (including `Warnings []string` for privilege detection)
 - `insights_*.go`
   - KPI/trend/anomaly/distribution analysis
 - `schema_tracker*.go`, `schema_storage.go`, `schema_migrations.go`
@@ -87,7 +88,7 @@ MCP Client
 
 ### Registered Tools (20)
 - `configure-profile`, `list-profiles`, `execute-sql`
-- `list-tables`, `describe-table`, `list-databases`, `list-schemas`, `get-search-path`
+- `list-tables`, `describe-table`, `list-databases`, `get-search-path`
 - `analyze-schema`, `smart-query-builder`, `discover-joins`, `sample-data`
 - `optimize-query`, `validate-query`, `analyze-data-lineage`, `discover-insights`
 - `track-schema-changes`, `federated-query`

@@ -5,7 +5,7 @@
 Database MCP Server is a production-ready MCP provider for SQL databases, implemented in Go. It exposes a unified tool interface so AI agents and developers can safely interact with MySQL, MariaDB, PostgreSQL, and SQLite.
 
 Current implementation state:
-- Version: `v1.5.0`
+- Version: `v1.5.1`
 - MCP tools: `20` implemented and registered
 - Packaging: GitHub Releases + GHCR container images
 
@@ -18,7 +18,7 @@ Provide a secure, practical, and discoverable MCP database interface that works 
 1. Multi-database connectivity (MySQL, MariaDB, PostgreSQL, SQLite)
 2. Profile configuration and listing (`configure-profile`, `list-profiles`)
 3. SQL execution with read-only policy enforcement (`execute-sql`)
-4. Schema discovery (`list-databases`, `list-tables`, `describe-table`, `list-schemas`, `get-search-path`, `discover-joins`)
+4. Schema discovery (`list-databases`, `list-tables`, `describe-table`, `get-search-path`, `discover-joins`)
 5. Data sampling and analysis (`sample-data`, `analyze-schema`, `discover-insights`)
 6. Query intelligence (`smart-query-builder`, `validate-query`, `optimize-query`)
 7. Governance and advanced workflows (`analyze-data-lineage`, `track-schema-changes`, `federated-query`)

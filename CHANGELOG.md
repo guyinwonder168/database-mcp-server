@@ -6,6 +6,18 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+## [v1.5.1] - 2026-04-19
+
+### Fixed
+- **Bug #75**: `analyze-schema` returned 0 columns for MySQL/MariaDB — `resolveSchemaForAnalyze` now correctly passes `databaseName` for MySQL/MariaDB instead of empty string.
+- **Bug #76**: `analyze-schema` returned 0 row counts for MySQL/MariaDB — root cause same as #75 (empty `TABLE_SCHEMA` filter).
+- **Bug #77**: `analyze-schema` returned 0 foreign keys for MySQL/MariaDB — root cause same as #75.
+- **Bug #78**: Domain detection showed "unknown" for all databases — cascading from 0 columns; classification signals now populate correctly.
+- **Bug #79**: All tables categorized as "core" (100%) — cascading from 0 columns; proper categorization restored.
+- **Bug #80**: `analyze-schema` returned only generic tips with no query patterns or index recommendations — cascading from 0 columns; full analysis restored.
+- Added `Warnings []string` field to `AnalyzeSchemaResult` for non-fatal privilege warnings.
+- Added post-analysis privilege detection: warns when tables exist but 0 columns are accessible (likely insufficient database privileges).
+
 ## [v1.5.0] - 2026-04-19
 
 ### Changed
