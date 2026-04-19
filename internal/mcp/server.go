@@ -43,7 +43,7 @@ type MCPServer struct {
 	contextMgr    *ctxmgr.Manager
 }
 
-const MCPVersion = "v1.6.0"
+const MCPVersion = "v1.6.1"
 const MCPAuthor = "guyinwonder"
 
 const sqliteListTablesQuery = "SELECT name FROM sqlite_master WHERE type='table'"

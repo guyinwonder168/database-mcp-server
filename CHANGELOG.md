@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v1.6.1] - 2026-04-19
+
+### Fixed
+
+- Updated `mcp-info` tool count from "20 tools" to "21 tools" to reflect the `list-schemas` tool added in PR #88.
+
 ## [v1.6.0] - 2026-04-19
 
 ### Added
