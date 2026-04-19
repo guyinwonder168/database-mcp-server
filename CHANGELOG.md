@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v1.6.2] - 2026-04-19
+
+### Fixed
+
+- **Code scanning alerts (gosec)**: Resolved 4 open security alerts:
+  - **G115**: Replaced `byte(unicode.ToLower(rune(ch)))` with explicit `A-Z` range check in `sanitizeReadOnlySQL` — only converts uppercase ASCII letters, leaving all other characters (`_`, `@`, `[`, etc.) untouched
+  - **G201**: Added proper identifier validation and dialect-specific quoting in `sampleTableData` via new `sanitizeSQLIdentifier()` regex validator and `safeQuoteIdentifier()` function
+  - **G117**: Added `#nosec G117` with justification — Password field is redacted to `""` before JSON marshaling
+  - **G602**: Added `#nosec G602` with justification — `bucketIndex` is bounded to `[0,9]` by explicit range checks
+- Added 29 new test cases covering identifier validation, dialect-specific quoting, and SQL injection rejection
+- All 18 CI checks passing: gosec, SonarCloud, lint, coverage (85.9%), CodeQL, security
+
 ## [v1.6.1] - 2026-04-19
 
 ### Fixed
