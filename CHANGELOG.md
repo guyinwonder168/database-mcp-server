@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v1.6.0] - 2026-04-19
+
+### Added
+
+- **FK/index data pipeline fix** (Issues #77, #80): Discovered foreign keys and indexes now flow correctly into `table_schemas[].key_columns` output.
+  - New `applyFKsToColumns()` — sets `IsForeignKey=true` and `ForeignKeyRef` on FK columns in `SchemaColumnInfo`.
+  - New `applyFKsToSchemas()` — populates `KeyColumns.ForeignKeys` from discovered FK relationships.
+  - New `applyIndexesToColumns()` — sets `Indexed=true` on columns present in fetched indexes (including composite indexes missed by column metadata queries).
+  - New `rebuildKeyColumns()` — re-extracts `KeyColumns` from enriched column data after all apply functions run.
+- 6 regression tests for FK/index data pipeline (empty-input safety, PK index skip, end-to-end integration).
+
 ### Changed
 
 - **Signal-provider architecture for `analyze-schema`** (Issues #77-#80): The MCP server now provides raw structured signals for the calling LLM to interpret, rather than making hardcoded domain/entity/performance classifications.
@@ -11,13 +22,19 @@ All notable changes to this project will be documented in this file.
   - **Issue #78**: Replaced hardcoded 7-domain `DetectDomain` with signal-based `ComputeDomainSignals` that produces naming prefix frequencies (e.g., `{"call": 5, "broadcast": 3, "sip": 2}`). The calling LLM interprets domain from raw signals using its own world knowledge. Updated tool description to inform LLMs that `domain_indicators` provides signal frequencies, not authoritative labels.
   - **Issue #79**: Enhanced `CategorizeTables` with FK structural analysis: tables with 2+ outgoing FKs and few non-FK columns are classified as junction tables. Added `OutgoingFKs`/`IncomingFKs` signal fields to `TableEntity`.
   - **Issue #80**: Added `IndexCoverage` struct to `PerformanceOptimization` reporting total/indexed/unindexed FK columns and tables without primary keys. Added tables-without-PK detection.
+- **Cognitive complexity reduction** (SonarCloud go:S3776):
+  - Extracted `classifyTable`, `buildFKSignalMaps`, `isAuditTable`, `isJunctionTable`, `isLookupTable` from `CategorizeTables` (complexity 17 → ~5).
+  - Extracted `buildIndexedColSet`, `recommendFKIndexes`, `findTablesWithoutPK` from `BuildPerformanceOptimization` (complexity 24 → ~5).
 
 ### Removed
 
 - Removed legacy dead code from `server.go`: `detectImplicitRelationships`, `analyzeNamingRelationships`, `correlateDataValues`, `referenceColumnsForTarget`, `buildIDSet`, `countReferenceMatches` (only used by coverage tests, never by handlers).
 - Removed `mergeDomainIndicators` helper (replaced by `ComputeDomainSignals`).
 
-### Added
+### Fixed
+
+- **PR #88** (Issues #85, #87): Fixed OpenAPI spec missing 10 tool definitions and `list-schemas` tool not registered. Tool count: 20 → 21 across all docs.
+- Marked unused parameters in `GenerateBusinessDescription` with `_` (kilo-code-bot review).
 
 ## [v1.5.1] - 2026-04-19
 
