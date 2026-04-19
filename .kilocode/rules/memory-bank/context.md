@@ -2,7 +2,7 @@
 
 ## Current State
 
-- Version: `v1.6.0`
+- Version: `v1.6.1`
 - Stage: Production-ready
 - Toolchain: `go 1.26` with `go1.26.2`
 - MCP SDK: `github.com/modelcontextprotocol/go-sdk v1.5.0`
@@ -64,11 +64,11 @@ Server.go has a thin handler that delegates to `analyze.Run()`, keeping only MCP
 
 - Release workflow publishes GitHub Releases from tags
 - Package workflow publishes GHCR container images
-- Latest release line currently aligned at `v1.6.0`
+- Latest release line currently aligned at `v1.6.1`
 
 ## Documentation State
 
-- Root README aligned with `v1.6.0` and 21 tools
+- Root README aligned with `v1.6.1` and 21 tools
 - docs/ updated to reflect current runtime behavior
 - Wiki expanded with onboarding, tool-scenario mapping, and client setup guides
 
