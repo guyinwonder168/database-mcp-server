@@ -274,7 +274,7 @@ func TestSampleTableData_MySQL(t *testing.T) {
 	}
 }
 
-func TestSampleTableData_UnsupportedDBType(t *testing.T) {
+func TestSampleTableData_InvalidIdentifier(t *testing.T) {
 	server := &MCPServer{}
 	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
@@ -286,9 +286,19 @@ func TestSampleTableData_UnsupportedDBType(t *testing.T) {
 		{Name: "id", Type: "INTEGER"},
 	}
 
-	_, err = server.sampleTableData(context.Background(), db, "sqlite", "test", columns, 10)
+	// Table name with injection characters should be rejected
+	_, err = server.sampleTableData(context.Background(), db, "sqlite", "users; DROP TABLE users", columns, 10)
 	if err == nil {
-		t.Error("Expected error for unsupported DB type")
+		t.Error("Expected error for invalid table name (SQL injection)")
+	}
+
+	// Column name with injection characters should be rejected
+	badColumns := []ColumnInfo{
+		{Name: "id; DROP TABLE users", Type: "INTEGER"},
+	}
+	_, err = server.sampleTableData(context.Background(), db, "sqlite", "test", badColumns, 10)
+	if err == nil {
+		t.Error("Expected error for invalid column name (SQL injection)")
 	}
 }
 
