@@ -10,7 +10,7 @@ import (
 // TestFetchColumnsBulk_MySQL_WithEmptySchema_Bug75 verifies that passing an empty
 // schema to FetchColumnsBulk for MySQL returns 0 columns (the bug scenario).
 //
-// Issue #75: When resolveSchemaForAnalyze returned "" for MySQL, WHERE TABLE_SCHEMA = ''
+// Issue #75: When resolveSchemaForAnalyze returned "" for MySQL, WHERE TABLE_SCHEMA = ”
 // matched 0 rows, causing analyze-schema to return 0 columns.
 //
 // After the fix, resolveSchemaForAnalyze returns the database name for MySQL,
@@ -289,10 +289,10 @@ func TestCategorizeTables_WithZeroColumns_AllCore_Bug79(t *testing.T) {
 
 	// Bug scenario: 0 columns per table (because #75 returned 0 columns)
 	tableSchemas := map[string]TableInfo{
-		"calls":        {ColumnCount: 0, Columns: nil},
-		"extensions":   {ColumnCount: 0, Columns: nil},
-		"voicemail":     {ColumnCount: 0, Columns: nil},
-		"call_status":   {ColumnCount: 0, Columns: nil},
+		"calls":       {ColumnCount: 0, Columns: nil},
+		"extensions":  {ColumnCount: 0, Columns: nil},
+		"voicemail":   {ColumnCount: 0, Columns: nil},
+		"call_status": {ColumnCount: 0, Columns: nil},
 	}
 
 	catalog := CategorizeTables(tableNames, tableSchemas)

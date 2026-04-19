@@ -14,7 +14,7 @@ import (
 // resolves the schema for different database types.
 //
 // BUG-009 fix: Previously, resolveSchemaForAnalyze returned "" for MySQL/MariaDB,
-// causing INFORMATION_SCHEMA queries with WHERE TABLE_SCHEMA = '' to return 0 rows.
+// causing INFORMATION_SCHEMA queries with WHERE TABLE_SCHEMA = ” to return 0 rows.
 // This broke analyze-schema for MySQL/MariaDB (#75, #76, #77, #78, #79, #80).
 func TestResolveSchemaForAnalyze(t *testing.T) {
 	ctx := context.Background()
@@ -121,7 +121,7 @@ func TestResolveSchemaForAnalyze(t *testing.T) {
 //
 // Before the fix, resolveSchemaForAnalyze(ctx, conn, "", "mysql", "testdb")
 // returned "" because the function only handled Postgres.
-// This caused WHERE TABLE_SCHEMA = '' → 0 rows in all INFORMATION_SCHEMA queries.
+// This caused WHERE TABLE_SCHEMA = ” → 0 rows in all INFORMATION_SCHEMA queries.
 func TestResolveSchemaForAnalyze_BugRegression(t *testing.T) {
 	ctx := context.Background()
 
