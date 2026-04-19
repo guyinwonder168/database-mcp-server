@@ -43,7 +43,7 @@ type MCPServer struct {
 	contextMgr    *ctxmgr.Manager
 }
 
-const MCPVersion = "v1.5.0"
+const MCPVersion = "v1.5.1"
 const MCPAuthor = "guyinwonder"
 
 const sqliteListTablesQuery = "SELECT name FROM sqlite_master WHERE type='table'"
@@ -1029,7 +1029,7 @@ func (s *MCPServer) handleMCPInfo(ctx context.Context, _ *mcp.CallToolRequest, i
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{
-				Text: "Database MCP Provider\nAuthor: " + MCPAuthor + "\nVersion: " + MCPVersion + "\nCreated using Opus 4.6, GLM 5, and GPT 5.3-Codex via OpenAgent framework.\nFeatures: 19 tools (including profile delete/clone), optimized for strict declaration budgets.",
+				Text: "Database MCP Provider\nAuthor: " + MCPAuthor + "\nVersion: " + MCPVersion + "\nBuilt via OpenAgent framework with multiple AI models (Claude, GLM, GPT, etc.).\nFeatures: 20 tools (including profile delete/clone), optimized for strict declaration budgets.",
 			},
 		},
 	}, nil, nil

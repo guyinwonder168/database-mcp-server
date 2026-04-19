@@ -53,7 +53,7 @@ Database MCP Server provides a unified MCP tool interface that lets AI agents an
   - `validate-query`
   - `optimize-query`
 - Analysis and governance:
-  - `analyze-schema`
+  - `analyze-schema` (with LLM-based domain inference via classification signals and privilege warnings)
   - `analyze-data-lineage`
   - `discover-insights`
   - `track-schema-changes`
@@ -101,4 +101,4 @@ Database MCP Server provides a unified MCP tool interface that lets AI agents an
 - Additional database support (e.g., SQL Server, Oracle)
 - Advanced observability and operational telemetry
 - Additional enterprise governance workflows
-- **Data Migration (v1.4.0)** - Cross-database migration with async jobs, schema translation, and resume capability (see `docs/data-migration-design.md`)
+- **Data Migration (Phase 4)** - Cross-database migration with async jobs, schema translation, and resume capability (see `docs/data-migration-design.md`)

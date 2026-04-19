@@ -5,8 +5,8 @@
 Database MCP Server is a production MCP provider for SQL databases, built in Go.
 
 Current implementation baseline:
-- Runtime version: `v1.4.0`
-- Registered tools: `21`
+- Runtime version: `v1.5.1`
+- Registered tools: `20`
 - Go module baseline: `go 1.26` (`toolchain go1.26.1`)
 - MCP SDK: `github.com/modelcontextprotocol/go-sdk v1.2.0`
 
@@ -31,10 +31,14 @@ MCP Client
   - startup, config bootstrap, transport wiring
 - `internal/mcp/server.go`
   - MCP server creation, tool registration, handlers
+  - Schema resolution for analyze operations (`resolveSchemaForAnalyze`)
+  - Privilege warning detection for MySQL/MariaDB/PostgreSQL
 - `internal/mcp/schema_tracker.go`
   - schema tracking/history/migration/drift flows
 - `internal/mcp/federation_*.go`
   - federated query parser/planner/executor/join logic
+- `internal/mcp/analyze_*.go`, `internal/mcp/analyze_schema_types.go`
+  - analyze-schema request/response types, including `Warnings []string` for privilege issues
 - `internal/mcp/insights_*.go`
   - insight discovery and statistics processing
 - `internal/config/config.go`
@@ -46,13 +50,14 @@ MCP Client
 
 ## Tool Surface (Implemented)
 
-The server registers these 19 tools:
+The server registers these 20 tools:
 - `configure-profile`
 - `list-profiles`
 - `execute-sql`
 - `list-tables`
 - `describe-table`
 - `list-databases`
+- `get-search-path`
 - `analyze-schema`
 - `smart-query-builder`
 - `optimize-query`
@@ -73,6 +78,9 @@ The server registers these 19 tools:
 - Read-only profile enforcement for write protection
 - Parameterized SQL support (`params`) to reduce injection risk
 - Structured errors and safe logging (no raw credential output)
+- Schema-aware query construction: `resolveSchemaForAnalyze` correctly passes database name for MySQL/MariaDB (not empty string)
+- Privilege detection warnings in `analyze-schema` response (`Warnings []string`) when tables exist but columns are inaccessible
+- Domain inference via classification signals (not hardcoded domain patterns) — LLM-based domain detection from raw table/column signals
 
 ## Performance Characteristics
 
@@ -92,7 +100,7 @@ The server registers these 19 tools:
 
 - Dockerfile is multi-stage and builds `./cmd/server/main.go`
 - Published images:
-  - `ghcr.io/guyinwonder168/database-mcp-server:v1.4.0`
+  - `ghcr.io/guyinwonder168/database-mcp-server:v1.5.1`
   - `ghcr.io/guyinwonder168/database-mcp-server:latest`
 
 ### Release

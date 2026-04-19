@@ -2,7 +2,7 @@
 
 ## Current State
 
-- Version: `v1.5.0`
+- Version: `v1.5.1`
 - Stage: Production-ready
 - Toolchain: `go 1.26` with `go1.26.2`
 - MCP SDK: `github.com/modelcontextprotocol/go-sdk v1.5.0`
@@ -13,7 +13,7 @@
 - Core DB workflow:
   - `configure-profile`, `list-profiles`, `execute-sql`
   - `list-databases`, `list-tables`, `describe-table`
-  - `list-schemas`, `get-search-path`, `discover-joins`, `sample-data`
+  - `get-search-path`, `discover-joins`, `sample-data`
 - Query intelligence:
   - `smart-query-builder`, `validate-query`, `optimize-query`
 - Analysis/governance:
@@ -46,9 +46,10 @@ Server.go has a thin handler that delegates to `analyze.Run()`, keeping only MCP
 - `internal/mcp/nlp/` — Entity extractor and intent classifier for smart-query-builder
 - `internal/mcp/context/` — Conversation context manager
 
-### Key Refactoring (v1.4.0–v1.5.0)
+### Key Refactoring (v1.4.0–v1.5.1)
 - Extracted ~40 functions from server.go into `internal/mcp/analyze/` as pure functions
-- Fixed 6 analyze-schema bugs (#75–#80): column scanning, FK discovery, implicit relationships, classification signals, index analysis, regex overlap
+- Fixed MySQL/MariaDB schema resolution bug (#75–#80): `resolveSchemaForAnalyze` now passes `databaseName` instead of empty string
+- Added `Warnings []string` to `AnalyzeSchemaResult` for privilege detection
 - Security hardening: all `fmt.Sprintf` SQL eliminated, SQLite PRAGMAs converted to parameterized TVF, `sanitizeIdentifier()` + `quoteForDB()` added
 - Extracted 8 helper functions for cognitive complexity reduction (SonarCloud S3776)
 
@@ -62,11 +63,11 @@ Server.go has a thin handler that delegates to `analyze.Run()`, keeping only MCP
 
 - Release workflow publishes GitHub Releases from tags
 - Package workflow publishes GHCR container images
-- Latest release line currently aligned at `v1.5.0`
+- Latest release line currently aligned at `v1.5.1`
 
 ## Documentation State
 
-- Root README aligned with `v1.5.0` and 20 tools
+- Root README aligned with `v1.5.1` and 20 tools
 - docs/ updated to reflect current runtime behavior
 - Wiki expanded with onboarding, tool-scenario mapping, and client setup guides
 

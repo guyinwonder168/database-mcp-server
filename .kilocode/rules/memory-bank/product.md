@@ -41,7 +41,7 @@ Database MCP Server provides a unified MCP tool interface with consistent behavi
 
 The product currently exposes 20 tools, spanning:
 - **Profile/connectivity**: `configure-profile`, `list-profiles`
-- **Schema discovery**: `list-databases`, `list-tables`, `describe-table`, `list-schemas`, `get-search-path`, `discover-joins`, `sample-data`
+- **Schema discovery**: `list-databases`, `list-tables`, `describe-table`, `get-search-path`, `discover-joins`, `sample-data`
 - **SQL execution**: `execute-sql`
 - **Query intelligence**: `smart-query-builder`, `validate-query`, `optimize-query`
 - **Analysis/governance**: `analyze-schema` (with optional profiling), `discover-insights`, `analyze-data-lineage`, `track-schema-changes`
