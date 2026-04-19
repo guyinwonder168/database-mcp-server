@@ -924,7 +924,7 @@ func (s *MCPServer) handleMCPInfo(ctx context.Context, _ *mcp.CallToolRequest, i
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{
-				Text: "Database MCP Provider\nAuthor: " + MCPAuthor + "\nVersion: " + MCPVersion + "\nBuilt via OpenAgent framework with multiple AI models (Claude, GLM, GPT, etc.).\nFeatures: 20 tools (including profile delete/clone), optimized for strict declaration budgets.",
+				Text: "Database MCP Provider\nAuthor: " + MCPAuthor + "\nVersion: " + MCPVersion + "\nBuilt via OpenAgent framework with multiple AI models (Claude, GLM, GPT, etc.).\nFeatures: 21 tools (including profile delete/clone), optimized for strict declaration budgets.",
 			},
 		},
 	}, nil, nil
