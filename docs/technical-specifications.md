@@ -80,7 +80,10 @@ The server registers these 21 tools:
 - Structured errors and safe logging (no raw credential output)
 - Schema-aware query construction: `resolveSchemaForAnalyze` correctly passes database name for MySQL/MariaDB (not empty string)
 - Privilege detection warnings in `analyze-schema` response (`Warnings []string`) when tables exist but columns are inaccessible
-- Domain inference via classification signals (not hardcoded domain patterns) — LLM-based domain detection from raw table/column signals
+- Domain inference via naming prefix signals (not hardcoded domain patterns) — `ComputeDomainSignals` extracts table prefix frequencies for LLM interpretation
+- FK-based structural table categorization — tables with 2+ outgoing FKs classified as junction; FK signal counts on `TableEntity`
+- Index coverage signals — `IndexCoverage` struct reports total/indexed/unindexed FK columns and tables without primary keys
+- Error warnings for FK/index/row count fetch failures instead of silent discard
 
 ## Performance Characteristics
 

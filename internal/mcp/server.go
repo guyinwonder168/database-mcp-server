@@ -225,131 +225,6 @@ func sanitizeSchemaNodeForGemini(node any) {
 	}
 }
 
-// --- Semantic Relationship Mapping Helpers ---
-//
-// detectImplicitRelationships finds relationships via naming patterns.
-func (s *MCPServer) detectImplicitRelationships(tables map[string]TableInfo) []SemanticRelationship {
-	var relationships []SemanticRelationship
-	for srcName, source := range tables {
-		for tgtName, target := range tables {
-			if srcName == tgtName {
-				continue
-			}
-			rel := s.analyzeNamingRelationships(srcName, source, tgtName, target)
-			if rel != nil && rel.ConfidenceScore > 0.5 {
-				relationships = append(relationships, *rel)
-			}
-		}
-	}
-	return relationships
-}
-
-// analyzeNamingRelationships compares column names for reference patterns.
-func (s *MCPServer) analyzeNamingRelationships(srcName string, source TableInfo, tgtName string, target TableInfo) *SemanticRelationship {
-	for _, col := range source.Columns {
-		// Pattern: targetTableName + "_id"
-		expected := tgtName + "_id"
-		if col.ColumnName == expected {
-			return &SemanticRelationship{
-				Tables:           []string{srcName, tgtName},
-				RelationshipType: "implicit_naming",
-				ConnectionBasis:  "column_naming",
-				ConfidenceScore:  0.8,
-				SuggestedJoin:    fmt.Sprintf("SELECT * FROM %s JOIN %s ON %s.%s = %s.id", srcName, tgtName, srcName, col.ColumnName, tgtName),
-			}
-		}
-		// Pattern: shared column names
-		for _, tgtCol := range target.Columns {
-			if col.ColumnName == tgtCol.ColumnName && col.ColumnName != "id" {
-				return &SemanticRelationship{
-					Tables:           []string{srcName, tgtName},
-					RelationshipType: "shared_column",
-					ConnectionBasis:  "shared_column",
-					ConfidenceScore:  0.6,
-					SuggestedJoin:    fmt.Sprintf(joinSQLTemplate, srcName, tgtName, srcName, col.ColumnName, tgtName, tgtCol.ColumnName),
-				}
-			}
-		}
-		// Pattern: *_id columns
-		if len(col.ColumnName) > 3 && col.ColumnName[len(col.ColumnName)-3:] == "_id" {
-			prefix := col.ColumnName[:len(col.ColumnName)-3]
-			if prefix == tgtName {
-				return &SemanticRelationship{
-					Tables:           []string{srcName, tgtName},
-					RelationshipType: "implicit_naming",
-					ConnectionBasis:  "column_naming",
-					ConfidenceScore:  0.7,
-					SuggestedJoin:    fmt.Sprintf("SELECT * FROM %s JOIN %s ON %s.%s = %s.id", srcName, tgtName, srcName, col.ColumnName, tgtName),
-				}
-			}
-		}
-	}
-	return nil
-}
-
-// correlateDataValues checks if values in source reference columns exist in target table.
-func (s *MCPServer) correlateDataValues(
-	srcName string, source TableInfo,
-	tgtName string,
-	sampleData map[string][]map[string]interface{},
-) float64 {
-	refCols := referenceColumnsForTarget(source.Columns, tgtName)
-	if len(refCols) == 0 {
-		return 0.0
-	}
-
-	sourceRows := sampleData[srcName]
-	targetRows := sampleData[tgtName]
-	if len(sourceRows) == 0 || len(targetRows) == 0 {
-		return 0.0
-	}
-
-	targetIDs := buildIDSet(targetRows)
-	total, matches := countReferenceMatches(sourceRows, refCols, targetIDs)
-	if total == 0 {
-		return 0.0
-	}
-	return float64(matches) / float64(total)
-}
-
-func referenceColumnsForTarget(columns []SchemaColumnInfo, targetName string) []string {
-	refCols := make([]string, 0)
-	for _, column := range columns {
-		if column.ColumnName == targetName+"_id" || strings.HasSuffix(column.ColumnName, "_id") {
-			refCols = append(refCols, column.ColumnName)
-		}
-	}
-	return refCols
-}
-
-func buildIDSet(rows []map[string]interface{}) map[interface{}]struct{} {
-	ids := make(map[interface{}]struct{}, len(rows))
-	for _, row := range rows {
-		if id, ok := row["id"]; ok {
-			ids[id] = struct{}{}
-		}
-	}
-	return ids
-}
-
-func countReferenceMatches(sourceRows []map[string]interface{}, refCols []string, targetIDs map[interface{}]struct{}) (int, int) {
-	total := 0
-	matches := 0
-	for _, row := range sourceRows {
-		for _, col := range refCols {
-			val, ok := row[col]
-			if !ok {
-				continue
-			}
-			total++
-			if _, exists := targetIDs[val]; exists {
-				matches++
-			}
-		}
-	}
-	return total, matches
-}
-
 // buildRelationshipGraph creates a graph representation for AI consumption.
 func (s *MCPServer) buildRelationshipGraph(relGraph RelationshipGraph) map[string]interface{} {
 	graph := map[string]interface{}{}
@@ -591,6 +466,11 @@ func (s *MCPServer) registerAllTools() {
    - sample_size: Rows to sample per table (default: 10)
    - include_queries: Generate query suggestions (default: true)
    - profiling: Enable advanced statistical and pattern profiling (default: false)
+  
+  IMPORTANT: This tool provides raw analysis signals, not authoritative classifications.
+  The domain_indicators field contains naming prefix frequencies (e.g., {"order": 3, "product": 2}),
+  not definitive domain labels. Use your judgment to interpret domain indicators, table categories,
+  and performance signals based on the raw data provided.
   
   AI agents MUST specify analysis_level. Example:
   {"profile_name":"analytics_db","analysis_level":"detailed","database_name":"analytics_db"}`),

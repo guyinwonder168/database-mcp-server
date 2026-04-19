@@ -2035,13 +2035,20 @@ func TestHandleAnalyzeSchema_ProfilingEnabled(t *testing.T) {
 
 // --- AnalyzeSchema Helper Method Unit Tests ---
 
-func TestDetectDomain(t *testing.T) {
-	domain, confidence := analyze.DetectDomain([]string{"orders", "products", "customers"})
-	if domain != "e-commerce" {
-		t.Errorf("Expected domain 'e-commerce', got '%s'", domain)
+func TestComputeDomainSignals(t *testing.T) {
+	signals := analyze.ComputeDomainSignals([]string{"orders", "products", "customers"})
+	if len(signals) == 0 {
+		t.Fatal("Expected non-empty signals")
 	}
-	if confidence <= 0 {
-		t.Errorf("Expected positive confidence, got %f", confidence)
+	// Single-word tables should appear as keys with count 1
+	if signals["orders"] != 1 {
+		t.Errorf("Expected orders: 1, got %v", signals["orders"])
+	}
+	if signals["products"] != 1 {
+		t.Errorf("Expected products: 1, got %v", signals["products"])
+	}
+	if signals["customers"] != 1 {
+		t.Errorf("Expected customers: 1, got %v", signals["customers"])
 	}
 }
 

@@ -6,79 +6,72 @@ import (
 	"testing"
 )
 
-// --- DetectDomain Tests ---
+// --- computeDomainSignals Tests ---
 
-func TestDetectDomain_ECommerce(t *testing.T) {
+func TestComputeDomainSignals_ECommerce(t *testing.T) {
 	tables := []string{"products", "orders", "cart_items", "customers", "payments", "inventory"}
-	domain, confidence := DetectDomain(tables)
-	if domain != "e-commerce" {
-		t.Errorf("expected domain 'e-commerce', got %q", domain)
+	signals := ComputeDomainSignals(tables)
+	// Should produce prefix frequencies for underscore-delimited segments
+	if len(signals) == 0 {
+		t.Fatal("expected non-empty signals")
 	}
-	if confidence <= 0 {
-		t.Errorf("expected confidence > 0, got %f", confidence)
+	// Single-word tables should appear as-is
+	if signals["products"] != 1 {
+		t.Errorf("expected products: 1, got %v", signals["products"])
 	}
-}
-
-func TestDetectDomain_Healthcare(t *testing.T) {
-	tables := []string{"patients", "doctors", "appointments", "medical_records", "prescriptions", "diagnoses"}
-	domain, confidence := DetectDomain(tables)
-	if domain != "healthcare" {
-		t.Errorf("expected domain 'healthcare', got %q", domain)
+	if signals["orders"] != 1 {
+		t.Errorf("expected orders: 1, got %v", signals["orders"])
 	}
-	if confidence <= 0 {
-		t.Errorf("expected confidence > 0, got %f", confidence)
+	// Compound table: "cart_items" → prefix "cart"
+	if signals["cart"] != 1 {
+		t.Errorf("expected cart: 1, got %v", signals["cart"])
 	}
 }
 
-func TestDetectDomain_Finance(t *testing.T) {
-	tables := []string{"accounts", "transactions", "ledgers", "invoices", "payments", "balances"}
-	domain, confidence := DetectDomain(tables)
-	if domain != "finance" {
-		t.Errorf("expected domain 'finance', got %q", domain)
-	}
-	if confidence <= 0 {
-		t.Errorf("expected confidence > 0, got %f", confidence)
-	}
-}
-
-func TestDetectDomain_Unknown(t *testing.T) {
-	tables := []string{"foo", "bar", "baz"}
-	domain, confidence := DetectDomain(tables)
-	if domain != "unknown" {
-		t.Errorf("expected domain 'unknown', got %q", domain)
-	}
-	if confidence != 0.0 {
-		t.Errorf("expected confidence 0.0, got %f", confidence)
-	}
-}
-
-func TestDetectDomain_Empty(t *testing.T) {
-	domain, confidence := DetectDomain([]string{})
-	if domain != "unknown" {
-		t.Errorf("expected domain 'unknown' for empty input, got %q", domain)
-	}
-	if confidence != 0.0 {
-		t.Errorf("expected confidence 0.0, got %f", confidence)
-	}
-}
-
-func TestDetectDomain_Mixed(t *testing.T) {
-	// Mix of e-commerce and finance — e-commerce should win with more matches
-	tables := []string{"products", "orders", "account"}
-	domain, confidence := DetectDomain(tables)
-	if domain != "e-commerce" {
-		t.Errorf("expected domain 'e-commerce', got %q", domain)
-	}
-	if confidence <= 0 {
-		t.Errorf("expected confidence > 0, got %f", confidence)
-	}
-}
-
-func TestDetectDomain_CaseInsensitive(t *testing.T) {
+func TestComputeDomainSignals_CaseInsensitive(t *testing.T) {
 	tables := []string{"PRODUCTS", "Orders", "CART_ITEMS"}
-	domain, _ := DetectDomain(tables)
-	if domain != "e-commerce" {
-		t.Errorf("expected domain 'e-commerce' (case-insensitive), got %q", domain)
+	signals := ComputeDomainSignals(tables)
+	// All keys should be lowercase
+	for key := range signals {
+		if key != strings.ToLower(key) {
+			t.Errorf("expected lowercase key, got %q", key)
+		}
+	}
+	if signals["products"] != 1 {
+		t.Errorf("expected products: 1, got %v", signals["products"])
+	}
+	if signals["cart"] != 1 {
+		t.Errorf("expected cart: 1, got %v", signals["cart"])
+	}
+}
+
+func TestComputeDomainSignals_Empty(t *testing.T) {
+	signals := ComputeDomainSignals([]string{})
+	if len(signals) == 0 {
+		t.Fatal("expected non-empty signals even for empty input")
+	}
+	if _, ok := signals["unknown"]; !ok {
+		t.Error("expected 'unknown' signal for empty input")
+	}
+}
+
+func TestComputeDomainSignals_Grouping(t *testing.T) {
+	// Tables with same prefix should be counted together
+	tables := []string{"order_items", "order_status", "order_history"}
+	signals := ComputeDomainSignals(tables)
+	if signals["order"] != 3 {
+		t.Errorf("expected order: 3, got %v", signals["order"])
+	}
+}
+
+func TestComputeDomainSignals_SingleWord(t *testing.T) {
+	tables := []string{"users", "products", "orders"}
+	signals := ComputeDomainSignals(tables)
+	if len(signals) != 3 {
+		t.Errorf("expected 3 signals, got %d", len(signals))
+	}
+	if signals["users"] != 1 {
+		t.Errorf("expected users: 1, got %v", signals["users"])
 	}
 }
 
@@ -369,34 +362,53 @@ func TestAnalyzeNamingConventions_TimestampCols(t *testing.T) {
 
 // --- GenerateBusinessDescription Tests ---
 
-func TestGenerateBusinessDescription_KnownDomain(t *testing.T) {
-	desc := GenerateBusinessDescription("e-commerce", []string{"master_data", "transactional", "master_data"}, 0.85)
+func TestGenerateBusinessDescription_WithSignals(t *testing.T) {
+	signals := map[string]float64{
+		"order":    3,
+		"product":  2,
+		"customer": 1,
+	}
+	desc := GenerateBusinessDescription("order", 3, []string{"master_data", "transactional"}, signals)
 	if desc == "" {
 		t.Fatal("expected non-empty description")
 	}
-	// Should mention the domain
-	if !containsStr(desc, "e-commerce") {
-		t.Errorf("expected description to mention 'e-commerce', got %q", desc)
+	// Should mention the top signal
+	if !containsStr(desc, "order") {
+		t.Errorf("expected description to mention 'order', got %q", desc)
 	}
-	// Should mention confidence
-	if !containsStr(desc, "0.85") {
-		t.Errorf("expected description to mention confidence '0.85', got %q", desc)
-	}
-}
-
-func TestGenerateBusinessDescription_UnknownDomain(t *testing.T) {
-	desc := GenerateBusinessDescription("unknown", []string{"other"}, 0.0)
-	expected := "The database schema does not match any well-known business domain. It may be custom or generic."
-	if desc != expected {
-		t.Errorf("expected %q, got %q", expected, desc)
+	// Should mention entity breakdown
+	if !containsStr(desc, "master_data") {
+		t.Errorf("expected description to mention entity type, got %q", desc)
 	}
 }
 
-func TestGenerateBusinessDescription_LowConfidence(t *testing.T) {
-	desc := GenerateBusinessDescription("e-commerce", []string{"master_data"}, 0.1)
-	expected := "The database schema does not match any well-known business domain. It may be custom or generic."
-	if desc != expected {
-		t.Errorf("expected fallback for low confidence, got %q", desc)
+func TestGenerateBusinessDescription_EmptySignals(t *testing.T) {
+	desc := GenerateBusinessDescription("", 0, []string{"other"}, nil)
+	if desc == "" {
+		t.Fatal("expected non-empty description")
+	}
+	// Should still describe entities
+	if !containsStr(desc, "other") {
+		t.Errorf("expected description to mention 'other' entity, got %q", desc)
+	}
+}
+
+func TestGenerateBusinessDescription_MultipleSignals(t *testing.T) {
+	signals := map[string]float64{
+		"call":      5,
+		"broadcast": 3,
+		"sip":       2,
+	}
+	desc := GenerateBusinessDescription("call", 5, []string{"master_data", "log"}, signals)
+	if desc == "" {
+		t.Fatal("expected non-empty description")
+	}
+	// Should include multiple signals
+	if !containsStr(desc, "call") {
+		t.Errorf("expected description to mention 'call', got %q", desc)
+	}
+	if !containsStr(desc, "broadcast") {
+		t.Errorf("expected description to mention 'broadcast', got %q", desc)
 	}
 }
 
@@ -436,9 +448,16 @@ func TestInferBusinessContext_ECommerce(t *testing.T) {
 		t.Fatal("expected non-nil BusinessContext")
 	}
 
-	// Domain should be detected as e-commerce
-	if ctx.DomainIndicators["e-commerce"] <= 0 {
-		t.Errorf("expected e-commerce domain indicator > 0, got %f", ctx.DomainIndicators["e-commerce"])
+	// DomainIndicators should now contain naming prefix frequencies
+	// Single-word tables: "products", "orders", "customers" → each count 1
+	if ctx.DomainIndicators["products"] != 1 {
+		t.Errorf("expected products: 1, got %v", ctx.DomainIndicators["products"])
+	}
+	if ctx.DomainIndicators["orders"] != 1 {
+		t.Errorf("expected orders: 1, got %v", ctx.DomainIndicators["orders"])
+	}
+	if ctx.DomainIndicators["customers"] != 1 {
+		t.Errorf("expected customers: 1, got %v", ctx.DomainIndicators["customers"])
 	}
 
 	// Naming should be snake_case
@@ -462,8 +481,9 @@ func TestInferBusinessContext_Empty(t *testing.T) {
 	if ctx == nil {
 		t.Fatal("expected non-nil BusinessContext")
 	}
-	if ctx.DomainIndicators["unknown"] != 0.0 {
-		t.Errorf("expected unknown domain indicator = 0.0, got %f", ctx.DomainIndicators["unknown"])
+	// Empty input should produce "unknown" signal
+	if _, ok := ctx.DomainIndicators["unknown"]; !ok {
+		t.Error("expected 'unknown' signal for empty input")
 	}
 }
 
@@ -1225,7 +1245,7 @@ func TestCategorizeTables_CoreEntities(t *testing.T) {
 		"customers": {ColumnCount: 6, KeyColumns: KeyColumns{PrimaryKey: "id"}},
 	}
 	tableNames := []string{"users", "products", "customers"}
-	catalog := CategorizeTables(tableNames, schemas)
+	catalog := CategorizeTables(tableNames, schemas, nil)
 	if len(catalog.CoreEntities) != 3 {
 		t.Errorf("expected 3 core entities, got %d", len(catalog.CoreEntities))
 	}
@@ -1241,7 +1261,7 @@ func TestCategorizeTables_LookupTables(t *testing.T) {
 		"user_status":   {},
 	}
 	tableNames := []string{"status_lookup", "order_type", "user_status"}
-	catalog := CategorizeTables(tableNames, schemas)
+	catalog := CategorizeTables(tableNames, schemas, nil)
 	if len(catalog.LookupTables) != 3 {
 		t.Errorf("expected 3 lookup tables, got %d", len(catalog.LookupTables))
 	}
@@ -1253,7 +1273,7 @@ func TestCategorizeTables_JunctionTables(t *testing.T) {
 		"order_join":         {},
 	}
 	tableNames := []string{"user_role_junction", "order_join"}
-	catalog := CategorizeTables(tableNames, schemas)
+	catalog := CategorizeTables(tableNames, schemas, nil)
 	if len(catalog.JunctionTables) != 2 {
 		t.Errorf("expected 2 junction tables, got %d", len(catalog.JunctionTables))
 	}
@@ -1266,7 +1286,7 @@ func TestCategorizeTables_AuditTables(t *testing.T) {
 		"activity_audit": {},
 	}
 	tableNames := []string{"audit_log", "system_logs", "activity_audit"}
-	catalog := CategorizeTables(tableNames, schemas)
+	catalog := CategorizeTables(tableNames, schemas, nil)
 	if len(catalog.AuditTables) != 3 {
 		t.Errorf("expected 3 audit tables, got %d", len(catalog.AuditTables))
 	}
@@ -1280,7 +1300,7 @@ func TestCategorizeTables_Mixed(t *testing.T) {
 		"audit_log":          {},
 	}
 	tableNames := []string{"users", "status_lookup", "user_role_junction", "audit_log"}
-	catalog := CategorizeTables(tableNames, schemas)
+	catalog := CategorizeTables(tableNames, schemas, nil)
 	if len(catalog.CoreEntities) != 1 {
 		t.Errorf("expected 1 core entity, got %d", len(catalog.CoreEntities))
 	}
@@ -1296,7 +1316,7 @@ func TestCategorizeTables_Mixed(t *testing.T) {
 }
 
 func TestCategorizeTables_Empty(t *testing.T) {
-	catalog := CategorizeTables([]string{}, map[string]TableInfo{})
+	catalog := CategorizeTables([]string{}, map[string]TableInfo{}, nil)
 	if len(catalog.CoreEntities) != 0 || len(catalog.LookupTables) != 0 ||
 		len(catalog.JunctionTables) != 0 || len(catalog.AuditTables) != 0 {
 		t.Error("expected empty catalog for empty input")
@@ -1308,7 +1328,7 @@ func TestCategorizeTables_EntityMetadata(t *testing.T) {
 		"users": {ColumnCount: 5, KeyColumns: KeyColumns{PrimaryKey: "id"}},
 	}
 	tableNames := []string{"users"}
-	catalog := CategorizeTables(tableNames, schemas)
+	catalog := CategorizeTables(tableNames, schemas, nil)
 	if len(catalog.CoreEntities) != 1 {
 		t.Fatal("expected 1 core entity")
 	}
@@ -1324,6 +1344,59 @@ func TestCategorizeTables_EntityMetadata(t *testing.T) {
 	}
 	if entity.BusinessRole != "core" {
 		t.Errorf("expected business role 'core', got %q", entity.BusinessRole)
+	}
+}
+
+func TestCategorizeTables_JunctionByFKs(t *testing.T) {
+	// A table with 2+ outgoing FKs and few non-FK columns should be classified as junction
+	tableNames := []string{"order_items", "products", "users"}
+	schemas := map[string]TableInfo{
+		"order_items": {ColumnCount: 4, KeyColumns: KeyColumns{PrimaryKey: "id"}},
+		"products":    {ColumnCount: 5, KeyColumns: KeyColumns{PrimaryKey: "id"}},
+		"users":       {ColumnCount: 5, KeyColumns: KeyColumns{PrimaryKey: "id"}},
+	}
+	fks := []ForeignKeyRelationship{
+		{FromTable: "order_items", FromColumn: "product_id", ToTable: "products", ToColumn: "id"},
+		{FromTable: "order_items", FromColumn: "user_id", ToTable: "users", ToColumn: "id"},
+	}
+	catalog := CategorizeTables(tableNames, schemas, fks)
+	// order_items has 2 outgoing FKs and only 4 columns → junction
+	if len(catalog.JunctionTables) != 1 || catalog.JunctionTables[0].TableName != "order_items" {
+		t.Errorf("expected order_items as junction, got junction=%v, core=%v", catalog.JunctionTables, catalog.CoreEntities)
+	}
+}
+
+func TestCategorizeTables_FKSignals(t *testing.T) {
+	tableNames := []string{"orders", "users"}
+	schemas := map[string]TableInfo{
+		"orders": {ColumnCount: 5, KeyColumns: KeyColumns{PrimaryKey: "id"}},
+		"users":  {ColumnCount: 3, KeyColumns: KeyColumns{PrimaryKey: "id"}},
+	}
+	fks := []ForeignKeyRelationship{
+		{FromTable: "orders", FromColumn: "user_id", ToTable: "users", ToColumn: "id"},
+	}
+	catalog := CategorizeTables(tableNames, schemas, fks)
+	// Check FK signal fields
+	var ordersEntity, usersEntity *TableEntity
+	for i := range catalog.CoreEntities {
+		if catalog.CoreEntities[i].TableName == "orders" {
+			ordersEntity = &catalog.CoreEntities[i]
+		}
+		if catalog.CoreEntities[i].TableName == "users" {
+			usersEntity = &catalog.CoreEntities[i]
+		}
+	}
+	if ordersEntity == nil {
+		t.Fatal("expected orders in core entities")
+	}
+	if usersEntity == nil {
+		t.Fatal("expected users in core entities")
+	}
+	if ordersEntity.OutgoingFKs != 1 {
+		t.Errorf("expected orders OutgoingFKs=1, got %d", ordersEntity.OutgoingFKs)
+	}
+	if usersEntity.IncomingFKs != 1 {
+		t.Errorf("expected users IncomingFKs=1, got %d", usersEntity.IncomingFKs)
 	}
 }
 

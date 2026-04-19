@@ -112,6 +112,8 @@ type TableEntity struct {
 	PrimaryKey    string `json:"primary_key,omitempty"`    // Primary key column
 	EstimatedRows string `json:"estimated_rows,omitempty"` // Estimated row count (e.g., "~50k")
 	BusinessRole  string `json:"business_role,omitempty"`  // Role: core, lookup, junction, audit
+	OutgoingFKs   int    `json:"outgoing_fks,omitempty"`   // Number of outgoing FK relationships
+	IncomingFKs   int    `json:"incoming_fks,omitempty"`   // Number of incoming FK relationships
 }
 
 // TableInfo provides detailed schema info for a table.
@@ -300,6 +302,15 @@ type IndexInfo struct {
 type PerformanceOptimization struct {
 	RecommendedIndexes []RecommendedIndex `json:"recommended_indexes,omitempty"` // Index recommendations
 	QueryPatterns      QueryPatterns      `json:"query_patterns,omitempty"`      // Query pattern hints
+	IndexCoverage      *IndexCoverage     `json:"index_coverage,omitempty"`      // FK index coverage stats
+}
+
+// IndexCoverage provides statistics about FK column index coverage.
+type IndexCoverage struct {
+	TotalFKColumns     int      `json:"total_fk_columns"`                     // Total FK columns found
+	IndexedFKColumns   int      `json:"indexed_fk_columns"`                   // FK columns that have indexes
+	UnindexedFKColumns int      `json:"unindexed_fk_columns"`                 // FK columns missing indexes
+	TablesWithoutPK    []string `json:"tables_without_primary_key,omitempty"` // Tables missing primary keys
 }
 
 // RecommendedIndex describes an index recommendation.

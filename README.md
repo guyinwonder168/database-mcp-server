@@ -91,7 +91,7 @@ Package registry: `https://github.com/guyinwonder168/database-mcp-server/pkgs/co
 | `federated-query` | Execute read-only cross-profile subqueries with optional JOINs, aggregation, and partial-failure metadata |
 | `list-tools` | List all available MCP tools and descriptions |
 | `get-tool-help` | Return on-demand summary, examples, and common errors for a tool |
-| `analyze-schema` | Comprehensive schema analysis with AI query suggestions and optional advanced profiling (`profiling`) |
+| `analyze-schema` | Signal-based schema analysis with naming prefix frequencies, FK structural categorization, index coverage, and AI query suggestions |
 | `mcp-info` | Show provider version and author |
 
 ## 🤖 Model Compatibility

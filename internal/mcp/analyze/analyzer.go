@@ -28,8 +28,14 @@ func Run(ctx context.Context, db *sql.DB, dbType, schema string, params AnalyzeS
 	// 2. Build TableInfo map from column data
 	tableSchemas := buildTableSchemas(tableColumns)
 
+	// Collect non-fatal warnings
+	var warnings []string
+
 	// 3. Fetch row counts
-	rowCounts, _ := FetchRowCounts(ctx, db, dbType, schema, tableNames)
+	rowCounts, err := FetchRowCounts(ctx, db, dbType, schema, tableNames)
+	if err != nil {
+		warnings = append(warnings, fmt.Sprintf("row count fetch failed: %v", err))
+	}
 	for tableName, info := range tableSchemas {
 		if rc, ok := rowCounts[tableName]; ok {
 			info.RowCount = rc
@@ -38,11 +44,23 @@ func Run(ctx context.Context, db *sql.DB, dbType, schema string, params AnalyzeS
 	}
 
 	// 4. Fetch indexes
-	indexes, _ := FetchIndexes(ctx, db, dbType, schema, tableNames)
+	indexes, err := FetchIndexes(ctx, db, dbType, schema, tableNames)
+	if err != nil {
+		warnings = append(warnings, fmt.Sprintf("index fetch failed: %v", err))
+	}
+	applyIndexesToColumns(tableColumns, indexes)
 	applyIndexesToSchemas(tableSchemas, indexes)
 
 	// 5. Discover real foreign keys
-	fks, _ := DiscoverForeignKeys(ctx, db, dbType, schema, tableNames)
+	fks, err := DiscoverForeignKeys(ctx, db, dbType, schema, tableNames)
+	if err != nil {
+		warnings = append(warnings, fmt.Sprintf("foreign key discovery failed: %v", err))
+	}
+	applyFKsToColumns(tableColumns, fks)
+	applyFKsToSchemas(tableSchemas, fks)
+
+	// 5b. Rebuild KeyColumns in tableSchemas from enriched tableColumns
+	rebuildKeyColumns(tableSchemas, tableColumns)
 
 	// 6. Detect implicit relationships
 	implicitRels := DetectImplicitRelationships(tableColumns)
@@ -50,8 +68,8 @@ func Run(ctx context.Context, db *sql.DB, dbType, schema string, params AnalyzeS
 	// 7. Build relationship graph
 	relGraph := buildRelationshipGraph(fks, implicitRels)
 
-	// 8. Categorize tables
-	tableCatalog := CategorizeTables(tableNames, tableSchemas)
+	// 8. Categorize tables (using FK structural analysis)
+	tableCatalog := CategorizeTables(tableNames, tableSchemas, fks)
 
 	// 9. Compute row count estimates for table catalog
 	applyRowCountToCatalog(&tableCatalog, rowCounts)
@@ -93,6 +111,7 @@ func Run(ctx context.Context, db *sql.DB, dbType, schema string, params AnalyzeS
 				DataQualityMetrics:      qualityMetrics,
 				PerformanceOptimization: perfOpt,
 				ClassificationSignals:   classificationSignals,
+				Warnings:                warnings,
 			}
 			return result, nil
 		}
@@ -106,6 +125,7 @@ func Run(ctx context.Context, db *sql.DB, dbType, schema string, params AnalyzeS
 			RelationshipGraph:       relGraph,
 			DataQualityMetrics:      qualityMetrics,
 			PerformanceOptimization: perfOpt,
+			Warnings:                warnings,
 		}
 		return result, nil
 	}
@@ -117,6 +137,7 @@ func Run(ctx context.Context, db *sql.DB, dbType, schema string, params AnalyzeS
 		TableCatalog:      tableCatalog,
 		TableSchemas:      tableSchemas,
 		RelationshipGraph: relGraph,
+		Warnings:          warnings,
 	}
 	return result, nil
 }
@@ -188,6 +209,109 @@ func applyIndexesToSchemas(schemas map[string]TableInfo, indexes []IndexInfo) {
 			}
 		}
 		schemas[idx.TableName] = info
+	}
+}
+
+// rebuildKeyColumns re-extracts KeyColumns from enriched tableColumns into tableSchemas.
+// This ensures primary key, foreign key, unique, and indexed flags set by apply* functions
+// are reflected in the KeyColumns struct of each TableInfo.
+func rebuildKeyColumns(schemas map[string]TableInfo, tableColumns map[string][]SchemaColumnInfo) {
+	for table, info := range schemas {
+		if cols, ok := tableColumns[table]; ok {
+			info.Columns = cols
+			info.ColumnCount = len(cols)
+			info.KeyColumns = extractKeyColumns(cols)
+			schemas[table] = info
+		}
+	}
+}
+
+// applyFKsToColumns enriches column metadata with discovered foreign key information.
+// Sets IsForeignKey=true and ForeignKeyRef on matching columns.
+func applyFKsToColumns(tableColumns map[string][]SchemaColumnInfo, fks []ForeignKeyRelationship) {
+	// Build lookup: table → column → FK ref
+	type fkRef struct{ toTable, toColumn string }
+	fkMap := make(map[string]map[string]fkRef) // table → col → ref
+	for _, fk := range fks {
+		cols, ok := fkMap[fk.FromTable]
+		if !ok {
+			cols = make(map[string]fkRef)
+			fkMap[fk.FromTable] = cols
+		}
+		cols[fk.FromColumn] = fkRef{fk.ToTable, fk.ToColumn}
+	}
+
+	for table, columns := range tableColumns {
+		tableFKs, hasFKs := fkMap[table]
+		if !hasFKs {
+			continue
+		}
+		updated := make([]SchemaColumnInfo, len(columns))
+		copy(updated, columns)
+		for i, col := range updated {
+			if ref, ok := tableFKs[col.ColumnName]; ok {
+				updated[i].IsForeignKey = true
+				updated[i].ForeignKeyRef = &ForeignKeyRef{
+					RefTable:  ref.toTable,
+					RefColumn: ref.toColumn,
+				}
+			}
+		}
+		tableColumns[table] = updated
+	}
+}
+
+// applyFKsToSchemas rebuilds KeyColumns.ForeignKeys on each TableInfo from discovered FKs.
+func applyFKsToSchemas(schemas map[string]TableInfo, fks []ForeignKeyRelationship) {
+	// Build lookup: table → list of FK column names
+	fkCols := make(map[string][]string)
+	for _, fk := range fks {
+		if !containsString(fkCols[fk.FromTable], fk.FromColumn) {
+			fkCols[fk.FromTable] = append(fkCols[fk.FromTable], fk.FromColumn)
+		}
+	}
+
+	for table, info := range schemas {
+		if cols, ok := fkCols[table]; ok {
+			info.KeyColumns.ForeignKeys = cols
+			schemas[table] = info
+		}
+	}
+}
+
+// applyIndexesToColumns enriches column metadata with index information.
+// Sets Indexed=true on columns that appear in fetched indexes but weren't
+// flagged by the column metadata query (e.g., composite indexes).
+func applyIndexesToColumns(tableColumns map[string][]SchemaColumnInfo, indexes []IndexInfo) {
+	// Build lookup: table → set of indexed column names
+	idxCols := make(map[string]map[string]bool)
+	for _, idx := range indexes {
+		if idx.IsPrimary {
+			continue
+		}
+		cols, ok := idxCols[idx.TableName]
+		if !ok {
+			cols = make(map[string]bool)
+			idxCols[idx.TableName] = cols
+		}
+		for _, col := range idx.Columns {
+			cols[col] = true
+		}
+	}
+
+	for table, columns := range tableColumns {
+		idxSet, hasIdx := idxCols[table]
+		if !hasIdx {
+			continue
+		}
+		updated := make([]SchemaColumnInfo, len(columns))
+		copy(updated, columns)
+		for i, col := range updated {
+			if idxSet[col.ColumnName] {
+				updated[i].Indexed = true
+			}
+		}
+		tableColumns[table] = updated
 	}
 }
 
@@ -282,24 +406,30 @@ func applyDataPatterns(tableSchemas map[string]TableInfo, sampleDataMap map[stri
 	return tableSchemas
 }
 
-// summarizeBusinessContext extracts the dominant domain and description.
+// summarizeBusinessContext extracts top naming signals and builds a description.
+// Returns (topPrefix, topCount, description) for backward-compatible fields.
 func summarizeBusinessContext(businessCtx *BusinessContext) (string, float64, string) {
 	if businessCtx == nil {
 		return "", 0, ""
 	}
-	domain := ""
-	confidence := 0.0
-	for candidateDomain, score := range businessCtx.DomainIndicators {
-		if score > confidence || domain == "" {
-			domain = candidateDomain
-			confidence = score
+
+	// Find the top naming signal by count
+	type signal struct {
+		prefix string
+		count  float64
+	}
+	var top signal
+	for prefix, count := range businessCtx.DomainIndicators {
+		if count > top.count {
+			top = signal{prefix, count}
 		}
 	}
-	if domain == "" {
+	if top.prefix == "" {
 		return "", 0, ""
 	}
-	description := GenerateBusinessDescription(domain, businessCtx.EntityRelationships.CentralEntities, confidence)
-	return domain, confidence, description
+
+	description := GenerateBusinessDescription(top.prefix, top.count, businessCtx.EntityRelationships.CentralEntities, businessCtx.DomainIndicators)
+	return top.prefix, top.count, description
 }
 
 // buildClassificationSignals creates raw signals for LLM-based inference.

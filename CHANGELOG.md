@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Signal-provider architecture for `analyze-schema`** (Issues #77-#80): The MCP server now provides raw structured signals for the calling LLM to interpret, rather than making hardcoded domain/entity/performance classifications.
+  - **Issue #77**: Removed legacy dead code producing 2,336 false-positive `shared_column` relationships. Added `commonFKSuffixes` filter to skip generic FK patterns (`status_id`, `type_id`, etc.). FK/index/row-count fetch errors now produce warnings instead of being silently discarded.
+  - **Issue #78**: Replaced hardcoded 7-domain `DetectDomain` with signal-based `ComputeDomainSignals` that produces naming prefix frequencies (e.g., `{"call": 5, "broadcast": 3, "sip": 2}`). The calling LLM interprets domain from raw signals using its own world knowledge. Updated tool description to inform LLMs that `domain_indicators` provides signal frequencies, not authoritative labels.
+  - **Issue #79**: Enhanced `CategorizeTables` with FK structural analysis: tables with 2+ outgoing FKs and few non-FK columns are classified as junction tables. Added `OutgoingFKs`/`IncomingFKs` signal fields to `TableEntity`.
+  - **Issue #80**: Added `IndexCoverage` struct to `PerformanceOptimization` reporting total/indexed/unindexed FK columns and tables without primary keys. Added tables-without-PK detection.
+
+### Removed
+
+- Removed legacy dead code from `server.go`: `detectImplicitRelationships`, `analyzeNamingRelationships`, `correlateDataValues`, `referenceColumnsForTarget`, `buildIDSet`, `countReferenceMatches` (only used by coverage tests, never by handlers).
+- Removed `mergeDomainIndicators` helper (replaced by `ComputeDomainSignals`).
+
 ### Added
 
 ## [v1.5.1] - 2026-04-19
