@@ -246,6 +246,8 @@ func (s *MCPServer) sampleTableData(ctx context.Context, conn *sql.DB, dbType st
 		quotedCols[i] = quoteIdentifier(col.Name, dbType)
 	}
 
+	// #nosec G201 -- identifiers are quoted via quoteIdentifier() (dialect-specific backticks/double-quotes);
+	// column names come from DB metadata; limit is an int parameter, not a string
 	query := fmt.Sprintf(sampleQueryTemplate, strings.Join(quotedCols, ", "), quoteIdentifier(tableName, dbType), limit)
 
 	rows, err := conn.QueryContext(ctx, query)
