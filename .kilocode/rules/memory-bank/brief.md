@@ -5,8 +5,8 @@
 Database MCP Server is a production-ready MCP provider for SQL databases, implemented in Go. It exposes a unified tool interface so AI agents and developers can safely interact with MySQL, MariaDB, PostgreSQL, and SQLite.
 
 Current implementation state:
-- Version: `v1.5.1`
-- MCP tools: `20` implemented and registered
+- Version: `v1.6.0`
+- MCP tools: `21` implemented and registered
 - Packaging: GitHub Releases + GHCR container images
 
 ## Core Mission

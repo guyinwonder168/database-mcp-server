@@ -50,7 +50,7 @@ MCP Client
   - shared helper functions
 
 ### Analyze Package (`internal/mcp/analyze`)
-- `analyzer.go` — Run() orchestration, table schema building, relationship graph, classification signals
+- `analyzer.go` — Run() orchestration, table schema building, FK/index enrichment pipeline, relationship graph, classification signals
 - `columns.go` — Bulk column fetching with parameterized queries (TVF for SQLite)
 - `relationships.go` — Real FK discovery, implicit relationships, relationship graph building
 - `performance.go` — Index analysis, performance optimization recommendations
@@ -86,13 +86,13 @@ MCP Client
 
 ## Runtime Contracts
 
-### Registered Tools (20)
+### Registered Tools (21)
 - `configure-profile`, `list-profiles`, `execute-sql`
 - `list-tables`, `describe-table`, `list-databases`, `get-search-path`
 - `analyze-schema`, `smart-query-builder`, `discover-joins`, `sample-data`
 - `optimize-query`, `validate-query`, `analyze-data-lineage`, `discover-insights`
 - `track-schema-changes`, `federated-query`
-- `mcp-info`, `list-tools`, `get-tool-help`
+- `list-tools`, `get-tool-help`, `mcp-info`, `list-schemas`
 
 ### Resources
 - `tools://list` (registered tools snapshot)
