@@ -3120,7 +3120,7 @@ func resolveDefaultSchema(ctx context.Context, conn *sql.DB, dbType, databaseNam
 	return databaseName
 }
 
-func (s *MCPServer) handleListSchemas(ctx context.Context, _ *mcp.CallToolRequest, input ListSchemasParams) (*mcp.CallToolResult, any, error) { //nolint:unparam // MCP SDK requires 3-return signature
+func (s *MCPServer) handleListSchemas(ctx context.Context, _ *mcp.CallToolRequest, input ListSchemasParams) (*mcp.CallToolResult, any, error) {
 	if input.ProfileName == "" || input.DatabaseName == "" {
 		return nil, nil, fmt.Errorf("profile_name and database_name are required")
 	}

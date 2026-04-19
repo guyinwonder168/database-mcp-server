@@ -181,7 +181,7 @@ var toolHelpCatalog = map[string]toolHelpEntry{
 		ResponseFormat:  "JSON object with databases array of database name strings",
 	},
 	"list-schemas": {
-		Description:     "List all accessible database schemas with default schema information. For SQLite, returns [\"main\"] with default \"main\". For PostgreSQL, queries information_schema.schemata. For MySQL/MariaDB, returns databases accessible to the user.",
+		Description: "List all accessible database schemas with default schema information. For SQLite, returns [\"main\"] with default \"main\". For PostgreSQL, queries information_schema.schemata. For MySQL/MariaDB, returns databases accessible to the user.",
 		Parameters: []ToolParamInfo{
 			paramProfile,
 			paramDBRequired,
