@@ -131,7 +131,7 @@ func TestSampleTableData(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rows, err := server.sampleTableData(context.Background(), db, tt.tableName, columns, tt.limit)
+			rows, err := server.sampleTableData(context.Background(), db, "sqlite", tt.tableName, columns, tt.limit)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("sampleTableData() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -191,7 +191,7 @@ func TestSampleTableData_EmptyTable(t *testing.T) {
 		{Name: "name", Type: "TEXT"},
 	}
 
-	rows, err := server.sampleTableData(context.Background(), db, "empty_table", columns, 10)
+	rows, err := server.sampleTableData(context.Background(), db, "sqlite", "empty_table", columns, 10)
 	if err != nil {
 		t.Errorf("sampleTableData() unexpected error = %v", err)
 	}
@@ -265,7 +265,7 @@ func TestSampleTableData_MySQL(t *testing.T) {
 	}
 
 	// This should work even with mysql profile since it uses generic SQL
-	rows, err := server.sampleTableData(context.Background(), db, "test_users", columns, 10)
+	rows, err := server.sampleTableData(context.Background(), db, "sqlite", "test_users", columns, 10)
 	if err != nil {
 		t.Errorf("sampleTableData() unexpected error = %v", err)
 	}
@@ -286,7 +286,7 @@ func TestSampleTableData_UnsupportedDBType(t *testing.T) {
 		{Name: "id", Type: "INTEGER"},
 	}
 
-	_, err = server.sampleTableData(context.Background(), db, "test", columns, 10)
+	_, err = server.sampleTableData(context.Background(), db, "sqlite", "test", columns, 10)
 	if err == nil {
 		t.Error("Expected error for unsupported DB type")
 	}
@@ -345,7 +345,7 @@ func TestSampleTableData_NullValues(t *testing.T) {
 		{Name: "age", Type: "INTEGER"},
 	}
 
-	rows, err := server.sampleTableData(context.Background(), db, "test_nulls", columns, 10)
+	rows, err := server.sampleTableData(context.Background(), db, "sqlite", "test_nulls", columns, 10)
 	if err != nil {
 		t.Errorf("sampleTableData() unexpected error = %v", err)
 	}

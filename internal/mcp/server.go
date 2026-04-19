@@ -2514,8 +2514,10 @@ func sanitizeReadOnlySQL(sqlText string) string {
 			builder.WriteByte(' ')
 			continue
 		}
-		lower := ch | 0x20 // ASCII tolower: safe for letters, noop for non-letters
-		builder.WriteByte(lower)
+		if ch >= 'A' && ch <= 'Z' {
+			ch += 'a' - 'A'
+		}
+		builder.WriteByte(ch)
 	}
 	return builder.String()
 }
