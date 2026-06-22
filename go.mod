@@ -11,7 +11,7 @@ require (
 	github.com/google/jsonschema-go v0.4.3
 	github.com/lestrrat-go/file-rotatelogs v2.4.0+incompatible
 	github.com/lib/pq v1.12.3
-	github.com/mattn/go-sqlite3 v1.14.45
+	github.com/mattn/go-sqlite3 v1.14.47
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	gopkg.in/yaml.v3 v3.0.1
 // Add MCP SDK import here when available
