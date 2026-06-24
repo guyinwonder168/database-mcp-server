@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - Updated the Go toolchain and CI/Docker build images from vulnerable patch releases to Go 1.26.4, resolving reachable standard-library findings reported by `govulncheck`.
 - Switched CI vulnerability scanning to the official `golang/govulncheck-action` v1.0.4 pinned by immutable commit SHA.
+- Configured SonarCloud analysis to use pinned Java 21 and skip scanner JRE auto-provisioning, avoiding intermittent HTTP 403 failures from Sonar's JRE endpoint.
 
 ## [v1.6.2] - 2026-04-19
 
