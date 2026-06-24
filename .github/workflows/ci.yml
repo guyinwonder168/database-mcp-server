@@ -125,11 +125,8 @@ jobs:
         with:
           sarif_file: results.sarif
 
-      - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.4.0
-
       - name: Run govulncheck
-        run: govulncheck ./...
+        run: go tool govulncheck ./...
 
   # Job 4: Database Compatibility Tests
   integration-test:
