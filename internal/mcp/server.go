@@ -2619,7 +2619,13 @@ func (s *MCPServer) queryRowsForSQL(
 		rows, err := conn.QueryContext(ctx, p.SQL)
 		if err != nil {
 			log.JSONLog("error", "Query failed", map[string]interface{}{"sql": p.SQL, "params": p.Params, "error": err})
-			return nil, nil, nil
+			structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
+				"profile_name": p.ProfileName,
+				"sql":          p.SQL,
+				"operation":    "query",
+				"db_type":      prof.DBType,
+			})
+			return nil, errorResult(structErr), nil
 		}
 		return rows, nil, nil
 	}

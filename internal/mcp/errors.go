@@ -124,51 +124,64 @@ func (a *ErrorAnalyzer) AnalyzeError(err error, context map[string]interface{}) 
 	}
 
 	errMsg := err.Error()
+	errorContext := make(map[string]interface{}, len(context)+1)
+	for key, value := range context {
+		errorContext[key] = value
+	}
+	errorContext["error"] = errMsg
+
 	log.JSONLog("debug", "Analyzing error", map[string]interface{}{
 		"error":   errMsg,
-		"context": context,
+		"context": errorContext,
 	})
+
+	normalizedErrMsg := strings.ToLower(errMsg)
 
 	// Check for specific error patterns
 	switch {
-	case strings.Contains(errMsg, "profile not found"):
-		return a.handleProfileNotFound(context)
+	case strings.Contains(normalizedErrMsg, "profile not found"):
+		return a.handleProfileNotFound(errorContext)
 
-	case strings.Contains(errMsg, "no such table") || strings.Contains(errMsg, "table") && strings.Contains(errMsg, errorTextDoesNotExist):
-		return a.handleTableNotFound(context)
+	case strings.Contains(normalizedErrMsg, "no such table") ||
+		strings.Contains(normalizedErrMsg, "unknown table") ||
+		strings.Contains(normalizedErrMsg, "table") && strings.Contains(normalizedErrMsg, errorTextDoesNotExist):
+		return a.handleTableNotFound(errorContext)
 
-	case strings.Contains(errMsg, "no such column") || strings.Contains(errMsg, "column") && strings.Contains(errMsg, errorTextDoesNotExist):
-		return a.handleColumnNotFound(context)
+	case strings.Contains(normalizedErrMsg, "no such column") ||
+		strings.Contains(normalizedErrMsg, "unknown column") ||
+		strings.Contains(normalizedErrMsg, "column") && strings.Contains(normalizedErrMsg, errorTextDoesNotExist):
+		return a.handleColumnNotFound(errorContext)
 
-	case strings.Contains(errMsg, "syntax error") || strings.Contains(errMsg, "SQL syntax"):
-		return a.handleSQLSyntaxError(context)
+	case strings.Contains(normalizedErrMsg, "syntax error") || strings.Contains(normalizedErrMsg, "sql syntax"):
+		return a.handleSQLSyntaxError(errorContext)
 
-	case strings.Contains(errMsg, "denied") || strings.Contains(errMsg, "permission"):
-		return a.handlePermissionDenied(context)
+	case strings.Contains(normalizedErrMsg, "denied") || strings.Contains(normalizedErrMsg, "permission"):
+		return a.handlePermissionDenied(errorContext)
 
-	case strings.Contains(errMsg, "read-only") || strings.Contains(errMsg, "readonly"):
-		return a.handleReadOnlyViolation(context)
+	case strings.Contains(normalizedErrMsg, "read-only") || strings.Contains(normalizedErrMsg, "readonly"):
+		return a.handleReadOnlyViolation(errorContext)
 
-	case strings.Contains(errMsg, "constraint") || strings.Contains(errMsg, "foreign key"):
-		return a.handleConstraintViolation(context)
+	case strings.Contains(normalizedErrMsg, "constraint") || strings.Contains(normalizedErrMsg, "foreign key"):
+		return a.handleConstraintViolation(errorContext)
 
-	case strings.Contains(errMsg, "connection") || strings.Contains(errMsg, "connect"):
-		return a.handleConnectionError(context)
+	case strings.Contains(normalizedErrMsg, "connection") || strings.Contains(normalizedErrMsg, "connect"):
+		return a.handleConnectionError(errorContext)
 
-	case strings.Contains(errMsg, "database") && (strings.Contains(errMsg, errorTextDoesNotExist) || strings.Contains(errMsg, "not found")):
-		return a.handleDatabaseNotFound(context)
+	case strings.Contains(normalizedErrMsg, "database") &&
+		(strings.Contains(normalizedErrMsg, errorTextDoesNotExist) || strings.Contains(normalizedErrMsg, "not found")):
+		return a.handleDatabaseNotFound(errorContext)
 
-	case strings.Contains(errMsg, "data type") || strings.Contains(errMsg, "type mismatch"):
-		return a.handleDataTypeMismatch(context)
+	case strings.Contains(normalizedErrMsg, "data type") || strings.Contains(normalizedErrMsg, "type mismatch"):
+		return a.handleDataTypeMismatch(errorContext)
 
-	case strings.Contains(errMsg, "unsupported db_type"):
-		return a.handleUnsupportedDatabase(context)
+	case strings.Contains(normalizedErrMsg, "unsupported db_type"):
+		return a.handleUnsupportedDatabase(errorContext)
 
-	case strings.Contains(errMsg, "decrypt password") || strings.Contains(errMsg, "decrypt password failed"):
-		return a.handleDecryptionFailed(context)
+	case strings.Contains(normalizedErrMsg, "decrypt password") || strings.Contains(normalizedErrMsg, "decrypt password failed"):
+		return a.handleDecryptionFailed(errorContext)
 
 	default:
-		return a.handleUnknownError(context)
+		return a.handleUnknownError(errorContext)
 	}
 }
 
@@ -262,7 +275,7 @@ func (a *ErrorAnalyzer) handleColumnNotFound(context map[string]interface{}) *St
 	err := NewStructuredError(
 		ErrorCodeColumnNotFound,
 		fmt.Sprintf("Column '%s' not found in table '%s'", columnName, tableName),
-		"The specified column does not exist in the table",
+		fmt.Sprint(context["error"]),
 	).WithContext("column_name", columnName).WithContext("table_name", tableName)
 
 	profileName := ""
@@ -412,10 +425,10 @@ func extractTableName(errMsg string) string {
 func extractColumnName(errMsg string) string {
 	// Try to extract column name from common error patterns
 	patterns := []string{
-		`column ['"]?(\w+)['"]?`,
-		`field ['"]?(\w+)['"]?`,
-		`no such column: (\w+)`,
-		`Column '(\w+)'`,
+		`column ['"]?([^'":\s]+)['"]?`,
+		`field ['"]?([^'":\s]+)['"]?`,
+		`no such column: ([^\s]+)`,
+		`Column '([^']+)'`,
 	}
 
 	for _, pattern := range patterns {
