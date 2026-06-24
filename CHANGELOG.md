@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Security
 
 - Updated the Go toolchain and CI/Docker build images from vulnerable patch releases to Go 1.26.4, resolving reachable standard-library findings reported by `govulncheck`.
-- Added `govulncheck` v1.4.0 as a Go tool dependency and run it through `go tool`, locking its complete module graph in `go.mod` and `go.sum`.
+- Switched CI vulnerability scanning to the official `golang/govulncheck-action` v1.0.4 pinned by immutable commit SHA.
 
 ## [v1.6.2] - 2026-04-19
 
