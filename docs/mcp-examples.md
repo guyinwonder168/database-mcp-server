@@ -63,8 +63,8 @@ When a query fails (e.g., referencing a missing table), the MCP server returns a
 {
   "status": "error",
   "error_code": "COLUMN_NOT_FOUND",
-  "message": "Column 'email' not found in table 'users'",
-  "details": "The specified column does not exist in the table",
+  "message": "Column 'u.email' not found",
+  "details": "Error 1054 (42S22): Unknown column 'u.email' in 'field list'",
   "suggestions": [
     {
       "action": "Describe table schema",
@@ -78,11 +78,13 @@ When a query fails (e.g., referencing a missing table), the MCP server returns a
   ],
   "context": {
     "profile_name": "mydb",
-    "table_name": "users",
-    "column_name": "email"
+    "table_name": "",
+    "column_name": "u.email"
   }
 }
 ```
+
+The `details` field preserves the database driver's diagnostic text, including vendor error numbers and SQLSTATE values when available. Bound parameter values and credentials are not included in the structured response.
 
 #### SQL Syntax Error
 
