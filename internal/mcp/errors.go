@@ -272,9 +272,14 @@ func (a *ErrorAnalyzer) handleColumnNotFound(context map[string]interface{}) *St
 		tableName = tn
 	}
 
+	message := fmt.Sprintf("Column '%s' not found", columnName)
+	if tableName != "" {
+		message = fmt.Sprintf("Column '%s' not found in table '%s'", columnName, tableName)
+	}
+
 	err := NewStructuredError(
 		ErrorCodeColumnNotFound,
-		fmt.Sprintf("Column '%s' not found in table '%s'", columnName, tableName),
+		message,
 		fmt.Sprint(context["error"]),
 	).WithContext("column_name", columnName).WithContext("table_name", tableName)
 

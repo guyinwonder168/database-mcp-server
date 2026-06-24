@@ -57,6 +57,9 @@ func TestQueryRowsForSQLPreservesMySQLUnknownColumnError(t *testing.T) {
 	if structured.ErrorCode != ErrorCodeColumnNotFound {
 		t.Fatalf("expected %s, got %s", ErrorCodeColumnNotFound, structured.ErrorCode)
 	}
+	if structured.Message != "Column 'u.userName' not found" {
+		t.Fatalf("unexpected error message %q", structured.Message)
+	}
 	if structured.Details != driverErr.Error() {
 		t.Fatalf("expected driver details %q, got %q", driverErr.Error(), structured.Details)
 	}
