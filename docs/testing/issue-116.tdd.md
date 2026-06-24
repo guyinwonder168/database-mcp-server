@@ -36,3 +36,4 @@ The regression uses a deterministic MySQL-compatible driver error through `sqlmo
 
 - RED: `97b958f test: reproduce masked execute-sql database error`
 - GREEN: `ef1e2b0 fix: preserve execute-sql database errors`
+- Refactor: `568e330 refactor: refine execute-sql error response`
