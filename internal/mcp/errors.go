@@ -6,9 +6,12 @@ package mcp
 import (
 	"database-mcp-provider/internal/log"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/go-sql-driver/mysql"
 )
 
 // ErrorCode represents standardized error codes for the MCP server
@@ -46,6 +49,8 @@ const (
 )
 
 const errorTextDoesNotExist = "does not exist"
+
+var duplicateEntryValuePattern = regexp.MustCompile(`(?i)(duplicate entry )'.*'( for key )`)
 
 // ErrorSuggestion represents a suggestion to fix an error
 type ErrorSuggestion struct {
@@ -128,7 +133,10 @@ func (a *ErrorAnalyzer) AnalyzeError(err error, context map[string]interface{}) 
 	for key, value := range context {
 		errorContext[key] = value
 	}
-	errorContext["error"] = errMsg
+	if isSQLExecutionContext(errorContext) {
+		errorContext["error"] = safeSQLDriverError(err)
+	}
+	addDatabaseErrorMetadata(err, errorContext)
 
 	log.JSONLog("debug", "Analyzing error", map[string]interface{}{
 		"error":   errMsg,
@@ -136,53 +144,117 @@ func (a *ErrorAnalyzer) AnalyzeError(err error, context map[string]interface{}) 
 	})
 
 	normalizedErrMsg := strings.ToLower(errMsg)
+	databaseErrorCode, _ := errorContext["database_error_code"].(int)
 
 	// Check for specific error patterns
+	var structuredErr *StructuredError
 	switch {
+	case databaseErrorCode == 1054:
+		structuredErr = a.handleColumnNotFound(errorContext)
+
+	case databaseErrorCode == 1146:
+		structuredErr = a.handleTableNotFound(errorContext)
+
+	case databaseErrorCode == 1064:
+		structuredErr = a.handleSQLSyntaxError(errorContext)
+
+	case databaseErrorCode == 1044 || databaseErrorCode == 1045 || databaseErrorCode == 1142:
+		structuredErr = a.handlePermissionDenied(errorContext)
+
+	case databaseErrorCode == 1062 || databaseErrorCode == 1451 || databaseErrorCode == 1452:
+		structuredErr = a.handleConstraintViolation(errorContext)
+
+	case databaseErrorCode == 1049:
+		structuredErr = a.handleDatabaseNotFound(errorContext)
+
 	case strings.Contains(normalizedErrMsg, "profile not found"):
-		return a.handleProfileNotFound(errorContext)
+		structuredErr = a.handleProfileNotFound(errorContext)
 
 	case strings.Contains(normalizedErrMsg, "no such table") ||
 		strings.Contains(normalizedErrMsg, "unknown table") ||
 		strings.Contains(normalizedErrMsg, "table") && strings.Contains(normalizedErrMsg, errorTextDoesNotExist):
-		return a.handleTableNotFound(errorContext)
+		structuredErr = a.handleTableNotFound(errorContext)
 
 	case strings.Contains(normalizedErrMsg, "no such column") ||
 		strings.Contains(normalizedErrMsg, "unknown column") ||
 		strings.Contains(normalizedErrMsg, "column") && strings.Contains(normalizedErrMsg, errorTextDoesNotExist):
-		return a.handleColumnNotFound(errorContext)
+		structuredErr = a.handleColumnNotFound(errorContext)
 
 	case strings.Contains(normalizedErrMsg, "syntax error") || strings.Contains(normalizedErrMsg, "sql syntax"):
-		return a.handleSQLSyntaxError(errorContext)
+		structuredErr = a.handleSQLSyntaxError(errorContext)
 
 	case strings.Contains(normalizedErrMsg, "denied") || strings.Contains(normalizedErrMsg, "permission"):
-		return a.handlePermissionDenied(errorContext)
+		structuredErr = a.handlePermissionDenied(errorContext)
 
 	case strings.Contains(normalizedErrMsg, "read-only") || strings.Contains(normalizedErrMsg, "readonly"):
-		return a.handleReadOnlyViolation(errorContext)
+		structuredErr = a.handleReadOnlyViolation(errorContext)
 
 	case strings.Contains(normalizedErrMsg, "constraint") || strings.Contains(normalizedErrMsg, "foreign key"):
-		return a.handleConstraintViolation(errorContext)
+		structuredErr = a.handleConstraintViolation(errorContext)
 
 	case strings.Contains(normalizedErrMsg, "connection") || strings.Contains(normalizedErrMsg, "connect"):
-		return a.handleConnectionError(errorContext)
+		structuredErr = a.handleConnectionError(errorContext)
 
 	case strings.Contains(normalizedErrMsg, "database") &&
 		(strings.Contains(normalizedErrMsg, errorTextDoesNotExist) || strings.Contains(normalizedErrMsg, "not found")):
-		return a.handleDatabaseNotFound(errorContext)
+		structuredErr = a.handleDatabaseNotFound(errorContext)
 
 	case strings.Contains(normalizedErrMsg, "data type") || strings.Contains(normalizedErrMsg, "type mismatch"):
-		return a.handleDataTypeMismatch(errorContext)
+		structuredErr = a.handleDataTypeMismatch(errorContext)
 
 	case strings.Contains(normalizedErrMsg, "unsupported db_type"):
-		return a.handleUnsupportedDatabase(errorContext)
+		structuredErr = a.handleUnsupportedDatabase(errorContext)
 
 	case strings.Contains(normalizedErrMsg, "decrypt password") || strings.Contains(normalizedErrMsg, "decrypt password failed"):
-		return a.handleDecryptionFailed(errorContext)
+		structuredErr = a.handleDecryptionFailed(errorContext)
 
+	case isSQLExecutionContext(errorContext):
+		structuredErr = a.handleSQLExecutionError(errorContext)
 	default:
-		return a.handleUnknownError(errorContext)
+		structuredErr = a.handleUnknownError(errorContext)
 	}
+	return withDatabaseErrorMetadata(structuredErr, errorContext)
+}
+
+func isSQLExecutionContext(context map[string]interface{}) bool {
+	operation, _ := context["operation"].(string)
+	switch operation {
+	case "query", "prepared_query", "prepare_statement", "execute_sql", "prepared_exec", "scan_rows":
+		return true
+	default:
+		return false
+	}
+}
+
+func addDatabaseErrorMetadata(err error, context map[string]interface{}) {
+	var mysqlErr *mysql.MySQLError
+	if !errors.As(err, &mysqlErr) {
+		return
+	}
+	context["database_error_code"] = int(mysqlErr.Number)
+	sqlState := strings.TrimRight(string(mysqlErr.SQLState[:]), "\x00")
+	if sqlState != "" {
+		context["sql_state"] = sqlState
+	}
+}
+
+func safeSQLDriverError(err error) string {
+	message := err.Error()
+	var mysqlErr *mysql.MySQLError
+	if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
+		return duplicateEntryValuePattern.ReplaceAllString(message, "${1}'<redacted>'${2}")
+	}
+	return message
+}
+
+func withDatabaseErrorMetadata(structuredErr *StructuredError, context map[string]interface{}) *StructuredError {
+	if code, ok := context["database_error_code"]; ok {
+		structuredErr.WithContext("database_error_code", code) //nolint:errcheck // Builder modifies in-place
+	}
+	if sqlState, ok := context["sql_state"]; ok {
+		structuredErr.WithContext("sql_state", sqlState) //nolint:errcheck // Builder modifies in-place
+	}
+	return structuredErr
 }
 
 // handleProfileNotFound handles profile not found errors
@@ -225,7 +297,7 @@ func (a *ErrorAnalyzer) handleTableNotFound(context map[string]interface{}) *Str
 	err := NewStructuredError(
 		ErrorCodeTableNotFound,
 		fmt.Sprintf("Table '%s' not found", tableName),
-		"The specified table does not exist in the database",
+		errorDetails(context, "The specified table does not exist in the database"),
 	).WithContext("table_name", tableName)
 
 	profileName := ""
@@ -280,7 +352,7 @@ func (a *ErrorAnalyzer) handleColumnNotFound(context map[string]interface{}) *St
 	err := NewStructuredError(
 		ErrorCodeColumnNotFound,
 		message,
-		fmt.Sprint(context["error"]),
+		errorDetails(context, "The specified column does not exist in the table"),
 	).WithContext("column_name", columnName).WithContext("table_name", tableName)
 
 	profileName := ""
@@ -319,7 +391,7 @@ func (a *ErrorAnalyzer) handleSQLSyntaxError(context map[string]interface{}) *St
 	err := NewStructuredError(
 		ErrorCodeSQLSyntax,
 		"SQL syntax error",
-		fmt.Sprint(context["error"]),
+		errorDetails(context, "The SQL statement is invalid"),
 	)
 
 	sql := ""
@@ -452,7 +524,7 @@ func (a *ErrorAnalyzer) handlePermissionDenied(context map[string]interface{}) *
 	err := NewStructuredError(
 		ErrorCodePermissionDenied,
 		"Permission denied",
-		fmt.Sprint(context["error"]),
+		errorDetails(context, "The database user does not have permission for this operation"),
 	)
 
 	err.WithSuggestions( //nolint:errcheck // Builder modifies in-place, return value not needed
@@ -473,7 +545,7 @@ func (a *ErrorAnalyzer) handleConstraintViolation(context map[string]interface{}
 	err := NewStructuredError(
 		ErrorCodeConstraintViolation,
 		"Database constraint violation",
-		fmt.Sprint(context["error"]),
+		errorDetails(context, "The operation violates a database constraint"),
 	)
 
 	err.WithSuggestions( //nolint:errcheck // Builder modifies in-place, return value not needed
@@ -494,7 +566,7 @@ func (a *ErrorAnalyzer) handleConnectionError(context map[string]interface{}) *S
 	err := NewStructuredError(
 		ErrorCodeConnectionFailed,
 		"Database connection failed",
-		fmt.Sprint(context["error"]),
+		errorDetails(context, "Unable to connect to the configured database"),
 	)
 
 	err.WithSuggestions( //nolint:errcheck // Builder modifies in-place, return value not needed
@@ -524,7 +596,7 @@ func (a *ErrorAnalyzer) handleDatabaseNotFound(context map[string]interface{}) *
 	err := NewStructuredError(
 		ErrorCodeDatabaseNotFound,
 		fmt.Sprintf("Database '%s' not found", dbName),
-		"The specified database does not exist",
+		errorDetails(context, "The specified database does not exist"),
 	).WithContext("database_name", dbName)
 
 	profileName := ""
@@ -551,7 +623,7 @@ func (a *ErrorAnalyzer) handleDataTypeMismatch(context map[string]interface{}) *
 	err := NewStructuredError(
 		ErrorCodeDataTypeMismatch,
 		"Data type mismatch",
-		fmt.Sprint(context["error"]),
+		errorDetails(context, "A value does not match the required database type"),
 	)
 
 	tableName := ""
@@ -644,7 +716,7 @@ func (a *ErrorAnalyzer) handleUnknownError(context map[string]interface{}) *Stru
 	return NewStructuredError(
 		ErrorCodeUnknownError,
 		"An unexpected error occurred",
-		fmt.Sprint(context["error"]),
+		errorDetails(context, "No additional error details are available"),
 	).WithSuggestions(
 		ErrorSuggestion{
 			Action:      "Check error details",
@@ -655,4 +727,28 @@ func (a *ErrorAnalyzer) handleUnknownError(context map[string]interface{}) *Stru
 			Description: "Ensure all required parameters are provided correctly",
 		},
 	)
+}
+
+func (a *ErrorAnalyzer) handleSQLExecutionError(context map[string]interface{}) *StructuredError {
+	return NewStructuredError(
+		ErrorCodeSQLExecutionError,
+		"SQL execution failed",
+		errorDetails(context, "The database operation failed"),
+	).WithSuggestions(
+		ErrorSuggestion{
+			Action:      "Check error details",
+			Description: "Review the database error message for more information",
+		},
+		ErrorSuggestion{
+			Action:      "Verify the SQL statement",
+			Description: "Ensure the statement and referenced database objects are valid",
+		},
+	)
+}
+
+func errorDetails(context map[string]interface{}, fallback string) string {
+	if details, ok := context["error"].(string); ok && details != "" {
+		return details
+	}
+	return fallback
 }

@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Fixed `execute-sql` discarding direct query errors and returning `UNKNOWN_ERROR` with `details: "<nil>"`. Database driver details are now preserved, and MySQL/MariaDB unknown-column errors map to `COLUMN_NOT_FOUND`.
+- Fixed `execute-sql` discarding direct and row-stream query errors and returning `UNKNOWN_ERROR` with `details: "<nil>"`. SQL driver details are now preserved, MySQL/MariaDB errno and SQLSTATE metadata are exposed, and unknown-column errors map to `COLUMN_NOT_FOUND`.
 
 ### Security
 

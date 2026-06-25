@@ -2604,7 +2604,13 @@ func (s *MCPServer) tryExecuteSQLQuery(
 
 	result, err := scanExecuteSQLRows(ctx, conn, p.SQL, rows)
 	if err != nil {
-		return ExecuteSQLResult{}, false, nil, err
+		structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
+			"profile_name": p.ProfileName,
+			"sql":          p.SQL,
+			"operation":    "scan_rows",
+			"db_type":      prof.DBType,
+		})
+		return ExecuteSQLResult{}, false, errorResult(structErr), nil
 	}
 	return result, true, nil, nil
 }
@@ -2672,6 +2678,9 @@ func scanExecuteSQLRows(ctx context.Context, conn *sql.DB, sqlText string, rows 
 		}
 		normalizeQueryRowValues(row, cols, typeMap)
 		results = append(results, row)
+	}
+	if err := rows.Err(); err != nil {
+		return ExecuteSQLResult{}, err
 	}
 	return ExecuteSQLResult{Columns: cols, Rows: results}, nil
 }

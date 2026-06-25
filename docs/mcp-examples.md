@@ -79,12 +79,14 @@ When a query fails (e.g., referencing a missing table), the MCP server returns a
   "context": {
     "profile_name": "mydb",
     "table_name": "",
-    "column_name": "u.email"
+    "column_name": "u.email",
+    "database_error_code": 1054,
+    "sql_state": "42S22"
   }
 }
 ```
 
-The `details` field preserves the database driver's diagnostic text, including vendor error numbers and SQLSTATE values when available. Bound parameter values and credentials are not included in the structured response.
+For SQL execution failures, the `details` field preserves the database driver's diagnostic text. Typed MySQL/MariaDB errors also expose `database_error_code` and `sql_state` in `context`. The server does not append bound parameters or credentials to the response, and known MySQL duplicate-key values are redacted from driver text.
 
 #### SQL Syntax Error
 

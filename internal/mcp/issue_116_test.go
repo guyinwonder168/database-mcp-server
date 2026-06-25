@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"regexp"
+	"strings"
 	"testing"
 
 	"database-mcp-provider/internal/config"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/go-sql-driver/mysql"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -21,7 +23,11 @@ func TestQueryRowsForSQLPreservesMySQLUnknownColumnError(t *testing.T) {
 	defer conn.Close()
 
 	const query = "SELECT u.userName FROM ohrm_user u"
-	driverErr := errors.New("Error 1054 (42S22): Unknown column 'u.userName' in 'field list'")
+	driverErr := &mysql.MySQLError{
+		Number:   1054,
+		SQLState: [5]byte{'4', '2', 'S', '2', '2'},
+		Message:  "Unknown column 'u.userName' in 'field list'",
+	}
 	mock.ExpectQuery(regexp.QuoteMeta(query)).WillReturnError(driverErr)
 
 	server := &MCPServer{errorAnalyzer: NewErrorAnalyzer("")}
@@ -66,7 +72,121 @@ func TestQueryRowsForSQLPreservesMySQLUnknownColumnError(t *testing.T) {
 	if structured.Details == "<nil>" {
 		t.Fatal("database error details must not serialize as <nil>")
 	}
+	if structured.Context["database_error_code"] != float64(1054) {
+		t.Fatalf("expected database error code 1054, got %#v", structured.Context["database_error_code"])
+	}
+	if structured.Context["sql_state"] != "42S22" {
+		t.Fatalf("expected SQLSTATE 42S22, got %#v", structured.Context["sql_state"])
+	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet SQL expectations: %v", err)
 	}
+}
+
+func TestTryExecuteSQLQueryPreservesRowIterationError(t *testing.T) {
+	conn, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("create sqlmock: %v", err)
+	}
+	defer conn.Close()
+
+	const query = "SELECT 1"
+	driverErr := errors.New("stream interrupted while reading rows")
+	rows := sqlmock.NewRows([]string{"value"}).
+		AddRow(1).
+		RowError(0, driverErr)
+	mock.ExpectQuery(regexp.QuoteMeta(query)).WillReturnRows(rows)
+
+	server := &MCPServer{errorAnalyzer: NewErrorAnalyzer("")}
+	_, handled, result, queryErr := server.tryExecuteSQLQuery(
+		context.Background(),
+		conn,
+		ExecuteSQLParams{ProfileName: "test-db", SQL: query},
+		&config.Profile{DBType: "mysql"},
+	)
+
+	if handled {
+		t.Fatal("row iteration failure must not be reported as a handled success")
+	}
+	if queryErr != nil {
+		t.Fatalf("expected structured error result, got Go error: %v", queryErr)
+	}
+	if result == nil || !result.IsError {
+		t.Fatalf("expected MCP error result, got %#v", result)
+	}
+
+	structured := decodeStructuredErrorResult(t, result)
+	if structured.ErrorCode != ErrorCodeSQLExecutionError {
+		t.Fatalf("expected %s, got %s", ErrorCodeSQLExecutionError, structured.ErrorCode)
+	}
+	if structured.Details != driverErr.Error() {
+		t.Fatalf("expected driver details %q, got %q", driverErr.Error(), structured.Details)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}
+
+func TestAnalyzeErrorDoesNotExposeNonSQLConnectionDetails(t *testing.T) {
+	const sensitiveError = "dial tcp 10.0.0.5:3306 password=secret: connection refused"
+
+	structured := NewErrorAnalyzer("").AnalyzeError(
+		errors.New(sensitiveError),
+		map[string]interface{}{"operation": "connect", "profile_name": "private-db"},
+	)
+
+	if structured.ErrorCode != ErrorCodeConnectionFailed {
+		t.Fatalf("expected %s, got %s", ErrorCodeConnectionFailed, structured.ErrorCode)
+	}
+	if structured.Details != "Unable to connect to the configured database" {
+		t.Fatalf("unexpected connection details %q", structured.Details)
+	}
+	if strings.Contains(structured.ToJSON(), "password=secret") {
+		t.Fatal("non-SQL connection errors must not expose raw sensitive details")
+	}
+}
+
+func TestAnalyzeErrorRedactsMySQLDuplicateEntryValue(t *testing.T) {
+	driverErr := &mysql.MySQLError{
+		Number:   1062,
+		SQLState: [5]byte{'2', '3', '0', '0', '0'},
+		Message:  "Duplicate entry 'O'Reilly@example.com' for key 'users.email'",
+	}
+
+	structured := NewErrorAnalyzer("").AnalyzeError(
+		driverErr,
+		map[string]interface{}{"operation": "prepared_exec", "profile_name": "app-db"},
+	)
+
+	if structured.ErrorCode != ErrorCodeConstraintViolation {
+		t.Fatalf("expected %s, got %s", ErrorCodeConstraintViolation, structured.ErrorCode)
+	}
+	if strings.Contains(structured.Details, "Reilly@example.com") {
+		t.Fatal("constraint details must not expose the conflicting value")
+	}
+	if !strings.Contains(structured.Details, "Duplicate entry '<redacted>'") {
+		t.Fatalf("expected redacted duplicate-entry details, got %q", structured.Details)
+	}
+	if structured.Context["database_error_code"] != 1062 {
+		t.Fatalf("expected database error code 1062, got %#v", structured.Context["database_error_code"])
+	}
+	if structured.Context["sql_state"] != "23000" {
+		t.Fatalf("expected SQLSTATE 23000, got %#v", structured.Context["sql_state"])
+	}
+}
+
+func decodeStructuredErrorResult(t *testing.T, result *mcpsdk.CallToolResult) StructuredError {
+	t.Helper()
+	if len(result.Content) != 1 {
+		t.Fatalf("expected one error content item, got %d", len(result.Content))
+	}
+	text, ok := result.Content[0].(*mcpsdk.TextContent)
+	if !ok {
+		t.Fatalf("expected text error content, got %T", result.Content[0])
+	}
+	var structured StructuredError
+	if err := json.Unmarshal([]byte(text.Text), &structured); err != nil {
+		t.Fatalf("decode structured error: %v", err)
+	}
+	return structured
 }
