@@ -16,6 +16,8 @@ As an MCP client diagnosing a failed SQL query, I want the database driver's err
 | GREEN | The same focused command passed after direct query errors were analyzed and returned as structured MCP errors. |
 | Review RED | The typed-driver and row-stream regression command failed because errno/SQLSTATE metadata was absent and `rows.Err()` was ignored. |
 | Review GREEN | `go test ./internal/mcp -run 'Test(QueryRowsForSQLPreservesMySQLUnknownColumnError\|TryExecuteSQLQueryPreservesRowIterationError)$' -count=1` passed after metadata extraction and row-stream error handling were added. |
+| Sonar RED | SonarCloud rule `go:S3776` reported cognitive complexity 19 in `AnalyzeError`, above the allowed 15. |
+| Sonar GREEN | MySQL numeric-code and message-based classification were extracted into focused helpers; all characterization tests remained green. |
 | Regression | `go test ./internal/mcp -count=1` passed after the implementation and response-message refinement. |
 
 ## Test specification
@@ -42,7 +44,7 @@ The regression uses a deterministic MySQL-compatible driver error through `sqlmo
 - `go test ./...` — PASS
 - `go vet ./...` — PASS
 - `go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.9.0 run ./... --timeout=5m` — PASS, 0 issues
-- `go test -cover ./...` — PASS; `internal/mcp` coverage 86.0%
+- `go test -cover ./...` — PASS; `internal/mcp` coverage 86.1%
 - `go build -o ./tmp/mcp-server ./cmd/server/main.go` — PASS
 - `go run golang.org/x/vuln/cmd/govulncheck@latest ./...` — PASS, no called vulnerabilities
 

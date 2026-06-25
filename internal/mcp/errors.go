@@ -146,74 +146,80 @@ func (a *ErrorAnalyzer) AnalyzeError(err error, context map[string]interface{}) 
 	normalizedErrMsg := strings.ToLower(errMsg)
 	databaseErrorCode, _ := errorContext["database_error_code"].(int)
 
-	// Check for specific error patterns
-	var structuredErr *StructuredError
+	structuredErr := a.classifyMySQLError(databaseErrorCode, errorContext)
+	if structuredErr == nil {
+		structuredErr = a.classifyErrorMessage(normalizedErrMsg, errorContext)
+	}
+	return withDatabaseErrorMetadata(structuredErr, errorContext)
+}
+
+func (a *ErrorAnalyzer) classifyMySQLError(code int, context map[string]interface{}) *StructuredError {
+	switch code {
+	case 1054:
+		return a.handleColumnNotFound(context)
+	case 1146:
+		return a.handleTableNotFound(context)
+	case 1064:
+		return a.handleSQLSyntaxError(context)
+	case 1044, 1045, 1142:
+		return a.handlePermissionDenied(context)
+	case 1062, 1451, 1452:
+		return a.handleConstraintViolation(context)
+	case 1049:
+		return a.handleDatabaseNotFound(context)
+	default:
+		return nil
+	}
+}
+
+func (a *ErrorAnalyzer) classifyErrorMessage(normalizedErrMsg string, context map[string]interface{}) *StructuredError {
 	switch {
-	case databaseErrorCode == 1054:
-		structuredErr = a.handleColumnNotFound(errorContext)
-
-	case databaseErrorCode == 1146:
-		structuredErr = a.handleTableNotFound(errorContext)
-
-	case databaseErrorCode == 1064:
-		structuredErr = a.handleSQLSyntaxError(errorContext)
-
-	case databaseErrorCode == 1044 || databaseErrorCode == 1045 || databaseErrorCode == 1142:
-		structuredErr = a.handlePermissionDenied(errorContext)
-
-	case databaseErrorCode == 1062 || databaseErrorCode == 1451 || databaseErrorCode == 1452:
-		structuredErr = a.handleConstraintViolation(errorContext)
-
-	case databaseErrorCode == 1049:
-		structuredErr = a.handleDatabaseNotFound(errorContext)
-
 	case strings.Contains(normalizedErrMsg, "profile not found"):
-		structuredErr = a.handleProfileNotFound(errorContext)
+		return a.handleProfileNotFound(context)
 
 	case strings.Contains(normalizedErrMsg, "no such table") ||
 		strings.Contains(normalizedErrMsg, "unknown table") ||
 		strings.Contains(normalizedErrMsg, "table") && strings.Contains(normalizedErrMsg, errorTextDoesNotExist):
-		structuredErr = a.handleTableNotFound(errorContext)
+		return a.handleTableNotFound(context)
 
 	case strings.Contains(normalizedErrMsg, "no such column") ||
 		strings.Contains(normalizedErrMsg, "unknown column") ||
 		strings.Contains(normalizedErrMsg, "column") && strings.Contains(normalizedErrMsg, errorTextDoesNotExist):
-		structuredErr = a.handleColumnNotFound(errorContext)
+		return a.handleColumnNotFound(context)
 
 	case strings.Contains(normalizedErrMsg, "syntax error") || strings.Contains(normalizedErrMsg, "sql syntax"):
-		structuredErr = a.handleSQLSyntaxError(errorContext)
+		return a.handleSQLSyntaxError(context)
 
 	case strings.Contains(normalizedErrMsg, "denied") || strings.Contains(normalizedErrMsg, "permission"):
-		structuredErr = a.handlePermissionDenied(errorContext)
+		return a.handlePermissionDenied(context)
 
 	case strings.Contains(normalizedErrMsg, "read-only") || strings.Contains(normalizedErrMsg, "readonly"):
-		structuredErr = a.handleReadOnlyViolation(errorContext)
+		return a.handleReadOnlyViolation(context)
 
 	case strings.Contains(normalizedErrMsg, "constraint") || strings.Contains(normalizedErrMsg, "foreign key"):
-		structuredErr = a.handleConstraintViolation(errorContext)
+		return a.handleConstraintViolation(context)
 
 	case strings.Contains(normalizedErrMsg, "connection") || strings.Contains(normalizedErrMsg, "connect"):
-		structuredErr = a.handleConnectionError(errorContext)
+		return a.handleConnectionError(context)
 
 	case strings.Contains(normalizedErrMsg, "database") &&
 		(strings.Contains(normalizedErrMsg, errorTextDoesNotExist) || strings.Contains(normalizedErrMsg, "not found")):
-		structuredErr = a.handleDatabaseNotFound(errorContext)
+		return a.handleDatabaseNotFound(context)
 
 	case strings.Contains(normalizedErrMsg, "data type") || strings.Contains(normalizedErrMsg, "type mismatch"):
-		structuredErr = a.handleDataTypeMismatch(errorContext)
+		return a.handleDataTypeMismatch(context)
 
 	case strings.Contains(normalizedErrMsg, "unsupported db_type"):
-		structuredErr = a.handleUnsupportedDatabase(errorContext)
+		return a.handleUnsupportedDatabase(context)
 
 	case strings.Contains(normalizedErrMsg, "decrypt password") || strings.Contains(normalizedErrMsg, "decrypt password failed"):
-		structuredErr = a.handleDecryptionFailed(errorContext)
+		return a.handleDecryptionFailed(context)
 
-	case isSQLExecutionContext(errorContext):
-		structuredErr = a.handleSQLExecutionError(errorContext)
+	case isSQLExecutionContext(context):
+		return a.handleSQLExecutionError(context)
 	default:
-		structuredErr = a.handleUnknownError(errorContext)
+		return a.handleUnknownError(context)
 	}
-	return withDatabaseErrorMetadata(structuredErr, errorContext)
 }
 
 func isSQLExecutionContext(context map[string]interface{}) bool {
