@@ -5,7 +5,7 @@
 Database MCP Server is a production MCP provider for SQL databases, built in Go.
 
 Current implementation baseline:
-- Runtime version: `v1.6.2`
+- Runtime version: `v1.6.3`
 - Registered tools: `21`
 - Go module baseline: `go 1.26` (`toolchain go1.26.1`)
 - MCP SDK: `github.com/modelcontextprotocol/go-sdk v1.2.0`

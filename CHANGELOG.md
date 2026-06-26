@@ -4,9 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v1.6.3] - 2026-06-26
+
 ### Fixed
 
 - Fixed `execute-sql` discarding direct and row-stream query errors and returning `UNKNOWN_ERROR` with `details: "<nil>"`. SQL driver details are now preserved, MySQL/MariaDB errno and SQLSTATE metadata are exposed, and unknown-column errors map to `COLUMN_NOT_FOUND`.
+- Fixed MySQL/MariaDB missing-table diagnostics for schema-qualified names such as `db.table`, preserving the full table name in `TABLE_NOT_FOUND` responses.
+- Fixed MySQL/MariaDB unknown-database diagnostics so `DATABASE_NOT_FOUND` responses preserve the configured target database name for connection and database-switch failures.
 
 ### Security
 
