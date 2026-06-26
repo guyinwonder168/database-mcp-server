@@ -175,6 +175,68 @@ func TestAnalyzeErrorRedactsMySQLDuplicateEntryValue(t *testing.T) {
 	}
 }
 
+func TestAnalyzeErrorExtractsQualifiedMySQLTableName(t *testing.T) {
+	driverErr := &mysql.MySQLError{
+		Number:   1146,
+		SQLState: [5]byte{'4', '2', 'S', '0', '2'},
+		Message:  "Table 'hrm.ohrm_user' doesn't exist",
+	}
+
+	structured := NewErrorAnalyzer("").AnalyzeError(
+		driverErr,
+		map[string]interface{}{"operation": "query", "profile_name": "hrm-mariadb"},
+	)
+
+	if structured.ErrorCode != ErrorCodeTableNotFound {
+		t.Fatalf("expected %s, got %s", ErrorCodeTableNotFound, structured.ErrorCode)
+	}
+	if structured.Message != "Table 'hrm.ohrm_user' not found" {
+		t.Fatalf("unexpected error message %q", structured.Message)
+	}
+	if structured.Context["table_name"] != "hrm.ohrm_user" {
+		t.Fatalf("expected qualified table name, got %#v", structured.Context["table_name"])
+	}
+	if structured.Context["database_error_code"] != 1146 {
+		t.Fatalf("expected database error code 1146, got %#v", structured.Context["database_error_code"])
+	}
+	if structured.Context["sql_state"] != "42S02" {
+		t.Fatalf("expected SQLSTATE 42S02, got %#v", structured.Context["sql_state"])
+	}
+}
+
+func TestAnalyzeErrorPreservesDatabaseNameForMySQL1049(t *testing.T) {
+	driverErr := &mysql.MySQLError{
+		Number:   1049,
+		SQLState: [5]byte{'4', '2', '0', '0', '0'},
+		Message:  "Unknown database 'missing_db'",
+	}
+
+	structured := NewErrorAnalyzer("").AnalyzeError(
+		driverErr,
+		map[string]interface{}{
+			"operation":    "connect",
+			"profile_name": "hrm-mariadb",
+			"database":     "missing_db",
+		},
+	)
+
+	if structured.ErrorCode != ErrorCodeDatabaseNotFound {
+		t.Fatalf("expected %s, got %s", ErrorCodeDatabaseNotFound, structured.ErrorCode)
+	}
+	if structured.Message != "Database 'missing_db' not found" {
+		t.Fatalf("unexpected error message %q", structured.Message)
+	}
+	if structured.Details != "The specified database does not exist" {
+		t.Fatalf("unexpected database details %q", structured.Details)
+	}
+	if structured.Context["database_name"] != "missing_db" {
+		t.Fatalf("expected database_name context, got %#v", structured.Context["database_name"])
+	}
+	if strings.Contains(structured.ToJSON(), driverErr.Error()) {
+		t.Fatal("non-SQL database diagnostics must not expose raw driver details")
+	}
+}
+
 func decodeStructuredErrorResult(t *testing.T, result *mcpsdk.CallToolResult) StructuredError {
 	t.Helper()
 	if len(result.Content) != 1 {
