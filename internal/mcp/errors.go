@@ -489,10 +489,10 @@ func (a *ErrorAnalyzer) handleReadOnlyViolation(context map[string]interface{}) 
 func extractTableName(errMsg string) string {
 	// Try to extract table name from common error patterns
 	patterns := []string{
-		`table ['"]?(\w+)['"]?`,
-		`relation ['"]?(\w+)['"]?`,
-		`no such table: (\w+)`,
-		`Table '(\w+)'`,
+		`table ['"]?([^'"\s]+)['"]?`,
+		`relation ['"]?([^'"\s]+)['"]?`,
+		`no such table: ([^\s]+)`,
+		`Table '([^']+)'`,
 	}
 
 	for _, pattern := range patterns {
@@ -597,6 +597,11 @@ func (a *ErrorAnalyzer) handleDatabaseNotFound(context map[string]interface{}) *
 	dbName := ""
 	if dn, ok := context["database_name"].(string); ok {
 		dbName = dn
+	}
+	if dbName == "" {
+		if dn, ok := context["database"].(string); ok {
+			dbName = dn
+		}
 	}
 
 	err := NewStructuredError(

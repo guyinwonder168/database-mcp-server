@@ -18,6 +18,8 @@ As an MCP client diagnosing a failed SQL query, I want the database driver's err
 | Review GREEN | `go test ./internal/mcp -run 'Test(QueryRowsForSQLPreservesMySQLUnknownColumnError\|TryExecuteSQLQueryPreservesRowIterationError)$' -count=1` passed after metadata extraction and row-stream error handling were added. |
 | Sonar RED | SonarCloud rule `go:S3776` reported cognitive complexity 19 in `AnalyzeError`, above the allowed 15. |
 | Sonar GREEN | MySQL numeric-code and message-based classification were extracted into focused helpers; all characterization tests remained green. |
+| P2 Review RED | `go test ./internal/mcp -run 'TestAnalyzeError(ExtractsQualifiedMySQLTableName\|PreservesDatabaseNameForMySQL1049)$' -count=1` failed with `Table '' not found` and `Database '' not found`. |
+| P2 Review GREEN | The same focused command passed after qualified table names were parsed from MySQL 1146 errors and MySQL 1049 reused the existing `database` context as `database_name`. |
 | Regression | `go test ./internal/mcp -count=1` passed after the implementation and response-message refinement. |
 
 ## Test specification
@@ -30,6 +32,8 @@ As an MCP client diagnosing a failed SQL query, I want the database driver's err
 | 4 | A delayed row iteration failure returns `SQL_EXECUTION_ERROR` instead of partial rows. | `TestTryExecuteSQLQueryPreservesRowIterationError` | Regression | PASS |
 | 5 | Non-SQL connection diagnostics do not expose raw connection details. | `TestAnalyzeErrorDoesNotExposeNonSQLConnectionDetails` | Security regression | PASS |
 | 6 | MySQL duplicate-key diagnostics preserve error metadata while redacting the conflicting value. | `TestAnalyzeErrorRedactsMySQLDuplicateEntryValue` | Security regression | PASS |
+| 7 | MySQL 1146 errors preserve schema-qualified table names such as `hrm.ohrm_user`. | `TestAnalyzeErrorExtractsQualifiedMySQLTableName` | Review regression | PASS |
+| 8 | MySQL 1049 errors map `database` context to `database_name` without exposing raw non-SQL connection details. | `TestAnalyzeErrorPreservesDatabaseNameForMySQL1049` | Review regression | PASS |
 
 ## Security boundary
 
@@ -53,3 +57,4 @@ The regression uses a deterministic MySQL-compatible driver error through `sqlmo
 - RED: `97b958f test: reproduce masked execute-sql database error`
 - GREEN: `ef1e2b0 fix: preserve execute-sql database errors`
 - Refactor: `568e330 refactor: refine execute-sql error response`
+- P2 review RED: `af18e8f test: reproduce MySQL error context review findings`
