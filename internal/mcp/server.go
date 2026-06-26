@@ -2604,7 +2604,13 @@ func (s *MCPServer) tryExecuteSQLQuery(
 
 	result, err := scanExecuteSQLRows(ctx, conn, p.SQL, rows)
 	if err != nil {
-		return ExecuteSQLResult{}, false, nil, err
+		structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
+			"profile_name": p.ProfileName,
+			"sql":          p.SQL,
+			"operation":    "scan_rows",
+			"db_type":      prof.DBType,
+		})
+		return ExecuteSQLResult{}, false, errorResult(structErr), nil
 	}
 	return result, true, nil, nil
 }
@@ -2619,7 +2625,13 @@ func (s *MCPServer) queryRowsForSQL(
 		rows, err := conn.QueryContext(ctx, p.SQL)
 		if err != nil {
 			log.JSONLog("error", "Query failed", map[string]interface{}{"sql": p.SQL, "params": p.Params, "error": err})
-			return nil, nil, nil
+			structErr := s.errorAnalyzer.AnalyzeError(err, map[string]interface{}{
+				"profile_name": p.ProfileName,
+				"sql":          p.SQL,
+				"operation":    "query",
+				"db_type":      prof.DBType,
+			})
+			return nil, errorResult(structErr), nil
 		}
 		return rows, nil, nil
 	}
@@ -2666,6 +2678,9 @@ func scanExecuteSQLRows(ctx context.Context, conn *sql.DB, sqlText string, rows 
 		}
 		normalizeQueryRowValues(row, cols, typeMap)
 		results = append(results, row)
+	}
+	if err := rows.Err(); err != nil {
+		return ExecuteSQLResult{}, err
 	}
 	return ExecuteSQLResult{Columns: cols, Rows: results}, nil
 }

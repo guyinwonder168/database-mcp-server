@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `execute-sql` discarding direct and row-stream query errors and returning `UNKNOWN_ERROR` with `details: "<nil>"`. SQL driver details are now preserved, MySQL/MariaDB errno and SQLSTATE metadata are exposed, and unknown-column errors map to `COLUMN_NOT_FOUND`.
+
 ### Security
 
 - Updated the Go toolchain and CI/Docker build images from vulnerable patch releases to Go 1.26.4, resolving reachable standard-library findings reported by `govulncheck`.

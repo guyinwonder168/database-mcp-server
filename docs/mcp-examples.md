@@ -63,8 +63,8 @@ When a query fails (e.g., referencing a missing table), the MCP server returns a
 {
   "status": "error",
   "error_code": "COLUMN_NOT_FOUND",
-  "message": "Column 'email' not found in table 'users'",
-  "details": "The specified column does not exist in the table",
+  "message": "Column 'u.email' not found",
+  "details": "Error 1054 (42S22): Unknown column 'u.email' in 'field list'",
   "suggestions": [
     {
       "action": "Describe table schema",
@@ -78,11 +78,15 @@ When a query fails (e.g., referencing a missing table), the MCP server returns a
   ],
   "context": {
     "profile_name": "mydb",
-    "table_name": "users",
-    "column_name": "email"
+    "table_name": "",
+    "column_name": "u.email",
+    "database_error_code": 1054,
+    "sql_state": "42S22"
   }
 }
 ```
+
+For SQL execution failures, the `details` field preserves the database driver's diagnostic text. Typed MySQL/MariaDB errors also expose `database_error_code` and `sql_state` in `context`. The server does not append bound parameters or credentials to the response, and known MySQL duplicate-key values are redacted from driver text.
 
 #### SQL Syntax Error
 
