@@ -7,7 +7,7 @@ toolchain go1.26.4
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/blastrain/vitess-sqlparser v0.0.0-20201030050434-a139afbb1aba
-	github.com/go-sql-driver/mysql v1.10.0
+	github.com/go-sql-driver/mysql v1.10.1
 	github.com/google/jsonschema-go v0.4.3
 	github.com/lestrrat-go/file-rotatelogs v2.4.0+incompatible
 	github.com/lib/pq v1.12.3
