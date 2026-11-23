@@ -61,7 +61,7 @@ jobs:
 
       - name: Setup Go
         if: steps.tag.outputs.exists != 'true'
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@v7.1.0
         with:
           go-version-file: go.mod
           cache: true
